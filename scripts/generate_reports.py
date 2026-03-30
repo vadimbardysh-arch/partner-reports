@@ -36,15 +36,17 @@ def query(conn, q):
         return pd.DataFrame(cur.fetchall(), columns=cols)
 
 
-def to_native(val):
+def to_native(val, default=0):
     if val is None:
-        return None
+        return default
     if isinstance(val, Decimal):
         return float(val)
     if hasattr(val, "item"):
         return val.item()
     try:
-        return float(val)
+        f = float(val)
+        import math
+        return default if math.isnan(f) else f
     except (TypeError, ValueError):
         return str(val)
 
@@ -81,45 +83,48 @@ def fetch_weekly_summary(conn, provider_id):
 def fetch_revenue_weekly(conn, provider_id):
     return query(conn, f"""
         SELECT
-            order_week,
+            f.order_week,
             COUNT(*) AS orders,
-            ROUND(SUM(provider_price_before_discount), 0) AS food_before_discount,
-            ROUND(SUM(total_order_item_discount), 0) AS menu_discount,
-            ROUND(SUM(provider_price_after_discount), 0) AS food_revenue,
-            ROUND(SUM(commission_local), 0) AS fee_with_vat,
-            ROUND(SUM(total_refunded_amount), 0) AS refund,
-            ROUND(SUM(provider_price_after_discount) - SUM(commission_local) - SUM(COALESCE(total_refunded_amount, 0)), 0) AS net_income
-        FROM ng_delivery_spark.fact_order_delivery
-        WHERE provider_id = {provider_id}
-          AND order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
-          AND order_state = 'delivered'
-        GROUP BY order_week
-        ORDER BY order_week
+            ROUND(SUM(f.provider_price_after_discount), 0) AS food_revenue,
+            ROUND(SUM(f.commission_local * 1.2), 0) AS total_fee_gross,
+            ROUND(SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS refund,
+            ROUND(SUM(f.provider_price_after_discount) - SUM(f.commission_local * 1.2) - SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS net_income
+        FROM ng_delivery_spark.fact_order_delivery f
+        WHERE f.provider_id = {provider_id}
+          AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+          AND f.order_state = 'delivered'
+        GROUP BY f.order_week
+        ORDER BY f.order_week
     """)
 
 
 def fetch_orders_detail(conn, provider_id):
     return query(conn, f"""
         SELECT
-            order_id,
-            order_reference_id,
-            order_created_date,
-            order_state,
-            CASE WHEN is_bolt_plus_order THEN 'Так' ELSE 'Ні' END AS bolt_plus,
-            is_bolt_plus_order,
-            ROUND(provider_price_before_discount, 2) AS food_before_discount,
-            ROUND(total_order_item_discount, 2) AS total_discount,
-            ROUND(COALESCE(demand_incentives_local, 0), 2) AS bolt_discount,
-            ROUND(provider_price_before_discount - provider_price_after_discount, 2) AS provider_discount,
-            ROUND(provider_price_after_discount, 2) AS food_revenue,
-            ROUND(commission_local, 2) AS fee_with_vat,
-            ROUND(COALESCE(total_refunded_amount, 0), 2) AS refund,
-            ROUND(provider_price_after_discount - commission_local - COALESCE(total_refunded_amount, 0), 2) AS net_income
-        FROM ng_delivery_spark.fact_order_delivery
-        WHERE provider_id = {provider_id}
-          AND order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
-          AND order_state = 'delivered'
-        ORDER BY order_created_date DESC, order_id DESC
+            f.order_id,
+            f.order_reference_id,
+            f.order_created_date,
+            CASE WHEN f.is_bolt_plus_order THEN 'Так' ELSE 'Ні' END AS bolt_plus,
+            f.is_bolt_plus_order,
+            ROUND(f.provider_price_before_discount, 2) AS food_before_discount,
+            ROUND(f.total_order_item_discount, 2) AS total_discount,
+            ROUND((COALESCE(m.bolt_delivery_campaign_cost_eur, 0) + COALESCE(m.bolt_menu_campaign_cost_eur, 0)) * m.currency_rate, 2) AS bolt_discount,
+            ROUND((COALESCE(m.provider_delivery_campaign_cost_eur, 0) + COALESCE(m.provider_menu_campaign_cost_eur, 0)) * m.currency_rate, 2) AS provider_discount,
+            ROUND(f.provider_price_after_discount, 2) AS food_revenue,
+            ROUND(m.provider_commission_net_eur * m.currency_rate, 2) AS fee_net,
+            ROUND(m.provider_commission_gross_eur * m.currency_rate, 2) AS fee_gross,
+            ROUND(f.commission_local - m.provider_commission_net_eur * m.currency_rate, 2) AS bp_fee_net,
+            ROUND((f.commission_local - m.provider_commission_net_eur * m.currency_rate) * 1.2, 2) AS bp_fee_gross,
+            ROUND(f.commission_local * 1.2, 2) AS total_fee_gross,
+            ROUND(COALESCE(f.total_refunded_amount, 0), 2) AS refund,
+            ROUND(f.provider_price_after_discount - f.commission_local * 1.2 - COALESCE(f.total_refunded_amount, 0), 2) AS net_income
+        FROM ng_delivery_spark.fact_order_delivery f
+        JOIN ng_public_spark.etl_delivery_order_monetary_metrics m ON f.order_id = m.order_id
+        WHERE f.provider_id = {provider_id}
+          AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+          AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
+          AND f.order_state = 'delivered'
+        ORDER BY f.order_created_date DESC, f.order_id DESC
     """)
 
 
@@ -292,7 +297,7 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
     rev_weeks = rev_weekly["order_week"].tolist() if len(rev_weekly) else []
     net_income = safe_list(rev_weekly["net_income"]) if len(rev_weekly) else []
     food_rev = safe_list(rev_weekly["food_revenue"]) if len(rev_weekly) else []
-    fees = safe_list(rev_weekly["fee_with_vat"]) if len(rev_weekly) else []
+    fees = safe_list(rev_weekly["total_fee_gross"]) if len(rev_weekly) else []
 
     total_delivered = int(sum(delivered))
     total_cancelled = len(cancelled)
@@ -302,6 +307,7 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
     total_food_rev = round(sum(food_rev), 0)
     total_fees = round(sum(fees), 0)
     total_net = round(sum(net_income), 0)
+    total_refunds = round(sum(safe_list(rev_weekly["refund"])) if len(rev_weekly) else 0, 0)
 
     cancelled_json = safe_json(cancelled) if len(cancelled) else []
     complaints_json = safe_json(complaints) if len(complaints) else []
@@ -328,6 +334,17 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
         bp = r.get('bolt_plus', 'Ні')
         bp_class = " class='bp'" if bp == 'Так' else ""
 
+        fee_net = r.get('fee_net', 0) or 0
+        fee_gross = r.get('fee_gross', 0) or 0
+        fee_vat = round(fee_gross - fee_net, 2)
+        bp_fee_net = r.get('bp_fee_net', 0) or 0
+        bp_fee_gross = r.get('bp_fee_gross', 0) or 0
+        bp_fee_vat = round(bp_fee_gross - bp_fee_net, 2)
+        total_fee = r.get('total_fee_gross', 0) or 0
+
+        fee_text = f"{fee_net:,.0f} + {fee_vat:,.0f} = {fee_gross:,.0f}"
+        bp_text = f"{bp_fee_net:,.0f} + {bp_fee_vat:,.0f} = {bp_fee_gross:,.0f}" if bp_fee_net > 0.5 else "—"
+
         orders_rows += (
             f"<tr>"
             f"<td>{esc(r.get('order_created_date',''))}</td>"
@@ -336,7 +353,9 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
             f"<td class='num'>{r.get('food_before_discount',''):,.2f}</td>"
             f"<td class='num'>{disc_text}</td>"
             f"<td class='num'>{r.get('food_revenue',''):,.2f}</td>"
-            f"<td class='num'>{r.get('fee_with_vat',''):,.2f}</td>"
+            f"<td class='num sm'>{fee_text}</td>"
+            f"<td class='num sm'>{bp_text}</td>"
+            f"<td class='num'>{total_fee:,.2f}</td>"
             f"<td class='num'>{r.get('refund',''):,.2f}</td>"
             f"<td class='num highlight'>{r.get('net_income',''):,.2f}</td>"
             f"</tr>\n"
@@ -408,6 +427,7 @@ td.num {{ text-align:right; font-variant-numeric:tabular-nums; }}
 td.highlight {{ color:#34d399; font-weight:600; }}
 td.comment-cell {{ white-space:normal; max-width:400px; font-size:12px; color:#cbd5e1; }}
 td.bp {{ color:#a78bfa; font-weight:600; }}
+td.sm {{ font-size:11px; color:#94a3b8; }}
 tr:nth-child(even) {{ background:#1e293b; }}
 tr:nth-child(odd) {{ background:#162032; }}
 .empty {{ text-align:center; color:#64748b; padding:24px; }}
@@ -433,7 +453,7 @@ tr:nth-child(odd) {{ background:#162032; }}
   <div class="kpi blue"><div class="value">{avg_check_total:,.0f} ₴</div><div class="label">Середній чек</div></div>
   <div class="kpi"><div class="value">{avg_cooking_total} хв</div><div class="label">Час приготування</div></div>
   <div class="kpi green"><div class="value">{total_food_rev:,.0f} ₴</div><div class="label">Дохід від їжі</div></div>
-  <div class="kpi"><div class="value">{total_fees:,.0f} ₴</div><div class="label">Комісія (з ПДВ)</div></div>
+  <div class="kpi"><div class="value">{total_fees:,.0f} ₴</div><div class="label">Комісія (брутто)</div></div>
   <div class="kpi green"><div class="value">{total_net:,.0f} ₴</div><div class="label">Чистий дохід</div></div>
   <div class="kpi alert"><div class="value">{total_cancelled}</div><div class="label">Скасовано</div></div>
   <div class="kpi alert"><div class="value">{total_complaints}</div><div class="label">Скарги / Bad Orders</div></div>
@@ -465,7 +485,8 @@ tr:nth-child(odd) {{ background:#162032; }}
       <thead><tr>
         <th>Дата</th><th>Order Ref</th><th>Bolt+</th>
         <th>Ціна до знижки</th><th>Знижка (за чий рахунок)</th><th>Дохід від їжі</th>
-        <th>Комісія (ПДВ)</th><th>Повернення</th><th>Чистий дохід</th>
+        <th>Комісія (нетто+ПДВ=брутто)</th><th>Bolt Plus комісія</th><th>Всього комісія</th>
+        <th>Повернення</th><th>Чистий дохід</th>
       </tr></thead>
       <tbody>{orders_rows}</tbody>
     </table>
