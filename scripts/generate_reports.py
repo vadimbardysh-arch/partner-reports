@@ -106,8 +106,11 @@ def fetch_orders_detail(conn, provider_id):
             order_created_date,
             order_state,
             CASE WHEN is_bolt_plus_order THEN 'Так' ELSE 'Ні' END AS bolt_plus,
+            is_bolt_plus_order,
             ROUND(provider_price_before_discount, 2) AS food_before_discount,
-            ROUND(total_order_item_discount, 2) AS menu_discount,
+            ROUND(total_order_item_discount, 2) AS total_discount,
+            ROUND(COALESCE(demand_incentives_local, 0), 2) AS bolt_discount,
+            ROUND(provider_price_before_discount - provider_price_after_discount, 2) AS provider_discount,
             ROUND(provider_price_after_discount, 2) AS food_revenue,
             ROUND(commission_local, 2) AS fee_with_vat,
             ROUND(COALESCE(total_refunded_amount, 0), 2) AS refund,
@@ -175,9 +178,9 @@ def fetch_complaints(conn, provider_id):
 
 BAD_ORDER_TYPE_UA = {
     "late_delivery_order_15min": "Пізня доставка (>15 хв)",
-    "timing_quality_cs_ticket": "Скарга на час (CS тікет)",
-    "delivery_quality_cs_ticket": "Скарга на доставку (CS тікет)",
-    "order_quality_cs_ticket": "Скарга на якість (CS тікет)",
+    "timing_quality_cs_ticket": "Скарга на час доставки",
+    "delivery_quality_cs_ticket": "Скарга на доставку",
+    "order_quality_cs_ticket": "Скарга на якість замовлення",
     "missing_or_wrong_items_cs_ticket": "Відсутні/неправильні товари",
     "failed_order_after_provider_accepted": "Невдале після прийняття",
     "bad_rating_order": "Поганий рейтинг",
@@ -206,19 +209,68 @@ def translate_fault(f):
     return FAULT_UA.get(f, f)
 
 
+def clean_internal_info(text):
+    """Remove internal admin info, beehive links, agent names from comments."""
+    import re
+    if not text:
+        return ""
+    t = str(text)
+    t = re.sub(r'Admin:\s*[\w\s]+(?:Reason:\s*)?', '', t)
+    t = re.sub(r'https?://beehive\.bolt\.eu\S*', '', t)
+    t = re.sub(r'https?://\S*bolt\S*', '', t)
+    t = t.replace("\\n", " ").replace("\n", " ")
+    t = re.sub(r'\s{2,}', ' ', t).strip()
+    return t
+
+
+RATING_TAG_UA = {
+    "order took longer": "Довге очікування",
+    "unhappy with customer support": "Незадоволений підтримкою",
+    "did not receive a promised refund": "Не отримав обіцяний рефанд",
+    "my order arrived cold": "Замовлення прибуло холодним",
+    "good taste": "Смачно",
+    "perfect taste": "Чудовий смак",
+    "perfect portions": "Чудові порції",
+    "large portions": "Великі порції",
+    "bad taste": "Несмачно",
+    "small portions": "Малі порції",
+    "missing items": "Відсутні позиції",
+    "wrong items": "Неправильні позиції",
+}
+
+
+def translate_rating_tag(tag):
+    tag_clean = tag.strip().lower().replace("_", " ")
+    return RATING_TAG_UA.get(tag_clean, tag_clean.capitalize())
+
+
 def build_comment(row):
     parts = []
-    for field in ["provider_rating_comment", "refund_reason", "failed_order_comment",
-                   "succeeded_order_comment", "cs_ticket_type", "rating_tags", "missing_items"]:
+    for field in ["provider_rating_comment"]:
         val = row.get(field)
         if val and str(val) not in ("None", "nan", "", "[]"):
-            cleaned = str(val).replace("_eater", "").replace("_", " ").replace("[", "").replace("]", "").replace('"', '')
-            parts.append(cleaned)
+            parts.append(clean_internal_info(val))
+
+    refund = row.get("refund_reason")
+    if refund and str(refund) not in ("None", "nan", "", "[]"):
+        tags = [translate_rating_tag(t) for t in str(refund).split(",") if t.strip()]
+        parts.append(", ".join(tags))
+
+    for field in ["failed_order_comment", "succeeded_order_comment"]:
+        val = row.get(field)
+        if val and str(val) not in ("None", "nan", "", "[]"):
+            cleaned = clean_internal_info(val)
+            if cleaned:
+                parts.append(cleaned)
+
     highlights = row.get("provider_rating_highlights")
     if highlights and str(highlights) not in ("None", "nan", "", "[]"):
-        cleaned = str(highlights).replace("_eater", "").replace("_", " ").replace("[", "").replace("]", "").replace('"', '')
-        parts.append(f"Відгук: {cleaned}")
-    return " | ".join(parts) if parts else "—"
+        tags_raw = str(highlights).replace("[", "").replace("]", "").replace('"', '').split(",")
+        tags = [translate_rating_tag(t) for t in tags_raw if t.strip()]
+        if tags:
+            parts.append("Відгук: " + ", ".join(tags))
+
+    return " | ".join(p for p in parts if p) if parts else "—"
 
 
 def esc(val):
@@ -258,13 +310,31 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
     # Build orders table rows
     orders_rows = ""
     for r in orders_json:
+        bolt_disc = r.get('bolt_discount', 0) or 0
+        prov_disc = r.get('provider_discount', 0) or 0
+        total_disc = r.get('total_discount', 0) or 0
+        if total_disc > 0:
+            disc_parts = []
+            if bolt_disc > 0:
+                disc_parts.append(f"Bolt: {bolt_disc:,.0f}")
+            if prov_disc > 0:
+                disc_parts.append(f"Заклад: {prov_disc:,.0f}")
+            if not disc_parts:
+                disc_parts.append(f"{total_disc:,.0f}")
+            disc_text = " / ".join(disc_parts)
+        else:
+            disc_text = "—"
+
+        bp = r.get('bolt_plus', 'Ні')
+        bp_class = " class='bp'" if bp == 'Так' else ""
+
         orders_rows += (
             f"<tr>"
             f"<td>{esc(r.get('order_created_date',''))}</td>"
             f"<td>{esc(r.get('order_reference_id',''))}</td>"
-            f"<td>{esc(r.get('bolt_plus',''))}</td>"
+            f"<td{bp_class}>{bp}</td>"
             f"<td class='num'>{r.get('food_before_discount',''):,.2f}</td>"
-            f"<td class='num'>{r.get('menu_discount',''):,.2f}</td>"
+            f"<td class='num'>{disc_text}</td>"
             f"<td class='num'>{r.get('food_revenue',''):,.2f}</td>"
             f"<td class='num'>{r.get('fee_with_vat',''):,.2f}</td>"
             f"<td class='num'>{r.get('refund',''):,.2f}</td>"
@@ -337,6 +407,7 @@ td {{ padding:8px 12px; border-top:1px solid #293548; font-size:13px; }}
 td.num {{ text-align:right; font-variant-numeric:tabular-nums; }}
 td.highlight {{ color:#34d399; font-weight:600; }}
 td.comment-cell {{ white-space:normal; max-width:400px; font-size:12px; color:#cbd5e1; }}
+td.bp {{ color:#a78bfa; font-weight:600; }}
 tr:nth-child(even) {{ background:#1e293b; }}
 tr:nth-child(odd) {{ background:#162032; }}
 .empty {{ text-align:center; color:#64748b; padding:24px; }}
@@ -393,7 +464,7 @@ tr:nth-child(odd) {{ background:#162032; }}
     <table>
       <thead><tr>
         <th>Дата</th><th>Order Ref</th><th>Bolt+</th>
-        <th>Ціна до знижки</th><th>Знижка</th><th>Дохід від їжі</th>
+        <th>Ціна до знижки</th><th>Знижка (за чий рахунок)</th><th>Дохід від їжі</th>
         <th>Комісія (ПДВ)</th><th>Повернення</th><th>Чистий дохід</th>
       </tr></thead>
       <tbody>{orders_rows}</tbody>
