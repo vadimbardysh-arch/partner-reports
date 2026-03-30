@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cukor Black — Тижневий звіт</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }
+.header { text-align:center; margin-bottom:32px; }
+.header h1 { font-size:26px; font-weight:700; }
+.header .sub { color:#94a3b8; font-size:14px; margin-top:4px; }
+.header .updated { color:#64748b; font-size:12px; margin-top:8px; }
+.kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:28px; }
+.kpi { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:16px; text-align:center; }
+.kpi .value { font-size:28px; font-weight:700; color:#f8fafc; }
+.kpi .label { font-size:12px; color:#94a3b8; margin-top:4px; }
+.kpi.alert .value { color:#f87171; }
+.kpi.green .value { color:#34d399; }
+.charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:16px; margin-bottom:28px; }
+.chart-card { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:16px; }
+.chart-card h3 { font-size:14px; color:#94a3b8; margin-bottom:12px; }
+canvas { max-height:260px; }
+.section { margin-bottom:28px; }
+.section h2 { font-size:18px; margin-bottom:12px; color:#e2e8f0; }
+table { width:100%; border-collapse:collapse; background:#1e293b; border-radius:10px; overflow:hidden; }
+th { background:#334155; color:#94a3b8; font-size:12px; text-transform:uppercase; padding:10px 12px; text-align:left; }
+td { padding:10px 12px; border-top:1px solid #1e293b; font-size:13px; }
+tr:nth-child(even) { background:#1e293b; }
+tr:nth-child(odd) { background:#162032; }
+.empty { text-align:center; color:#64748b; padding:24px; }
+@media(max-width:600px) {
+  .charts { grid-template-columns:1fr; }
+  .kpi-grid { grid-template-columns:repeat(2,1fr); }
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Cukor Black</h1>
+  <div class="sub">Львів — Останні 4 тижні</div>
+  <div class="updated">Оновлено: 2026-03-30 14:49 UTC</div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi green"><div class="value">19.0</div><div class="label">Виконано замовлень</div></div>
+  <div class="kpi"><div class="value">1053 ₴</div><div class="label">Середній чек</div></div>
+  <div class="kpi"><div class="value">24.5 хв</div><div class="label">Час приготування</div></div>
+  <div class="kpi"><div class="value">394.12 €</div><div class="label">Дохід (GMV)</div></div>
+  <div class="kpi"><div class="value">88.47 €</div><div class="label">Чистий дохід</div></div>
+  <div class="kpi alert"><div class="value">0</div><div class="label">Скасовано</div></div>
+  <div class="kpi alert"><div class="value">4.0</div><div class="label">Скарги / Bad Orders</div></div>
+</div>
+
+<div class="charts">
+  <div class="chart-card">
+    <h3>Виконані замовлення по тижнях</h3>
+    <canvas id="ordersChart"></canvas>
+  </div>
+  <div class="chart-card">
+    <h3>Середній чек (₴) по тижнях</h3>
+    <canvas id="checkChart"></canvas>
+  </div>
+  <div class="chart-card">
+    <h3>Час приготування (хв) по тижнях</h3>
+    <canvas id="cookingChart"></canvas>
+  </div>
+  <div class="chart-card">
+    <h3>Дохід (€) по тижнях</h3>
+    <canvas id="revenueChart"></canvas>
+  </div>
+</div>
+
+<div class="section" id="cancelled-section">
+  <h2>Скасовані замовлення (0)</h2>
+  <p class='empty'>Немає скасованих замовлень за цей період</p>
+</div>
+
+<div class="section" id="bad-section">
+  <h2>Замовлення зі скаргами / Bad Orders (4)</h2>
+  <table><thead><tr><th>Дата</th><th>Order ID</th><th>Order Ref</th><th>Сума (₴)</th><th>Час прг. (хв)</th><th>Рейтинг</th><th>Тікет</th></tr></thead><tbody><tr><td>2026-03-08T00:00:00.000</td><td>292584535</td><td>NDUCP</td><td>1471.0</td><td>23.9</td><td>3.0</td><td>Так</td></tr><tr><td>2026-03-03T00:00:00.000</td><td>291552797</td><td>AEZUS</td><td>1195.0</td><td>41.1</td><td>—</td><td>Ні</td></tr><tr><td>2026-03-03T00:00:00.000</td><td>291571068</td><td>7F7T5</td><td>1086.0</td><td>38.8</td><td>—</td><td>Ні</td></tr><tr><td>2026-03-02T00:00:00.000</td><td>291375675</td><td>BFJL9</td><td>1250.0</td><td>40.2</td><td>—</td><td>Ні</td></tr></tbody></table>
+</div>
+
+<script>
+const weeks = ["2026-W10", "2026-W11", "2026-W12", "2026-W13"];
+const delivered = [9.0, 4.0, 3.0, 3.0];
+const avgCheck = [1085.0, 1023.0, 915.0, 1136.0];
+const cookingTime = [28.0, 20.4, 24.6, 19.4];
+const revWeeks = ["2026-W10", "2026-W11", "2026-W12", "2026-W13"];
+const gmvEur = [192.21, 80.32, 54.25, 67.34];
+const netEur = [39.61, 19.72, 10.15, 18.99];
+
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = '#334155';
+const barOpts = { responsive:true, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } };
+
+new Chart(document.getElementById('ordersChart'), {
+  type:'bar', data:{ labels:weeks, datasets:[{ data:delivered, backgroundColor:'#34d399', borderRadius:4 }] }, options:barOpts
+});
+new Chart(document.getElementById('checkChart'), {
+  type:'line', data:{ labels:weeks, datasets:[{ data:avgCheck, borderColor:'#60a5fa', backgroundColor:'rgba(96,165,250,0.1)', fill:true, tension:0.3, pointRadius:4 }] }, options:barOpts
+});
+new Chart(document.getElementById('cookingChart'), {
+  type:'line', data:{ labels:weeks, datasets:[{ data:cookingTime, borderColor:'#fbbf24', backgroundColor:'rgba(251,191,36,0.1)', fill:true, tension:0.3, pointRadius:4 }] }, options:barOpts
+});
+new Chart(document.getElementById('revenueChart'), {
+  type:'bar', data:{ labels:revWeeks, datasets:[
+    { label:'GMV', data:gmvEur, backgroundColor:'#818cf8', borderRadius:4 },
+    { label:'Чистий дохід', data:netEur, backgroundColor:'#34d399', borderRadius:4 }
+  ] }, options:{ ...barOpts, plugins:{ legend:{ display:true, position:'top' } } }
+});
+</script>
+</body>
+</html>

@@ -1,73 +1,58 @@
 <!DOCTYPE html>
 <html lang="uk">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Partner Reports</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0f172a;
-            color: #e2e8f0;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 60px 20px;
-        }
-        .logo { font-size: 48px; margin-bottom: 8px; }
-        h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
-        .subtitle { color: #94a3b8; font-size: 15px; margin-bottom: 48px; }
-        .reports-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 16px;
-            width: 100%;
-            max-width: 900px;
-        }
-        .report-card {
-            background: #1e293b;
-            border: 1px solid #334155;
-            border-radius: 12px;
-            padding: 24px;
-            text-decoration: none;
-            color: inherit;
-            transition: all 0.2s;
-        }
-        .report-card:hover {
-            border-color: #34d399;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(52, 211, 153, 0.1);
-        }
-        .report-card h3 { font-size: 18px; margin-bottom: 8px; }
-        .report-card p { color: #94a3b8; font-size: 13px; }
-        .badge {
-            display: inline-block;
-            background: #064e3b;
-            color: #34d399;
-            font-size: 11px;
-            padding: 3px 8px;
-            border-radius: 6px;
-            margin-top: 12px;
-        }
-        .empty-state {
-            text-align: center;
-            color: #64748b;
-            padding: 60px 20px;
-        }
-        .empty-state p { margin-top: 8px; font-size: 14px; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Partner Reports</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f172a; color:#e2e8f0; min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:60px 20px; }
+.logo { font-size:48px; margin-bottom:8px; }
+h1 { font-size:28px; font-weight:700; margin-bottom:6px; }
+.subtitle { color:#94a3b8; font-size:15px; margin-bottom:48px; }
+.reports-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px; width:100%; max-width:900px; }
+.report-card { background:#1e293b; border:1px solid #334155; border-radius:12px; padding:24px; text-decoration:none; color:inherit; transition:all 0.2s; }
+.report-card:hover { border-color:#34d399; transform:translateY(-2px); box-shadow:0 8px 24px rgba(52,211,153,0.1); }
+.report-card h3 { font-size:18px; margin-bottom:8px; }
+.report-card p { color:#94a3b8; font-size:13px; }
+.badge { display:inline-block; background:#064e3b; color:#34d399; font-size:11px; padding:3px 8px; border-radius:6px; margin-top:12px; }
+</style>
 </head>
 <body>
-    <div class="logo">📊</div>
-    <h1>Partner Reports</h1>
-    <p class="subtitle">Тижневі звіти для партнерів Bolt Food</p>
-
-    <div class="reports-grid" id="reports">
-        <div class="empty-state">
-            <p>Звіти будуть додані найближчим часом</p>
-        </div>
-    </div>
+<div class="logo">📊</div>
+<h1>Partner Reports</h1>
+<p class="subtitle">Тижневі звіти для партнерів</p>
+<div class="reports-grid">
+        <a class="report-card" href="cukor-black/">
+            <h3>Cukor Black</h3>
+            <p>Львів</p>
+            <span class="badge">Тижневий звіт</span>
+        </a>
+        <a class="report-card" href="cukor-red/">
+            <h3>Cukor Red</h3>
+            <p>Львів</p>
+            <span class="badge">Тижневий звіт</span>
+        </a>
+        <a class="report-card" href="epic-cheeseburger-cafe-dl/">
+            <h3>EPIC CHEESEBURGER CAFE DL</h3>
+            <p>Львів</p>
+            <span class="badge">Тижневий звіт</span>
+        </a>
+        <a class="report-card" href="epic-cheeseburger/">
+            <h3>Epic Cheeseburger</h3>
+            <p>Львів</p>
+            <span class="badge">Тижневий звіт</span>
+        </a>
+        <a class="report-card" href="teddy/">
+            <h3>TEDDY</h3>
+            <p>Львів</p>
+            <span class="badge">Тижневий звіт</span>
+        </a>
+        <a class="report-card" href="more-ryby/">
+            <h3>МОРЕ РИБИ</h3>
+            <p>Львів</p>
+            <span class="badge">Тижневий звіт</span>
+        </a>
+</div>
 </body>
 </html>

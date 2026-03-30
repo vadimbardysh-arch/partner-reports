@@ -1,0 +1,37 @@
+name: Update Partner Reports
+
+on:
+  schedule:
+    # Every Monday at 13:00 UTC
+    - cron: '0 13 * * 1'
+  workflow_dispatch:  # allows manual trigger from GitHub UI
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Generate reports
+        env:
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: python scripts/generate_reports.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet || git commit -m "Auto-update reports $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
