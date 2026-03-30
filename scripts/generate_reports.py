@@ -220,12 +220,15 @@ def clean_internal_info(text):
     if not text:
         return ""
     t = str(text)
-    t = re.sub(r'Admin:\s*[\w\s]+(?:Reason:\s*)?', '', t)
+    t = re.sub(r'Admin:\s*[A-Z][\w]*\s+[A-Z][\w]*\s*', '', t)
+    t = re.sub(r'Reason:\s*', '', t)
     t = re.sub(r'https?://beehive\.bolt\.eu\S*', '', t)
     t = re.sub(r'https?://\S*bolt\S*', '', t)
+    t = re.sub(r'https?://\S+', '', t)
     t = t.replace("\\n", " ").replace("\n", " ")
     t = re.sub(r'\s{2,}', ' ', t).strip()
-    return t
+    t = t.strip(" -,;:|")
+    return t if t else "—"
 
 
 RATING_TAG_UA = {
@@ -332,7 +335,9 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
             disc_text = "—"
 
         bp = r.get('bolt_plus', 'Ні')
-        bp_class = " class='bp'" if bp == 'Так' else ""
+        has_bp_promo = (r.get('bp_fee_net') or 0) > 0.5
+        bp_label = "Bolt Plus" if has_bp_promo else ("Так" if bp == 'Так' else "Ні")
+        bp_class = " class='bp'" if has_bp_promo else ""
 
         fee_net = r.get('fee_net', 0) or 0
         fee_gross = r.get('fee_gross', 0) or 0
@@ -349,7 +354,7 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
             f"<tr>"
             f"<td>{esc(r.get('order_created_date',''))}</td>"
             f"<td>{esc(r.get('order_reference_id',''))}</td>"
-            f"<td{bp_class}>{bp}</td>"
+            f"<td{bp_class}>{bp_label}</td>"
             f"<td class='num'>{r.get('food_before_discount',''):,.2f}</td>"
             f"<td class='num'>{disc_text}</td>"
             f"<td class='num'>{r.get('food_revenue',''):,.2f}</td>"
@@ -364,12 +369,14 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
     # Build cancelled table
     canc_rows = ""
     for r in cancelled_json:
+        raw_comment = r.get('comment') or ''
+        cleaned_comment = clean_internal_info(raw_comment) if raw_comment else "—"
         canc_rows += (
             f"<tr><td>{esc(r.get('order_created_date',''))}</td>"
             f"<td>{esc(r.get('order_reference_id',''))}</td>"
             f"<td>{esc(r.get('order_state',''))}</td>"
             f"<td>{esc(r.get('reason',''))}</td>"
-            f"<td>{esc(r.get('comment',''))}</td></tr>\n"
+            f"<td class='comment-cell'>{esc(cleaned_comment)}</td></tr>\n"
         )
 
     # Build complaints table
