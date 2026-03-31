@@ -300,6 +300,15 @@ def build_comment(row):
     return " | ".join(p for p in parts if p) if parts else "—"
 
 
+def week_sort_key(w):
+    """Sort '2026-W6' correctly by parsing year and week number."""
+    try:
+        parts = str(w).split("-W")
+        return (int(parts[0]), int(parts[1]))
+    except (IndexError, ValueError):
+        return (0, 0)
+
+
 def esc(val):
     if val is None:
         return "—"
@@ -310,6 +319,13 @@ def esc(val):
 
 def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
                   cancelled, complaints, generated_at, has_bp_campaign=False):
+    if len(weekly):
+        weekly = weekly.iloc[sorted(range(len(weekly)),
+                                    key=lambda i: week_sort_key(weekly.iloc[i]["order_week"]))]
+    if len(rev_weekly):
+        rev_weekly = rev_weekly.iloc[sorted(range(len(rev_weekly)),
+                                            key=lambda i: week_sort_key(rev_weekly.iloc[i]["order_week"]))]
+
     weeks = weekly["order_week"].tolist() if len(weekly) else []
     delivered = safe_list(weekly["delivered_orders"]) if len(weekly) else []
     avg_check = safe_list(weekly["avg_check_local"]) if len(weekly) else []
@@ -444,7 +460,7 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
             f"<td class='comment-cell'>{esc(comment)}</td></tr>\n"
         )
 
-    all_weeks_sorted = sorted(set(weeks) | set(rev_weeks))
+    all_weeks_sorted = sorted(set(weeks) | set(rev_weeks), key=week_sort_key)
 
     return f"""<!DOCTYPE html>
 <html lang="uk">
