@@ -98,12 +98,28 @@ def fetch_revenue_weekly(conn, provider_id):
     """)
 
 
+def fetch_has_bolt_plus_campaign(conn, provider_id):
+    """Check if any order for this provider has a Bolt Plus agency fee (>0.5 UAH)."""
+    df = query(conn, f"""
+        SELECT COUNT(*) AS cnt
+        FROM ng_delivery_spark.fact_order_delivery f
+        JOIN ng_public_spark.etl_delivery_order_monetary_metrics m ON f.order_id = m.order_id
+        WHERE f.provider_id = {provider_id}
+          AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+          AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
+          AND f.order_state = 'delivered'
+          AND (f.commission_local - m.provider_commission_net_eur * m.currency_rate) > 0.5
+    """)
+    return int(df.iloc[0]["cnt"]) > 0 if len(df) else False
+
+
 def fetch_orders_detail(conn, provider_id):
     return query(conn, f"""
         SELECT
             f.order_id,
             f.order_reference_id,
             f.order_created_date,
+            f.order_state,
             CASE WHEN f.is_bolt_plus_order THEN 'Так' ELSE 'Ні' END AS bolt_plus,
             f.is_bolt_plus_order,
             ROUND(f.provider_price_before_discount, 2) AS food_before_discount,
@@ -290,7 +306,7 @@ def esc(val):
 # ── HTML Generation ─────────────────────────────────────────────────────
 
 def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
-                  cancelled, complaints, generated_at):
+                  cancelled, complaints, generated_at, has_bp_campaign=False):
     weeks = weekly["order_week"].tolist() if len(weekly) else []
     delivered = safe_list(weekly["delivered_orders"]) if len(weekly) else []
     avg_check = safe_list(weekly["avg_check_local"]) if len(weekly) else []
@@ -316,7 +332,13 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
     complaints_json = safe_json(complaints) if len(complaints) else []
     orders_json = safe_json(orders_detail) if len(orders_detail) else []
 
-    # Build orders table rows
+    ORDER_STATE_UA = {
+        "delivered": "Доставлено",
+        "cancelled": "Скасовано",
+        "rejected": "Відхилено",
+        "failed": "Помилка",
+    }
+
     orders_rows = ""
     for r in orders_json:
         bolt_disc = r.get('bolt_discount', 0) or 0
@@ -334,10 +356,13 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
         else:
             disc_text = "—"
 
-        bp = r.get('bolt_plus', 'Ні')
-        has_bp_promo = (r.get('bp_fee_net') or 0) > 0.5
-        bp_label = "Bolt Plus" if has_bp_promo else ("Так" if bp == 'Так' else "Ні")
-        bp_class = " class='bp'" if has_bp_promo else ""
+        if has_bp_campaign:
+            order_bp_fee = (r.get('bp_fee_net') or 0) > 0.5
+            bp_label = "Bolt Plus" if order_bp_fee else "Ні"
+            bp_class = " class='bp'" if order_bp_fee else ""
+        else:
+            bp_label = "Ні"
+            bp_class = ""
 
         fee_net = r.get('fee_net', 0) or 0
         fee_gross = r.get('fee_gross', 0) or 0
@@ -348,12 +373,16 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
         total_fee = r.get('total_fee_gross', 0) or 0
 
         fee_text = f"{fee_net:,.0f} + {fee_vat:,.0f} = {fee_gross:,.0f}"
-        bp_text = f"{bp_fee_net:,.0f} + {bp_fee_vat:,.0f} = {bp_fee_gross:,.0f}" if bp_fee_net > 0.5 else "—"
+        bp_text = f"{bp_fee_net:,.0f} + {bp_fee_vat:,.0f} = {bp_fee_gross:,.0f}" if (has_bp_campaign and bp_fee_net > 0.5) else "—"
+
+        state_raw = r.get('order_state', 'delivered') or 'delivered'
+        state_ua = ORDER_STATE_UA.get(state_raw, state_raw)
 
         orders_rows += (
             f"<tr>"
             f"<td>{esc(r.get('order_created_date',''))}</td>"
             f"<td>{esc(r.get('order_reference_id',''))}</td>"
+            f"<td>{state_ua}</td>"
             f"<td{bp_class}>{bp_label}</td>"
             f"<td class='num'>{r.get('food_before_discount',''):,.2f}</td>"
             f"<td class='num'>{disc_text}</td>"
@@ -490,7 +519,7 @@ tr:nth-child(odd) {{ background:#162032; }}
   <div class="tbl-wrap scroll-table">
     <table>
       <thead><tr>
-        <th>Дата</th><th>Order Ref</th><th>Bolt+</th>
+        <th>Дата</th><th>Order Ref</th><th>Статус</th><th>Bolt+</th>
         <th>Ціна до знижки</th><th>Знижка (за чий рахунок)</th><th>Дохід від їжі</th>
         <th>Комісія (нетто+ПДВ=брутто)</th><th>Bolt Plus комісія</th><th>Всього комісія</th>
         <th>Повернення</th><th>Чистий дохід</th>
@@ -573,6 +602,9 @@ def main():
             folder = REPO_ROOT / info["slug"]
             folder.mkdir(parents=True, exist_ok=True)
 
+            has_bp = fetch_has_bolt_plus_campaign(conn, pid)
+            print(f"  Bolt Plus campaign: {'Yes' if has_bp else 'No'}")
+
             weekly = fetch_weekly_summary(conn, pid)
             print(f"  Weekly summary: {len(weekly)} weeks")
 
@@ -589,7 +621,8 @@ def main():
             print(f"  Complaints: {len(complaints)}")
 
             html = generate_html(pid, info, weekly, rev_weekly, orders_detail,
-                                 cancelled, complaints, generated_at)
+                                 cancelled, complaints, generated_at,
+                                 has_bp_campaign=has_bp)
             out_path = folder / "index.html"
             out_path.write_text(html, encoding="utf-8")
             print(f"  Saved: {out_path}")
