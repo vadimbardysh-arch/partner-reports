@@ -1,0 +1,841 @@
+"""
+Generate a multi-store weekly HTML report for BUREK by querying Databricks.
+Produces burek/index.html — a Ваш Лаваш-style dashboard without promo sections,
+with top-10 items per store.
+"""
+
+import os
+import json
+import math
+from pathlib import Path
+from datetime import datetime
+from decimal import Decimal
+
+from databricks import sql
+import pandas as pd
+
+from config import SERVER_HOSTNAME, HTTP_PATH
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+WEEKS_BACK = 8
+
+BUREK_PROVIDERS = {
+    120292: {"name": "BUREK / БУРЕК Ужгород", "short": "Ужгород", "city": "Uzhhorod"},
+    54553:  {"name": "Burek Патона", "short": "Патона", "city": "Lviv"},
+    37530:  {"name": "BUREK Академіка Сахарова", "short": "Акад. Сахарова", "city": "Lviv"},
+    46383:  {"name": "BUREK Садова", "short": "Садова", "city": "Lviv"},
+    70705:  {"name": "Burek Чернівецька", "short": "Чернівецька", "city": "Lviv"},
+    33647:  {"name": "BUREK Наукова", "short": "Наукова", "city": "Lviv"},
+    33643:  {"name": "BUREK Володимира Великого", "short": "Вол. Великого", "city": "Lviv"},
+    33656:  {"name": "BUREK Мазепи", "short": "Мазепи", "city": "Lviv"},
+    33650:  {"name": "BUREK Стрийська", "short": "Стрийська", "city": "Lviv"},
+    33655:  {"name": "BUREK Сихівська", "short": "Сихівська", "city": "Lviv"},
+    33640:  {"name": "BUREK Невелика", "short": "Невелика", "city": "Lviv"},
+}
+
+PROVIDER_IDS = ",".join(str(k) for k in BUREK_PROVIDERS)
+
+CITY_UA = {"Lviv": "Львів", "Uzhhorod": "Ужгород"}
+
+
+def connect():
+    token = os.environ.get("DATABRICKS_TOKEN")
+    if not token:
+        raise RuntimeError("DATABRICKS_TOKEN env var is required")
+    return sql.connect(
+        server_hostname=SERVER_HOSTNAME,
+        http_path=HTTP_PATH,
+        access_token=token,
+    )
+
+
+def query(conn, q):
+    with conn.cursor() as cur:
+        cur.execute(q)
+        cols = [d[0] for d in cur.description]
+        return pd.DataFrame(cur.fetchall(), columns=cols)
+
+
+def to_native(val, default=0):
+    if val is None:
+        return default
+    if isinstance(val, Decimal):
+        return float(val)
+    if hasattr(val, "item"):
+        return val.item()
+    try:
+        f = float(val)
+        return default if math.isnan(f) else f
+    except (TypeError, ValueError):
+        return str(val)
+
+
+# ── Queries ──────────────────────────────────────────────────────────────
+
+def fetch_weekly_per_store(conn):
+    return query(conn, f"""
+    SELECT
+      f.provider_id,
+      f.provider_name,
+      f.city_name,
+      f.order_week,
+      COUNT(*) AS orders,
+      ROUND(AVG(f.order_gmv), 0) AS avg_check,
+      ROUND(AVG(f.order_actual_cooking_time_minutes), 1) AS avg_cooking,
+      SUM(CASE WHEN f.is_bad_order = true THEN 1 ELSE 0 END) AS bad_orders
+    FROM ng_delivery_spark.fact_order_delivery f
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_state = 'delivered'
+    GROUP BY f.provider_id, f.provider_name, f.city_name, f.order_week
+    ORDER BY f.order_week, f.provider_id
+    """)
+
+
+def fetch_ops_metrics(conn):
+    return query(conn, f"""
+    SELECT
+      provider_id,
+      date,
+      ROUND(availability_rate_last_7d * 100, 1) AS availability,
+      ROUND(acceptance_rate_last_7d * 100, 1) AS acceptance,
+      ROUND(image_coverage_rate * 100, 1) AS photo_coverage
+    FROM ng_public_spark.etl_incentives_provider_targeting_features
+    WHERE provider_id IN ({PROVIDER_IDS})
+      AND date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    ORDER BY date, provider_id
+    """)
+
+
+def fetch_top_items(conn):
+    return query(conn, f"""
+    WITH ranked AS (
+      SELECT
+        f.provider_id,
+        COALESCE(GET_JSON_OBJECT(b.name_translations, '$.uk-UA'), b.name) AS item_name,
+        COUNT(*) AS qty,
+        ROUND(SUM(b.total_price), 0) AS revenue,
+        ROW_NUMBER() OVER (PARTITION BY f.provider_id ORDER BY COUNT(*) DESC) AS rn
+      FROM ng_delivery_spark.etl_delivery_order_user_basket_item_v2 b
+      JOIN ng_delivery_spark.fact_order_delivery f ON b.order_id = f.order_id
+      WHERE f.provider_id IN ({PROVIDER_IDS})
+        AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+        AND b.created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
+        AND f.order_state = 'delivered'
+        AND b.total_price IS NOT NULL
+        AND b.total_price > 0
+      GROUP BY f.provider_id, COALESCE(GET_JSON_OBJECT(b.name_translations, '$.uk-UA'), b.name)
+    )
+    SELECT provider_id, item_name, qty, revenue
+    FROM ranked WHERE rn <= 10
+    ORDER BY provider_id, qty DESC
+    """)
+
+
+# ── Build data for HTML ──────────────────────────────────────────────────
+
+def build_data(weekly_df, ops_df, items_df):
+    data = {}
+
+    stores_map = {}
+    for _, r in weekly_df.iterrows():
+        pid = to_native(r["provider_id"])
+        info = BUREK_PROVIDERS.get(int(pid), {})
+        stores_map[int(pid)] = {
+            "name": info.get("name", r["provider_name"]),
+            "short": info.get("short", r["provider_name"]),
+            "city": CITY_UA.get(r["city_name"], r["city_name"]),
+            "city_en": r["city_name"],
+        }
+    data["stores"] = stores_map
+
+    weekly = {}
+    for _, r in weekly_df.iterrows():
+        pid = int(to_native(r["provider_id"]))
+        week = str(r["order_week"])
+        if week not in weekly:
+            weekly[week] = {}
+        weekly[week][pid] = {
+            "orders": to_native(r["orders"]),
+            "avg_check": to_native(r["avg_check"]),
+            "avg_cooking": to_native(r["avg_cooking"]),
+            "bad_orders": to_native(r["bad_orders"]),
+        }
+    data["weekly"] = weekly
+
+    ops_weekly = {}
+    if len(ops_df):
+        ops_df["date_str"] = ops_df["date"].astype(str)
+        ops_df["dow"] = pd.to_datetime(ops_df["date"]).dt.dayofweek
+        mondays = ops_df[ops_df["dow"] == 0].copy()
+        if len(mondays) == 0:
+            mondays = ops_df.sort_values("date").drop_duplicates(subset=["provider_id"], keep="last")
+
+        for _, r in mondays.iterrows():
+            pid = int(to_native(r["provider_id"]))
+            ds = str(r["date_str"])
+            year = int(ds[:4])
+            iso_week = pd.Timestamp(ds).isocalendar().week
+            week_key = f"{year}-W{iso_week}"
+            if week_key not in ops_weekly:
+                ops_weekly[week_key] = {}
+            ops_weekly[week_key][pid] = {
+                "availability": to_native(r["availability"]),
+                "acceptance": to_native(r["acceptance"]),
+                "photo_coverage": to_native(r["photo_coverage"]),
+            }
+
+    latest_ops = {}
+    if len(ops_df):
+        latest = ops_df.sort_values("date").drop_duplicates(subset=["provider_id"], keep="last")
+        for _, r in latest.iterrows():
+            pid = int(to_native(r["provider_id"]))
+            latest_ops[pid] = {
+                "availability": to_native(r["availability"]),
+                "acceptance": to_native(r["acceptance"]),
+                "photo_coverage": to_native(r["photo_coverage"]),
+            }
+    data["ops_weekly"] = ops_weekly
+    data["latest_ops"] = latest_ops
+
+    top_items = {}
+    for _, r in items_df.iterrows():
+        pid = int(to_native(r["provider_id"]))
+        if pid not in top_items:
+            top_items[pid] = []
+        top_items[pid].append({
+            "name": str(r["item_name"]),
+            "qty": to_native(r["qty"]),
+            "revenue": to_native(r["revenue"]),
+        })
+    data["top_items"] = top_items
+
+    return data
+
+
+# ── HTML ─────────────────────────────────────────────────────────────────
+
+def generate_html(data, generated_at):
+    return f"""<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BUREK | тижневий звіт</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+:root{{
+  --green:#34D186;--green-bg:rgba(52,209,134,.08);--dark:#1A1D21;
+  --bg:#F3F4F6;--card:#FFF;--text:#111827;--text2:#6B7280;--border:#E5E7EB;
+  --pos:#10B981;--neg:#EF4444;--warn:#F59E0B;--blue:#3B82F6;--orange:#F97316;
+  --r:12px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+}}
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.5}}
+a{{text-decoration:none;color:inherit}}
+
+.header{{position:sticky;top:0;z-index:102;background:var(--card);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}}
+.header-left{{display:flex;align-items:center;gap:12px}}
+.header-left h1{{font-size:20px;font-weight:800;letter-spacing:-.3px}}
+.brand-dot{{width:10px;height:10px;border-radius:50%;background:var(--orange);display:inline-block}}
+.header-right{{display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
+#city-filter{{padding:8px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card);cursor:pointer;min-width:180px}}
+#city-filter:focus{{outline:none;border-color:var(--orange)}}
+.theme-toggle{{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 12px;font-size:16px;cursor:pointer;transition:all .15s;line-height:1}}
+.theme-toggle:hover{{background:var(--bg);color:var(--text)}}
+.last-update{{font-size:12px;color:var(--text2)}}
+
+.main-nav{{position:sticky;top:52px;z-index:100;background:var(--card);border-bottom:1px solid var(--border);display:flex;gap:0;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:0 16px}}
+.main-nav::-webkit-scrollbar{{display:none}}
+.nav-link{{padding:12px 16px;font-size:13px;font-weight:500;color:var(--text2);white-space:nowrap;border-bottom:2px solid transparent;transition:all .15s}}
+.nav-link:hover{{color:var(--text);background:var(--bg)}}
+.nav-link.active{{color:var(--orange);border-bottom-color:var(--orange)}}
+
+.week-bar{{position:sticky;top:94px;z-index:99;background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;padding:8px 16px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}}
+.week-bar::-webkit-scrollbar{{display:none}}
+.week-bar-label{{font-size:12px;font-weight:600;color:var(--text2);white-space:nowrap;margin-right:4px}}
+.week-pill{{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:500;background:var(--bg);color:var(--text2);cursor:pointer;white-space:nowrap;border:1px solid transparent;transition:all .15s;user-select:none}}
+.week-pill:hover{{background:rgba(249,115,22,.08);color:var(--orange)}}
+.week-pill.active{{background:var(--orange);color:#fff;border-color:var(--orange)}}
+
+.main-content{{max-width:1360px;margin:0 auto;padding:20px}}
+.section{{margin-bottom:32px}}
+.section-title{{font-size:18px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}}
+.section-icon{{font-size:20px}}
+
+.kpi-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:28px}}
+.kpi-card{{background:var(--card);border-radius:var(--r);padding:18px 20px;box-shadow:var(--shadow);border:1px solid var(--border)}}
+.kpi-label{{font-size:12px;color:var(--text2);font-weight:500;text-transform:uppercase;letter-spacing:.3px;margin-bottom:8px}}
+.kpi-value{{font-size:26px;font-weight:700;letter-spacing:-.5px;line-height:1.1}}
+.kpi-change{{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:600;margin-top:8px;padding:2px 8px;border-radius:20px}}
+.kpi-change.up{{color:var(--pos);background:rgba(16,185,129,.1)}}
+.kpi-change.down{{color:var(--neg);background:rgba(239,68,68,.1)}}
+.kpi-change.neutral{{color:var(--text2);background:var(--bg)}}
+
+.charts-grid{{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}}
+.chart-card{{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);border:1px solid var(--border);padding:20px;min-height:320px;display:flex;flex-direction:column}}
+.chart-card h3{{font-size:14px;font-weight:600;margin-bottom:14px;color:var(--text)}}
+.chart-card .chart-wrap{{flex:1;position:relative;min-height:240px}}
+.chart-card canvas{{width:100%!important}}
+
+.table-wrap{{overflow-x:auto;border-radius:var(--r);border:1px solid var(--border);background:var(--card)}}
+.data-table{{width:100%;border-collapse:collapse;font-size:13px}}
+.data-table th{{background:var(--bg);font-weight:600;text-align:left;padding:10px 14px;white-space:nowrap;border-bottom:1px solid var(--border);position:sticky;top:0}}
+.data-table td{{padding:9px 14px;border-bottom:1px solid var(--border);white-space:nowrap}}
+.data-table tr:last-child td{{border-bottom:none}}
+.data-table tr:hover td{{background:rgba(249,115,22,.04)}}
+.data-table tr.total-row td{{background:var(--bg);font-weight:700}}
+.data-table tr.total-row:hover td{{background:var(--bg)}}
+.cell-best{{background:rgba(16,185,129,.1)!important;font-weight:600}}
+.cell-worst{{background:rgba(239,68,68,.08)!important}}
+.text-right{{text-align:right}}
+.text-center{{text-align:center}}
+
+.section-insight{{background:linear-gradient(135deg,rgba(249,115,22,.06),rgba(59,130,246,.04));border:1px solid rgba(249,115,22,.15);border-radius:10px;padding:14px 18px;margin-bottom:16px;font-size:13px;line-height:1.6;color:var(--text)}}
+.section-insight b{{font-weight:600}}
+.insight-good{{color:var(--pos)}}
+.insight-bad{{color:var(--neg)}}
+
+.badge{{display:inline-flex;align-items:center;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}}
+.badge-orange{{background:rgba(249,115,22,.1);color:var(--orange)}}
+
+.store-filter-wrap{{margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
+.store-filter-wrap label{{font-size:12px;font-weight:600;color:var(--text2)}}
+.store-filter-wrap select{{padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;background:var(--card);cursor:pointer;min-width:200px}}
+
+.items-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}}
+.items-card{{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);border:1px solid var(--border);padding:16px;overflow:hidden}}
+.items-card h4{{font-size:14px;font-weight:700;margin-bottom:4px}}
+.items-card .items-city{{font-size:11px;color:var(--text2);margin-bottom:10px}}
+.items-card ol{{margin:0;padding-left:20px;font-size:12px}}
+.items-card li{{padding:3px 0;border-bottom:1px solid var(--border)}}
+.items-card li:last-child{{border-bottom:none}}
+.items-card .item-qty{{color:var(--orange);font-weight:600;float:right}}
+.items-card .item-rev{{color:var(--text2);font-size:11px;float:right;margin-right:8px}}
+
+body.dark{{--bg:#111827;--card:#1F2937;--text:#F9FAFB;--text2:#9CA3AF;--border:#374151;--shadow:0 1px 3px rgba(0,0,0,.3)}}
+body.dark .header{{background:var(--card)}}
+body.dark .main-nav{{background:var(--card)}}
+body.dark .week-bar{{background:var(--card)}}
+body.dark .data-table th{{background:#111827}}
+body.dark #city-filter{{background:var(--card);color:var(--text);border-color:var(--border)}}
+body.dark .section-insight{{background:linear-gradient(135deg,rgba(249,115,22,.08),rgba(59,130,246,.06));border-color:rgba(249,115,22,.2)}}
+body.dark .week-pill{{background:#374151;color:var(--text2)}}
+body.dark .chart-card{{background:var(--card)}}
+body.dark .kpi-card{{background:var(--card)}}
+body.dark .items-card{{background:var(--card)}}
+
+@media(max-width:900px){{
+  .charts-grid{{grid-template-columns:1fr}}
+  .kpi-grid{{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}}
+  .header{{padding:12px 16px}}
+  .main-content{{padding:14px}}
+  .items-grid{{grid-template-columns:1fr}}
+}}
+@media(max-width:600px){{
+  .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
+  .kpi-value{{font-size:20px}}
+  .header-left h1{{font-size:16px}}
+}}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <span class="brand-dot"></span>
+    <h1>BUREK | тижневий звіт</h1>
+  </div>
+  <div class="header-right">
+    <select id="city-filter"><option value="__all__">Всі міста</option></select>
+    <button class="theme-toggle" id="theme-toggle" onclick="toggleDark()">🌙</button>
+    <span class="last-update">Оновлено: {generated_at}</span>
+  </div>
+</header>
+
+<nav class="main-nav" id="main-nav">
+  <a href="#kpis" class="nav-link active">Огляд</a>
+  <a href="#orders-section" class="nav-link">Замовлення</a>
+  <a href="#ops-section" class="nav-link">Операції</a>
+  <a href="#stores-section" class="nav-link">Деталі закладів</a>
+  <a href="#items-section" class="nav-link">Топ позиції</a>
+</nav>
+
+<div class="week-bar" id="week-bar">
+  <div class="week-bar-label">Тиждень:</div>
+</div>
+
+<main class="main-content">
+  <section id="kpis" class="section">
+    <div class="kpi-grid" id="kpi-grid"></div>
+  </section>
+
+  <section id="orders-section" class="section">
+    <div class="section-title"><span class="section-icon">📦</span> Замовлення</div>
+    <div class="section-insight" id="insight-orders"></div>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Замовлення по тижнях</h3><div class="chart-wrap"><canvas id="chart-orders"></canvas></div></div>
+      <div class="chart-card"><h3>Середній чек (₴) по тижнях</h3><div class="chart-wrap"><canvas id="chart-avg-check"></canvas></div></div>
+    </div>
+  </section>
+
+  <section id="ops-section" class="section">
+    <div class="section-title"><span class="section-icon">⚙️</span> Операційні показники</div>
+    <div class="section-insight" id="insight-ops"></div>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Доступність та Прийняття (%)</h3><div class="chart-wrap"><canvas id="chart-ops-rates"></canvas></div></div>
+      <div class="chart-card"><h3>Рівень поганих замовлень (%)</h3><div class="chart-wrap"><canvas id="chart-bad-orders"></canvas></div></div>
+    </div>
+  </section>
+
+  <section id="stores-section" class="section">
+    <div class="section-title"><span class="section-icon">🏪</span> Деталі по закладах <span id="stores-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="table-wrap" id="stores-table-wrap"></div>
+  </section>
+
+  <section id="items-section" class="section">
+    <div class="section-title"><span class="section-icon">🍽️</span> Топ-10 позицій по закладах</div>
+    <div class="section-insight">Найпопулярніші позиції за останні {WEEKS_BACK} тижнів. Кількість замовлених одиниць та виручка (₴).</div>
+    <div class="items-grid" id="items-grid"></div>
+  </section>
+</main>
+
+<script>
+const D = {json.dumps(data, ensure_ascii=False)};
+
+const CITY_UA = {{"Lviv":"Львів","Uzhhorod":"Ужгород"}};
+let allWeeks = Object.keys(D.weekly).sort();
+let selectedWeekIdx = allWeeks.length - 1;
+let selectedCity = '__all__';
+let chartInstances = {{}};
+
+function getSelectedWeek() {{ return allWeeks.length ? allWeeks[selectedWeekIdx >= 0 ? selectedWeekIdx : allWeeks.length - 1] : null; }}
+function cityUA(c) {{ return CITY_UA[c] || c; }}
+
+function populateCityFilter() {{
+  const sel = document.getElementById('city-filter');
+  sel.innerHTML = '<option value="__all__">Всі міста</option>';
+  const cities = new Set(Object.values(D.stores).map(s => s.city_en));
+  [...cities].sort().forEach(c => {{
+    const o = document.createElement('option');
+    o.value = c; o.textContent = cityUA(c);
+    sel.appendChild(o);
+  }});
+}}
+
+function getFilteredStoreIds() {{
+  if (selectedCity === '__all__') return Object.keys(D.stores).map(Number);
+  return Object.entries(D.stores).filter(([_, s]) => s.city_en === selectedCity).map(([id]) => Number(id));
+}}
+
+function getFilteredWeeks() {{
+  const ids = getFilteredStoreIds();
+  return allWeeks.filter(w => {{
+    const wd = D.weekly[w] || {{}};
+    return ids.some(id => wd[id]);
+  }});
+}}
+
+function populateWeekBar() {{
+  const bar = document.getElementById('week-bar');
+  let html = '<div class="week-bar-label">Тиждень:</div>';
+  const weeks = getFilteredWeeks();
+  weeks.forEach(w => {{
+    const idx = allWeeks.indexOf(w);
+    html += '<div class="week-pill' + (idx === selectedWeekIdx ? ' active' : '') + '" data-idx="' + idx + '">' + w + '</div>';
+  }});
+  bar.innerHTML = html;
+  bar.querySelectorAll('.week-pill').forEach(pill => {{
+    pill.addEventListener('click', () => {{
+      selectedWeekIdx = parseInt(pill.dataset.idx);
+      bar.querySelectorAll('.week-pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      renderAll();
+    }});
+  }});
+  const active = bar.querySelector('.week-pill.active');
+  if (active) active.scrollIntoView({{ behavior: 'smooth', block: 'nearest', inline: 'center' }});
+}}
+
+function destroyChart(id) {{ if (chartInstances[id]) {{ chartInstances[id].destroy(); delete chartInstances[id]; }} }}
+
+function wow(cur, prev, dir) {{
+  if (!prev || prev === 0) return {{ cls: 'neutral', text: '— WoW' }};
+  const chg = ((cur - prev) / Math.abs(prev)) * 100;
+  const good = (dir === 'up' && chg > 0) || (dir === 'down' && chg < 0);
+  const bad = (dir === 'up' && chg < 0) || (dir === 'down' && chg > 0);
+  const cls = good ? 'up' : bad ? 'down' : 'neutral';
+  const arrow = chg > 0 ? '↑' : chg < 0 ? '↓' : '';
+  return {{ cls, text: arrow + ' ' + Math.abs(chg).toFixed(1) + '% WoW' }};
+}}
+
+function renderKPIs() {{
+  const ids = getFilteredStoreIds();
+  const selW = getSelectedWeek();
+  const prevIdx = allWeeks.indexOf(selW) - 1;
+  const prevW = prevIdx >= 0 ? allWeeks[prevIdx] : null;
+  const wd = D.weekly[selW] || {{}};
+  const pd = prevW ? (D.weekly[prevW] || {{}}) : {{}};
+
+  let curOrders = 0, curCheck = 0, curCooking = 0, curBad = 0, cnt = 0;
+  let prevOrders = 0, prevCheck = 0, prevCooking = 0, prevBad = 0, pcnt = 0;
+  ids.forEach(id => {{
+    if (wd[id]) {{ curOrders += wd[id].orders; curCheck += wd[id].avg_check * wd[id].orders; curCooking += wd[id].avg_cooking * wd[id].orders; curBad += wd[id].bad_orders; cnt += wd[id].orders; }}
+    if (pd[id]) {{ prevOrders += pd[id].orders; prevCheck += pd[id].avg_check * pd[id].orders; prevCooking += pd[id].avg_cooking * pd[id].orders; prevBad += pd[id].bad_orders; pcnt += pd[id].orders; }}
+  }});
+  const avgChk = cnt > 0 ? curCheck / cnt : 0;
+  const avgCook = cnt > 0 ? curCooking / cnt : 0;
+  const badRate = curOrders > 0 ? (curBad / curOrders * 100) : 0;
+  const prevAvgChk = pcnt > 0 ? prevCheck / pcnt : 0;
+  const prevAvgCook = pcnt > 0 ? prevCooking / pcnt : 0;
+  const prevBadRate = prevOrders > 0 ? (prevBad / prevOrders * 100) : 0;
+  const storeCount = ids.filter(id => wd[id]).length;
+
+  let avgAvail = 0, avgAccept = 0, aCnt = 0;
+  ids.forEach(id => {{
+    const lo = D.latest_ops[id];
+    if (lo) {{ avgAvail += lo.availability; avgAccept += lo.acceptance; aCnt++; }}
+  }});
+  if (aCnt > 0) {{ avgAvail /= aCnt; avgAccept /= aCnt; }}
+
+  const kpis = [
+    {{ label: 'Замовлення', value: curOrders.toLocaleString('uk-UA'), ...wow(curOrders, prevOrders, 'up') }},
+    {{ label: 'Середній чек', value: '₴' + avgChk.toFixed(0), ...wow(avgChk, prevAvgChk, 'up') }},
+    {{ label: 'Час приготування', value: avgCook.toFixed(1) + ' хв', ...wow(avgCook, prevAvgCook, 'down') }},
+    {{ label: 'Доступність', value: avgAvail.toFixed(1) + '%', cls: avgAvail >= 90 ? 'up' : 'down', text: 'середнє по закладах' }},
+    {{ label: 'Прийняття', value: avgAccept.toFixed(1) + '%', cls: avgAccept >= 90 ? 'up' : 'down', text: 'середнє по закладах' }},
+    {{ label: 'Погані замовлення', value: badRate.toFixed(1) + '%', ...wow(badRate, prevBadRate, 'down') }},
+    {{ label: 'Активних закладів', value: storeCount, cls: 'neutral', text: 'за обраний тиждень' }},
+  ];
+
+  document.getElementById('kpi-grid').innerHTML = kpis.map(k =>
+    '<div class="kpi-card"><div class="kpi-label">' + k.label + '</div><div class="kpi-value">' + k.value + '</div>' +
+    '<span class="kpi-change ' + k.cls + '">' + k.text + '</span></div>'
+  ).join('');
+}}
+
+function renderOrdersCharts() {{
+  const ids = getFilteredStoreIds();
+  const weeks = getFilteredWeeks();
+
+  destroyChart('chart-orders');
+  const ordersData = weeks.map(w => {{
+    const wd = D.weekly[w] || {{}};
+    return ids.reduce((s, id) => s + (wd[id] ? wd[id].orders : 0), 0);
+  }});
+  chartInstances['chart-orders'] = new Chart(document.getElementById('chart-orders'), {{
+    type: 'bar',
+    data: {{ labels: weeks, datasets: [{{ label: 'Замовлення', data: ordersData, backgroundColor: 'rgba(249,115,22,.7)', borderColor: '#F97316', borderWidth: 1, borderRadius: 6, barPercentage: .6 }}] }},
+    options: {{ responsive: true, maintainAspectRatio: false, plugins: {{ legend: {{ display: false }} }}, scales: {{ y: {{ beginAtZero: true, grid: {{ color: 'rgba(0,0,0,.05)' }} }}, x: {{ grid: {{ display: false }} }} }} }}
+  }});
+
+  destroyChart('chart-avg-check');
+  const checkData = weeks.map(w => {{
+    const wd = D.weekly[w] || {{}};
+    let sum = 0, cnt = 0;
+    ids.forEach(id => {{ if (wd[id]) {{ sum += wd[id].avg_check * wd[id].orders; cnt += wd[id].orders; }} }});
+    return cnt > 0 ? Math.round(sum / cnt) : 0;
+  }});
+  chartInstances['chart-avg-check'] = new Chart(document.getElementById('chart-avg-check'), {{
+    type: 'line',
+    data: {{ labels: weeks, datasets: [{{ label: 'Середній чек', data: checkData, borderColor: '#3B82F6', backgroundColor: 'rgba(59,130,246,.08)', fill: true, tension: .35, pointRadius: 4, pointBackgroundColor: '#3B82F6', borderWidth: 2.5 }}] }},
+    options: {{ responsive: true, maintainAspectRatio: false, plugins: {{ legend: {{ display: false }} }}, scales: {{ y: {{ beginAtZero: false, grid: {{ color: 'rgba(0,0,0,.05)' }}, ticks: {{ callback: v => '₴' + v }} }}, x: {{ grid: {{ display: false }} }} }} }}
+  }});
+}}
+
+function renderOpsCharts() {{
+  const ids = getFilteredStoreIds();
+  const weeks = getFilteredWeeks();
+
+  const avgByWeek = (field) => weeks.map(w => {{
+    const ow = D.ops_weekly[w] || {{}};
+    let sum = 0, cnt = 0;
+    ids.forEach(id => {{ if (ow[id]) {{ sum += ow[id][field]; cnt++; }} }});
+    return cnt > 0 ? +(sum / cnt).toFixed(1) : null;
+  }});
+
+  const badRates = weeks.map(w => {{
+    const wd = D.weekly[w] || {{}};
+    let ord = 0, bad = 0;
+    ids.forEach(id => {{ if (wd[id]) {{ ord += wd[id].orders; bad += wd[id].bad_orders; }} }});
+    return ord > 0 ? +(bad / ord * 100).toFixed(1) : 0;
+  }});
+
+  destroyChart('chart-ops-rates');
+  chartInstances['chart-ops-rates'] = new Chart(document.getElementById('chart-ops-rates'), {{
+    type: 'line',
+    data: {{ labels: weeks, datasets: [
+      {{ label: 'Доступність', data: avgByWeek('availability'), borderColor: '#F97316', backgroundColor: 'rgba(249,115,22,.08)', fill: true, tension: .35, pointRadius: 4, pointBackgroundColor: '#F97316', borderWidth: 2.5 }},
+      {{ label: 'Прийняття', data: avgByWeek('acceptance'), borderColor: '#3B82F6', backgroundColor: 'rgba(59,130,246,.06)', fill: true, tension: .35, pointRadius: 4, pointBackgroundColor: '#3B82F6', borderWidth: 2.5 }}
+    ] }},
+    options: {{ responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend: {{ position: 'bottom', labels: {{ usePointStyle: true, padding: 12, font: {{ size: 11 }} }} }} }},
+      scales: {{ y: {{ beginAtZero: true, max: 100, grid: {{ color: 'rgba(0,0,0,.05)' }}, ticks: {{ callback: v => v + '%' }} }}, x: {{ grid: {{ display: false }} }} }} }}
+  }});
+
+  destroyChart('chart-bad-orders');
+  chartInstances['chart-bad-orders'] = new Chart(document.getElementById('chart-bad-orders'), {{
+    type: 'line',
+    data: {{ labels: weeks, datasets: [
+      {{ label: 'Погані замовлення', data: badRates, borderColor: '#EF4444', backgroundColor: 'rgba(239,68,68,.06)', fill: true, tension: .35, pointRadius: 4, pointBackgroundColor: '#EF4444', borderWidth: 2.5 }}
+    ] }},
+    options: {{ responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend: {{ display: false }} }},
+      scales: {{ y: {{ beginAtZero: true, grid: {{ color: 'rgba(0,0,0,.05)' }}, ticks: {{ callback: v => v + '%' }} }}, x: {{ grid: {{ display: false }} }} }} }}
+  }});
+}}
+
+function renderInsights() {{
+  const ids = getFilteredStoreIds();
+  const selW = getSelectedWeek();
+  const prevIdx = allWeeks.indexOf(selW) - 1;
+  const prevW = prevIdx >= 0 ? allWeeks[prevIdx] : null;
+  const wd = D.weekly[selW] || {{}};
+  const pd = prevW ? (D.weekly[prevW] || {{}}) : {{}};
+
+  let curOrd = 0, prevOrd = 0;
+  ids.forEach(id => {{
+    if (wd[id]) curOrd += wd[id].orders;
+    if (pd[id]) prevOrd += pd[id].orders;
+  }});
+  const ordChg = prevOrd > 0 ? ((curOrd - prevOrd) / prevOrd * 100) : null;
+
+  function cs(chg, dir) {{
+    if (chg == null) return '';
+    const good = (dir === 'up' && chg > 0) || (dir === 'down' && chg < 0);
+    const cls = good ? 'insight-good' : 'insight-bad';
+    return '<b class="' + cls + '">' + (chg > 0 ? '+' : '') + chg.toFixed(1) + '%</b>';
+  }}
+
+  let o = '<b>' + selW + '</b>. ';
+  o += 'Доставлено <b>' + curOrd + '</b> замовлень (' + cs(ordChg, 'up') + ' WoW). ';
+  if (ordChg != null && ordChg < -10) o += '<span class="insight-bad">Суттєве падіння замовлень.</span>';
+  else if (ordChg != null && ordChg > 10) o += '<span class="insight-good">Гарне зростання!</span>';
+  document.getElementById('insight-orders').innerHTML = o;
+
+  let avgAvail = 0, avgAccept = 0, aCnt = 0, bad = 0, ord = 0;
+  ids.forEach(id => {{
+    const lo = D.latest_ops[id];
+    if (lo) {{ avgAvail += lo.availability; avgAccept += lo.acceptance; aCnt++; }}
+    if (wd[id]) {{ bad += wd[id].bad_orders; ord += wd[id].orders; }}
+  }});
+  if (aCnt > 0) {{ avgAvail /= aCnt; avgAccept /= aCnt; }}
+  const badRate = ord > 0 ? (bad / ord * 100) : 0;
+
+  let ops = '<b>' + selW + '</b>. ';
+  ops += 'Доступність — <b>' + avgAvail.toFixed(1) + '%</b>. Прийняття — <b>' + avgAccept.toFixed(1) + '%</b>. Погані замовлення — <b>' + badRate.toFixed(1) + '%</b>. ';
+  if (avgAvail < 80) ops += '<span class="insight-bad">Доступність критично низька!</span> ';
+  else if (avgAvail >= 95) ops += '<span class="insight-good">Відмінна доступність!</span> ';
+  if (badRate > 15) ops += '<span class="insight-bad">Високий рівень поганих замовлень.</span>';
+  document.getElementById('insight-ops').innerHTML = ops;
+}}
+
+function renderStoresTable() {{
+  const ids = getFilteredStoreIds();
+  const selW = getSelectedWeek();
+  const prevIdx = allWeeks.indexOf(selW) - 1;
+  const prevW = prevIdx >= 0 ? allWeeks[prevIdx] : null;
+  document.getElementById('stores-week-label').textContent = '— ' + selW + (prevW ? ' (WoW до ' + prevW + ')' : '');
+  const wd = D.weekly[selW] || {{}};
+  const pd = prevW ? (D.weekly[prevW] || {{}}) : {{}};
+
+  const rows = ids.filter(id => wd[id]).map(id => ({{
+    id, ...D.stores[id], ...wd[id],
+    ops: D.latest_ops[id] || {{}},
+    prev: pd[id] || null
+  }})).sort((a, b) => b.orders - a.orders);
+
+  function wBadge(cur, prev, dir) {{
+    if (!prev || prev === 0) return '';
+    const chg = ((cur - prev) / Math.abs(prev)) * 100;
+    const good = (dir === 'up' && chg > 0) || (dir === 'down' && chg < 0);
+    const color = good ? 'var(--pos)' : 'var(--neg)';
+    const bg = good ? 'rgba(16,185,129,.1)' : 'rgba(239,68,68,.08)';
+    const arrow = chg > 0 ? '↑' : '↓';
+    return ' <span style="font-size:10px;font-weight:600;color:' + color + ';background:' + bg + ';padding:1px 5px;border-radius:10px">' + arrow + Math.abs(chg).toFixed(0) + '%</span>';
+  }}
+
+  let t = '<table class="data-table"><thead><tr><th>#</th><th>Заклад</th><th>Місто</th><th class="text-right">Замовлення</th><th class="text-right">Сер. чек</th><th class="text-right">Час приг.</th><th class="text-right">Доступність</th><th class="text-right">Прийняття</th><th class="text-right">Фото</th><th class="text-right">Погані зам.</th></tr></thead><tbody>';
+  let totOrd = 0, totBad = 0;
+  rows.forEach((d, i) => {{
+    const badRate = d.orders > 0 ? (d.bad_orders / d.orders * 100) : 0;
+    totOrd += d.orders; totBad += d.bad_orders;
+    t += '<tr><td>' + (i + 1) + '</td><td>' + d.short + '</td><td>' + d.city + '</td>';
+    t += '<td class="text-right">' + d.orders + (d.prev ? wBadge(d.orders, d.prev.orders, 'up') : '') + '</td>';
+    t += '<td class="text-right">₴' + d.avg_check + '</td>';
+    t += '<td class="text-right">' + d.avg_cooking + ' хв</td>';
+    t += '<td class="text-right">' + (d.ops.availability != null ? d.ops.availability.toFixed(1) + '%' : '—') + '</td>';
+    t += '<td class="text-right">' + (d.ops.acceptance != null ? d.ops.acceptance.toFixed(1) + '%' : '—') + '</td>';
+    t += '<td class="text-right">' + (d.ops.photo_coverage != null ? d.ops.photo_coverage.toFixed(1) + '%' : '—') + '</td>';
+    t += '<td class="text-right">' + badRate.toFixed(1) + '%</td></tr>';
+  }});
+  const totalBadRate = totOrd > 0 ? (totBad / totOrd * 100) : 0;
+  t += '<tr class="total-row"><td></td><td colspan="2">Всього</td><td class="text-right">' + totOrd + '</td><td colspan="5"></td><td class="text-right">' + totalBadRate.toFixed(1) + '%</td></tr>';
+  t += '</tbody></table>';
+  document.getElementById('stores-table-wrap').innerHTML = t;
+}}
+
+function renderTopItems() {{
+  const ids = getFilteredStoreIds();
+  let html = '';
+  ids.forEach(id => {{
+    const items = D.top_items[id];
+    if (!items || !items.length) return;
+    const s = D.stores[id];
+    html += '<div class="items-card"><h4>' + s.short + '</h4><div class="items-city">' + s.city + '</div><ol>';
+    items.forEach(it => {{
+      html += '<li>' + it.name + '<span class="item-qty">' + it.qty + ' шт</span><span class="item-rev">₴' + it.revenue.toLocaleString('uk-UA') + '</span></li>';
+    }});
+    html += '</ol></div>';
+  }});
+  document.getElementById('items-grid').innerHTML = html || '<p style="color:var(--text2);padding:24px;text-align:center">Немає даних.</p>';
+}}
+
+function renderAll() {{
+  renderKPIs();
+  renderInsights();
+  renderOrdersCharts();
+  renderOpsCharts();
+  renderStoresTable();
+  renderTopItems();
+}}
+
+function setupNav() {{
+  const links = document.querySelectorAll('.nav-link');
+  links.forEach(a => {{
+    a.addEventListener('click', e => {{
+      e.preventDefault();
+      const id = a.getAttribute('href').substring(1);
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+      links.forEach(l => l.classList.remove('active'));
+      a.classList.add('active');
+    }});
+  }});
+  const observer = new IntersectionObserver(entries => {{
+    entries.forEach(en => {{
+      if (en.isIntersecting) {{
+        const id = en.target.id;
+        links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + id));
+      }}
+    }});
+  }}, {{ rootMargin: '-140px 0px -70% 0px' }});
+  document.querySelectorAll('.section').forEach(s => observer.observe(s));
+}}
+
+document.getElementById('city-filter').addEventListener('change', function() {{
+  selectedCity = this.value;
+  populateWeekBar();
+  renderAll();
+}});
+
+window.toggleDark = function() {{
+  document.body.classList.toggle('dark');
+  const isDark = document.body.classList.contains('dark');
+  document.getElementById('theme-toggle').textContent = isDark ? '☀️' : '🌙';
+  try {{ localStorage.setItem('burek-dark', isDark ? '1' : '0') }} catch(e) {{}}
+  Chart.defaults.color = isDark ? '#D1D5DB' : '#374151';
+  renderAll();
+}};
+(function() {{ try {{ if (localStorage.getItem('burek-dark') === '1') {{ document.body.classList.add('dark'); document.getElementById('theme-toggle').textContent = '☀️'; Chart.defaults.color = '#D1D5DB'; }} }} catch(e) {{}} }})();
+
+populateCityFilter();
+populateWeekBar();
+setupNav();
+renderAll();
+</script>
+</body>
+</html>"""
+
+
+# ── Main ─────────────────────────────────────────────────────────────────
+
+def main():
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
+    print(f"Starting BUREK report generation at {generated_at}")
+
+    conn = connect()
+    try:
+        print("  Fetching weekly per-store data…")
+        weekly_df = fetch_weekly_per_store(conn)
+        print(f"  → {len(weekly_df)} rows")
+
+        print("  Fetching operational metrics…")
+        ops_df = fetch_ops_metrics(conn)
+        print(f"  → {len(ops_df)} rows")
+
+        print("  Fetching top items…")
+        items_df = fetch_top_items(conn)
+        print(f"  → {len(items_df)} rows")
+    finally:
+        conn.close()
+
+    data = build_data(weekly_df, ops_df, items_df)
+    html = generate_html(data, generated_at)
+
+    out_dir = REPO_ROOT / "burek"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "index.html"
+    out_path.write_text(html, encoding="utf-8")
+    print(f"  Saved: {out_path}")
+
+    update_root_index()
+    print("\nDone!")
+
+
+def update_root_index():
+    """Re-generate the root index.html to include BUREK."""
+    from config import PROVIDERS
+
+    all_partners = {}
+    for pid, info in PROVIDERS.items():
+        all_partners[info["slug"]] = {"name": info["name"], "city": info["city"]}
+    all_partners["burek"] = {"name": "BUREK", "city": "Львів / Ужгород"}
+
+    cards = ""
+    for slug in sorted(all_partners, key=lambda s: all_partners[s]["name"]):
+        info = all_partners[slug]
+        cards += f"""
+    <a href="{slug}/index.html" class="report-card">
+      <h3>{info['name']}</h3>
+      <p>{info['city']}</p>
+      <span class="badge">Тижневий звіт</span>
+    </a>"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Partner Reports</title>
+<style>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f172a; color:#e2e8f0; min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:60px 20px; }}
+.logo {{ font-size:48px; margin-bottom:8px; }}
+h1 {{ font-size:28px; font-weight:700; margin-bottom:6px; }}
+.subtitle {{ color:#94a3b8; font-size:15px; margin-bottom:48px; }}
+.reports-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px; width:100%; max-width:900px; }}
+.report-card {{ background:#1e293b; border:1px solid #334155; border-radius:12px; padding:24px; text-decoration:none; color:inherit; transition:all 0.2s; }}
+.report-card:hover {{ border-color:#34d399; transform:translateY(-2px); box-shadow:0 8px 24px rgba(52,211,153,0.1); }}
+.report-card h3 {{ font-size:18px; margin-bottom:8px; }}
+.report-card p {{ color:#94a3b8; font-size:13px; }}
+.badge {{ display:inline-block; background:#064e3b; color:#34d399; font-size:11px; padding:3px 8px; border-radius:6px; margin-top:12px; }}
+</style>
+</head>
+<body>
+<div class="logo">📊</div>
+<h1>Partner Reports</h1>
+<div class="subtitle">Тижневі звіти для партнерів</div>
+<div class="reports-grid">
+{cards}
+</div>
+</body>
+</html>"""
+    (REPO_ROOT / "index.html").write_text(html, encoding="utf-8")
+    print("  Updated root index.html")
+
+
+if __name__ == "__main__":
+    main()

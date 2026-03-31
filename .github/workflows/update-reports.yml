@@ -23,10 +23,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
 
-      - name: Generate reports
+      - name: Generate single-provider reports
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_reports.py
+
+      - name: Generate BUREK multi-store report
+        env:
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: python scripts/generate_burek.py
 
       - name: Commit and push
         run: |
