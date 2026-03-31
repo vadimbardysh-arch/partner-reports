@@ -136,10 +136,11 @@ def fetch_top_items(conn):
     WITH ranked AS (
       SELECT
         f.provider_id,
+        f.order_week,
         COALESCE(GET_JSON_OBJECT(b.name_translations, '$.uk-UA'), b.name) AS item_name,
         COUNT(*) AS qty,
         ROUND(SUM(b.total_price), 0) AS revenue,
-        ROW_NUMBER() OVER (PARTITION BY f.provider_id ORDER BY COUNT(*) DESC) AS rn
+        ROW_NUMBER() OVER (PARTITION BY f.provider_id, f.order_week ORDER BY COUNT(*) DESC) AS rn
       FROM ng_delivery_spark.etl_delivery_order_user_basket_item_v2 b
       JOIN ng_delivery_spark.fact_order_delivery f ON b.order_id = f.order_id
       WHERE f.provider_id IN ({PROVIDER_IDS})
@@ -148,11 +149,11 @@ def fetch_top_items(conn):
         AND f.order_state = 'delivered'
         AND b.total_price IS NOT NULL
         AND b.total_price > 0
-      GROUP BY f.provider_id, COALESCE(GET_JSON_OBJECT(b.name_translations, '$.uk-UA'), b.name)
+      GROUP BY f.provider_id, f.order_week, COALESCE(GET_JSON_OBJECT(b.name_translations, '$.uk-UA'), b.name)
     )
-    SELECT provider_id, item_name, qty, revenue
+    SELECT provider_id, order_week, item_name, qty, revenue
     FROM ranked WHERE rn <= 10
-    ORDER BY provider_id, qty DESC
+    ORDER BY provider_id, order_week, qty DESC
     """)
 
 
@@ -161,11 +162,17 @@ def fetch_orders_detail(conn):
     SELECT
       f.order_id, f.order_reference_id, f.order_created_date, f.order_week,
       f.provider_id, f.provider_name, f.order_state,
+      CASE WHEN f.is_bolt_plus_order THEN 'Bolt Plus' ELSE 'Ні' END AS bolt_plus,
+      f.is_bolt_plus_order,
       ROUND(f.provider_price_before_discount, 2) AS food_before_discount,
       ROUND(f.total_order_item_discount, 2) AS total_discount,
+      ROUND((COALESCE(m.bolt_delivery_campaign_cost_eur, 0) + COALESCE(m.bolt_menu_campaign_cost_eur, 0)) * m.currency_rate, 2) AS bolt_discount,
+      ROUND((COALESCE(m.provider_delivery_campaign_cost_eur, 0) + COALESCE(m.provider_menu_campaign_cost_eur, 0)) * m.currency_rate, 2) AS provider_discount,
       ROUND(f.provider_price_after_discount, 2) AS food_revenue,
       ROUND(m.provider_commission_net_eur * m.currency_rate, 2) AS fee_net,
       ROUND(m.provider_commission_gross_eur * m.currency_rate, 2) AS fee_gross,
+      ROUND(f.commission_local - m.provider_commission_net_eur * m.currency_rate, 2) AS bp_fee_net,
+      ROUND((f.commission_local - m.provider_commission_net_eur * m.currency_rate) * 1.2, 2) AS bp_fee_gross,
       ROUND(f.commission_local * 1.2, 2) AS total_fee_gross,
       ROUND(COALESCE(f.total_refunded_amount, 0), 2) AS refund,
       ROUND(f.provider_price_after_discount - f.commission_local * 1.2 - COALESCE(f.total_refunded_amount, 0), 2) AS net_income
@@ -306,9 +313,12 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
     top_items = {}
     for _, r in items_df.iterrows():
         pid = int(to_native(r["provider_id"]))
-        if pid not in top_items:
-            top_items[pid] = []
-        top_items[pid].append({
+        week = str(r["order_week"])
+        if week not in top_items:
+            top_items[week] = {}
+        if pid not in top_items[week]:
+            top_items[week][pid] = []
+        top_items[week][pid].append({
             "name": str(r["item_name"]),
             "qty": to_native(r["qty"]),
             "revenue": to_native(r["revenue"]),
@@ -459,6 +469,7 @@ a{{text-decoration:none;color:inherit}}
 
 .badge{{display:inline-flex;align-items:center;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}}
 .badge-orange{{background:rgba(249,115,22,.1);color:var(--orange)}}
+.bp{{color:var(--blue);font-weight:600}}
 
 .store-filter-wrap{{margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
 .store-filter-wrap label{{font-size:12px;font-weight:600;color:var(--text2)}}
@@ -594,8 +605,8 @@ body.dark .revenue-summary-table th{{background:#111827}}
   </section>
 
   <section id="items-section" class="section">
-    <div class="section-title"><span class="section-icon">🍽️</span> Топ-10 позицій по закладах</div>
-    <div class="section-insight">Найпопулярніші позиції за останні {WEEKS_BACK} тижнів. Кількість замовлених одиниць та виручка (₴).</div>
+    <div class="section-title"><span class="section-icon">🍽️</span> Топ-10 позицій по закладах <span id="items-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="section-insight">Найпопулярніші позиції за обраний тиждень. Кількість замовлених одиниць та виручка (₴).</div>
     <div class="items-grid" id="items-grid"></div>
   </section>
 </main>
@@ -953,6 +964,23 @@ function renderRevenueChart() {{
   document.getElementById('revenue-summary').innerHTML = sumHtml;
 }}
 
+function fmtDiscount(r) {{
+  const bolt = r.bolt_discount || 0;
+  const prov = r.provider_discount || 0;
+  const total = r.total_discount || 0;
+  if (total <= 0) return '—';
+  const parts = [];
+  if (bolt > 0) parts.push('Bolt: ' + Math.round(bolt));
+  if (prov > 0) parts.push('Заклад: ' + Math.round(prov));
+  if (!parts.length) parts.push(Math.round(total));
+  return parts.join(' / ');
+}}
+
+function fmtFee(net, gross) {{
+  const vat = Math.round(gross - net);
+  return Math.round(net) + ' + ' + vat + ' = ' + Math.round(gross);
+}}
+
 function renderOrdersDetail() {{
   const ids = getFilteredStoreIds();
   const selW = getSelectedWeek();
@@ -963,32 +991,57 @@ function renderOrdersDetail() {{
     rows = rows.filter(r => r.provider_id === Number(selectedOrdersStore));
   }}
 
-  let t = '<table class="data-table"><thead><tr><th>Дата</th><th>Order Ref</th><th>Заклад</th><th class="text-right">Ціна до знижки</th><th class="text-right">Знижка</th><th class="text-right">Дохід від їжі</th><th class="text-right">Комісія (брутто)</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th></tr></thead><tbody>';
-  let totFood = 0, totDisc = 0, totRev = 0, totFee = 0, totRef = 0, totNet = 0;
+  let t = '<table class="data-table"><thead><tr>';
+  t += '<th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Bolt+</th>';
+  t += '<th class="text-right">Ціна до знижки</th><th class="text-right">Знижка (за чий рахунок)</th>';
+  t += '<th class="text-right">Дохід від їжі</th><th class="text-right">Комісія (нетто+ПДВ=брутто)</th>';
+  t += '<th class="text-right">Bolt Plus комісія</th><th class="text-right">Всього комісія</th>';
+  t += '<th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th>';
+  t += '</tr></thead><tbody>';
+
+  let totFood = 0, totRev = 0, totFee = 0, totBpFee = 0, totRef = 0, totNet = 0;
   rows.forEach(r => {{
     const date = r.order_created_date ? String(r.order_created_date).substring(0, 10) : '';
     totFood += r.food_before_discount || 0;
-    totDisc += r.total_discount || 0;
     totRev += r.food_revenue || 0;
     totFee += r.total_fee_gross || 0;
+    totBpFee += r.bp_fee_gross || 0;
     totRef += r.refund || 0;
     totNet += r.net_income || 0;
+
+    const isBp = (r.bp_fee_net || 0) > 0.5;
+    const bpLabel = r.bolt_plus || 'Ні';
+    const bpClass = isBp ? ' class="bp"' : '';
+    const feeNet = r.fee_net || 0;
+    const feeGross = r.fee_gross || 0;
+    const bpFeeNet = r.bp_fee_net || 0;
+    const bpFeeGross = r.bp_fee_gross || 0;
+    const bpText = (isBp && bpFeeNet > 0.5) ? fmtFee(bpFeeNet, bpFeeGross) : '—';
+
     const nc = (r.net_income || 0) < 0 ? ' style="color:var(--neg)"' : '';
-    t += '<tr><td>' + date + '</td><td>' + (r.order_reference_id || '') + '</td><td>' + (r.provider_short || '') + '</td>';
-    t += '<td class="text-right">' + (r.food_before_discount || 0).toFixed(2) + '</td>';
-    t += '<td class="text-right">' + (r.total_discount || 0).toFixed(2) + '</td>';
-    t += '<td class="text-right">' + (r.food_revenue || 0).toFixed(2) + '</td>';
-    t += '<td class="text-right" style="color:var(--neg)">' + (r.total_fee_gross || 0).toFixed(2) + '</td>';
-    t += '<td class="text-right">' + (r.refund || 0).toFixed(2) + '</td>';
-    t += '<td class="text-right"' + nc + '>' + (r.net_income || 0).toFixed(2) + '</td></tr>';
+    t += '<tr><td>' + date + '</td>';
+    t += '<td>' + (r.order_reference_id || '') + '</td>';
+    t += '<td>' + (r.provider_short || '') + '</td>';
+    t += '<td' + bpClass + '>' + bpLabel + '</td>';
+    t += '<td class="text-right">' + (r.food_before_discount || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+    t += '<td class="text-right">' + fmtDiscount(r) + '</td>';
+    t += '<td class="text-right">' + (r.food_revenue || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+    t += '<td class="text-right" style="font-size:11px">' + fmtFee(feeNet, feeGross) + '</td>';
+    t += '<td class="text-right" style="font-size:11px">' + bpText + '</td>';
+    t += '<td class="text-right" style="color:var(--neg)">' + (r.total_fee_gross || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+    t += '<td class="text-right">' + (r.refund || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+    t += '<td class="text-right"' + nc + '>' + (r.net_income || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td></tr>';
   }});
-  t += '<tr class="total-row"><td colspan="3">Всього (' + rows.length + ' зам.)</td>';
-  t += '<td class="text-right">' + totFood.toFixed(2) + '</td>';
-  t += '<td class="text-right">' + totDisc.toFixed(2) + '</td>';
-  t += '<td class="text-right">' + totRev.toFixed(2) + '</td>';
-  t += '<td class="text-right" style="color:var(--neg)">' + totFee.toFixed(2) + '</td>';
-  t += '<td class="text-right">' + totRef.toFixed(2) + '</td>';
-  t += '<td class="text-right">' + totNet.toFixed(2) + '</td></tr>';
+
+  t += '<tr class="total-row"><td colspan="4">Всього (' + rows.length + ' зам.)</td>';
+  t += '<td class="text-right">' + totFood.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+  t += '<td></td>';
+  t += '<td class="text-right">' + totRev.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+  t += '<td></td>';
+  t += '<td class="text-right">' + totBpFee.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+  t += '<td class="text-right" style="color:var(--neg)">' + totFee.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+  t += '<td class="text-right">' + totRef.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+  t += '<td class="text-right">' + totNet.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td></tr>';
   t += '</tbody></table>';
   document.getElementById('orders-detail-wrap').innerHTML = t;
 }}
@@ -1043,9 +1096,12 @@ function renderCancelled() {{
 
 function renderTopItems() {{
   const ids = getFilteredStoreIds();
+  const selW = getSelectedWeek();
+  const weekItems = D.top_items[selW] || {{}};
+  document.getElementById('items-week-label').textContent = '— ' + selW;
   let html = '';
   ids.forEach(id => {{
-    const items = D.top_items[id];
+    const items = weekItems[id];
     if (!items || !items.length) return;
     const s = D.stores[id];
     html += '<div class="items-card"><h4>' + s.short + '</h4><div class="items-city">' + s.city + '</div><ol>';
