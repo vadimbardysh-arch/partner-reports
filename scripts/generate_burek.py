@@ -5,11 +5,14 @@ with top-10 items per store.
 """
 
 import os
+import sys
 import json
 import math
 from pathlib import Path
 from datetime import datetime
 from decimal import Decimal
+
+sys.stdout.reconfigure(line_buffering=True)
 
 from databricks import sql
 import pandas as pd
@@ -36,6 +39,18 @@ BUREK_PROVIDERS = {
 PROVIDER_IDS = ",".join(str(k) for k in BUREK_PROVIDERS)
 
 CITY_UA = {"Lviv": "Львів", "Uzhhorod": "Ужгород"}
+
+BAD_ORDER_TYPE_UA = {
+    "late_delivery_order_15min": "Пізня доставка (>15 хв)",
+    "timing_quality_cs_ticket": "Скарга на час доставки",
+    "delivery_quality_cs_ticket": "Скарга на доставку",
+    "order_quality_cs_ticket": "Скарга на якість замовлення",
+    "missing_or_wrong_items_cs_ticket": "Відсутні/неправильні товари",
+    "failed_order_after_provider_accepted": "Невдале після прийняття",
+    "bad_rating_order": "Поганий рейтинг",
+}
+FAULT_UA = {"provider": "Заклад", "courier": "Кур'єр", "bolt": "Bolt", "eater": "Клієнт", "unknown": "Невідомо"}
+ORDER_STATE_UA = {"delivered": "Доставлено", "cancelled": "Скасовано", "rejected": "Відхилено", "failed": "Помилка"}
 
 
 def connect():
@@ -68,6 +83,15 @@ def to_native(val, default=0):
         return default if math.isnan(f) else f
     except (TypeError, ValueError):
         return str(val)
+
+
+def safe_json(df):
+    return json.loads(df.to_json(orient="records", date_format="iso"))
+
+
+def week_sort_key(w):
+    parts = w.split("-W")
+    return (int(parts[0]), int(parts[1]))
 
 
 # ── Queries ──────────────────────────────────────────────────────────────
@@ -132,9 +156,89 @@ def fetch_top_items(conn):
     """)
 
 
+def fetch_orders_detail(conn):
+    return query(conn, f"""
+    SELECT
+      f.order_id, f.order_reference_id, f.order_created_date, f.order_week,
+      f.provider_id, f.provider_name, f.order_state,
+      ROUND(f.provider_price_before_discount, 2) AS food_before_discount,
+      ROUND(f.total_order_item_discount, 2) AS total_discount,
+      ROUND(f.provider_price_after_discount, 2) AS food_revenue,
+      ROUND(m.provider_commission_net_eur * m.currency_rate, 2) AS fee_net,
+      ROUND(m.provider_commission_gross_eur * m.currency_rate, 2) AS fee_gross,
+      ROUND(f.commission_local * 1.2, 2) AS total_fee_gross,
+      ROUND(COALESCE(f.total_refunded_amount, 0), 2) AS refund,
+      ROUND(f.provider_price_after_discount - f.commission_local * 1.2 - COALESCE(f.total_refunded_amount, 0), 2) AS net_income
+    FROM ng_delivery_spark.fact_order_delivery f
+    JOIN ng_public_spark.etl_delivery_order_monetary_metrics m ON f.order_id = m.order_id
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
+      AND f.order_state = 'delivered'
+    ORDER BY f.order_created_date DESC, f.order_id DESC
+    """)
+
+
+def fetch_complaints(conn):
+    return query(conn, f"""
+    SELECT
+      d.order_id, f.order_reference_id, f.order_created_date, f.order_week,
+      f.provider_id, f.provider_name,
+      ROUND(f.order_gmv, 0) AS sum_uah,
+      d.bad_order_type, d.bad_order_actor_at_fault AS fault,
+      d.provider_rating_value AS rating,
+      d.provider_rating_comment
+    FROM ng_delivery_spark.dim_order_delivery d
+    JOIN ng_delivery_spark.fact_order_delivery f ON d.order_id = f.order_id
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND (d.is_bad_order = true OR d.is_cs_ticket_order = true)
+    ORDER BY f.order_created_date DESC
+    """)
+
+
+def fetch_cancelled(conn):
+    return query(conn, f"""
+    SELECT
+      f.order_id, f.order_reference_id, f.order_created_date, f.order_week,
+      f.provider_id, f.provider_name, f.order_state,
+      CASE
+        WHEN f.is_rejected_by_provider = true THEN 'Відхилено закладом'
+        WHEN f.is_not_responded_by_provider = true THEN 'Без відповіді від закладу'
+        WHEN f.order_state = 'failed' THEN 'Помилка'
+        ELSE 'Скасовано'
+      END AS reason,
+      d.failed_order_comment AS comment
+    FROM ng_delivery_spark.fact_order_delivery f
+    LEFT JOIN ng_delivery_spark.dim_order_delivery d ON f.order_id = d.order_id
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_state IN ('rejected', 'cancelled', 'failed')
+    ORDER BY f.order_created_date DESC
+    """)
+
+
+def fetch_revenue_weekly(conn):
+    return query(conn, f"""
+    SELECT
+      f.order_week, f.provider_id,
+      COUNT(*) AS orders,
+      ROUND(SUM(f.provider_price_after_discount), 0) AS food_revenue,
+      ROUND(SUM(f.commission_local * 1.2), 0) AS total_fee_gross,
+      ROUND(SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS refund,
+      ROUND(SUM(f.provider_price_after_discount) - SUM(f.commission_local * 1.2) - SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS net_income
+    FROM ng_delivery_spark.fact_order_delivery f
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_state = 'delivered'
+    GROUP BY f.order_week, f.provider_id
+    ORDER BY f.order_week, f.provider_id
+    """)
+
+
 # ── Build data for HTML ──────────────────────────────────────────────────
 
-def build_data(weekly_df, ops_df, items_df):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df):
     data = {}
 
     stores_map = {}
@@ -161,6 +265,7 @@ def build_data(weekly_df, ops_df, items_df):
             "avg_cooking": to_native(r["avg_cooking"]),
             "bad_orders": to_native(r["bad_orders"]),
         }
+    weekly = dict(sorted(weekly.items(), key=lambda x: week_sort_key(x[0])))
     data["weekly"] = weekly
 
     ops_weekly = {}
@@ -209,6 +314,60 @@ def build_data(weekly_df, ops_df, items_df):
             "revenue": to_native(r["revenue"]),
         })
     data["top_items"] = top_items
+
+    # Orders detail
+    orders_list = safe_json(orders_df)
+    for row in orders_list:
+        row["order_state"] = ORDER_STATE_UA.get(row.get("order_state", ""), row.get("order_state", ""))
+        pid = row.get("provider_id")
+        if pid and int(pid) in BUREK_PROVIDERS:
+            row["provider_short"] = BUREK_PROVIDERS[int(pid)]["short"]
+        else:
+            row["provider_short"] = row.get("provider_name", "")
+    data["orders"] = orders_list
+
+    # Complaints
+    comp_list = safe_json(complaints_df)
+    for row in comp_list:
+        raw_type = row.get("bad_order_type", "") or ""
+        row["bad_order_type"] = BAD_ORDER_TYPE_UA.get(raw_type, raw_type)
+        raw_fault = row.get("fault", "") or ""
+        row["fault"] = FAULT_UA.get(str(raw_fault).lower(), raw_fault)
+        pid = row.get("provider_id")
+        if pid and int(pid) in BUREK_PROVIDERS:
+            row["provider_short"] = BUREK_PROVIDERS[int(pid)]["short"]
+        else:
+            row["provider_short"] = row.get("provider_name", "")
+    data["complaints"] = comp_list
+
+    # Cancelled
+    canc_list = safe_json(cancelled_df)
+    for row in canc_list:
+        raw_state = row.get("order_state", "") or ""
+        row["order_state"] = ORDER_STATE_UA.get(raw_state, raw_state)
+        pid = row.get("provider_id")
+        if pid and int(pid) in BUREK_PROVIDERS:
+            row["provider_short"] = BUREK_PROVIDERS[int(pid)]["short"]
+        else:
+            row["provider_short"] = row.get("provider_name", "")
+    data["cancelled"] = canc_list
+
+    # Revenue weekly: { week: { provider_id: { food_revenue, total_fee_gross, net_income, refund } } }
+    revenue = {}
+    for _, r in revenue_df.iterrows():
+        week = str(r["order_week"])
+        pid = int(to_native(r["provider_id"]))
+        if week not in revenue:
+            revenue[week] = {}
+        revenue[week][pid] = {
+            "orders": to_native(r["orders"]),
+            "food_revenue": to_native(r["food_revenue"]),
+            "total_fee_gross": to_native(r["total_fee_gross"]),
+            "refund": to_native(r["refund"]),
+            "net_income": to_native(r["net_income"]),
+        }
+    revenue = dict(sorted(revenue.items(), key=lambda x: week_sort_key(x[0])))
+    data["revenue"] = revenue
 
     return data
 
@@ -282,7 +441,7 @@ a{{text-decoration:none;color:inherit}}
 
 .table-wrap{{overflow-x:auto;border-radius:var(--r);border:1px solid var(--border);background:var(--card)}}
 .data-table{{width:100%;border-collapse:collapse;font-size:13px}}
-.data-table th{{background:var(--bg);font-weight:600;text-align:left;padding:10px 14px;white-space:nowrap;border-bottom:1px solid var(--border);position:sticky;top:0}}
+.data-table th{{background:var(--bg);font-weight:600;text-align:left;padding:10px 14px;white-space:nowrap;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:1}}
 .data-table td{{padding:9px 14px;border-bottom:1px solid var(--border);white-space:nowrap}}
 .data-table tr:last-child td{{border-bottom:none}}
 .data-table tr:hover td{{background:rgba(249,115,22,.04)}}
@@ -315,6 +474,12 @@ a{{text-decoration:none;color:inherit}}
 .items-card .item-qty{{color:var(--orange);font-weight:600;float:right}}
 .items-card .item-rev{{color:var(--text2);font-size:11px;float:right;margin-right:8px}}
 
+.scroll-table{{max-height:600px;overflow-y:auto}}
+.comment-cell{{max-width:250px;white-space:normal;word-break:break-word}}
+.revenue-summary-table{{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}}
+.revenue-summary-table th{{background:var(--bg);font-weight:600;text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}}
+.revenue-summary-table td{{padding:7px 10px;border-bottom:1px solid var(--border)}}
+
 body.dark{{--bg:#111827;--card:#1F2937;--text:#F9FAFB;--text2:#9CA3AF;--border:#374151;--shadow:0 1px 3px rgba(0,0,0,.3)}}
 body.dark .header{{background:var(--card)}}
 body.dark .main-nav{{background:var(--card)}}
@@ -326,6 +491,8 @@ body.dark .week-pill{{background:#374151;color:var(--text2)}}
 body.dark .chart-card{{background:var(--card)}}
 body.dark .kpi-card{{background:var(--card)}}
 body.dark .items-card{{background:var(--card)}}
+body.dark .store-filter-wrap select{{background:var(--card);color:var(--text);border-color:var(--border)}}
+body.dark .revenue-summary-table th{{background:#111827}}
 
 @media(max-width:900px){{
   .charts-grid{{grid-template-columns:1fr}}
@@ -360,6 +527,10 @@ body.dark .items-card{{background:var(--card)}}
   <a href="#orders-section" class="nav-link">Замовлення</a>
   <a href="#ops-section" class="nav-link">Операції</a>
   <a href="#stores-section" class="nav-link">Деталі закладів</a>
+  <a href="#revenue-section" class="nav-link">Дохідність</a>
+  <a href="#orders-detail-section" class="nav-link">Деталі замовлень</a>
+  <a href="#complaints-section" class="nav-link">Скарги</a>
+  <a href="#cancelled-section" class="nav-link">Скасовані</a>
   <a href="#items-section" class="nav-link">Топ позиції</a>
 </nav>
 
@@ -395,6 +566,33 @@ body.dark .items-card{{background:var(--card)}}
     <div class="table-wrap" id="stores-table-wrap"></div>
   </section>
 
+  <section id="revenue-section" class="section">
+    <div class="section-title"><span class="section-icon">💰</span> Дохідність по тижнях</div>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Дохід по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-revenue"></canvas></div></div>
+      <div class="chart-card"><h3>Замовлення — деталі по закладах</h3><div class="chart-wrap" style="min-height:auto"><div id="revenue-summary"></div></div></div>
+    </div>
+  </section>
+
+  <section id="orders-detail-section" class="section">
+    <div class="section-title"><span class="section-icon">🧾</span> Дохідність по замовленнях <span id="orders-detail-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="store-filter-wrap">
+      <label>Заклад:</label>
+      <select id="orders-store-filter"><option value="__all__">Всі заклади</option></select>
+    </div>
+    <div class="table-wrap scroll-table" id="orders-detail-wrap"></div>
+  </section>
+
+  <section id="complaints-section" class="section">
+    <div class="section-title"><span class="section-icon">⚠️</span> Замовлення зі скаргами <span id="comp-count" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="table-wrap scroll-table" id="complaints-wrap"></div>
+  </section>
+
+  <section id="cancelled-section" class="section">
+    <div class="section-title"><span class="section-icon">❌</span> Скасовані замовлення <span id="canc-count" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="table-wrap scroll-table" id="cancelled-wrap"></div>
+  </section>
+
   <section id="items-section" class="section">
     <div class="section-title"><span class="section-icon">🍽️</span> Топ-10 позицій по закладах</div>
     <div class="section-insight">Найпопулярніші позиції за останні {WEEKS_BACK} тижнів. Кількість замовлених одиниць та виручка (₴).</div>
@@ -406,10 +604,21 @@ body.dark .items-card{{background:var(--card)}}
 const D = {json.dumps(data, ensure_ascii=False)};
 
 const CITY_UA = {{"Lviv":"Львів","Uzhhorod":"Ужгород"}};
-let allWeeks = Object.keys(D.weekly).sort();
+let allWeeks = Object.keys(D.weekly).sort((a,b) => {{
+  const [ay,aw] = a.split('-W').map(Number);
+  const [by,bw] = b.split('-W').map(Number);
+  return ay !== by ? ay - by : aw - bw;
+}});
 let selectedWeekIdx = allWeeks.length - 1;
 let selectedCity = '__all__';
+let selectedOrdersStore = '__all__';
 let chartInstances = {{}};
+
+function weekSortCmp(a, b) {{
+  const [ay,aw] = a.split('-W').map(Number);
+  const [by,bw] = b.split('-W').map(Number);
+  return ay !== by ? ay - by : aw - bw;
+}}
 
 function getSelectedWeek() {{ return allWeeks.length ? allWeeks[selectedWeekIdx >= 0 ? selectedWeekIdx : allWeeks.length - 1] : null; }}
 function cityUA(c) {{ return CITY_UA[c] || c; }}
@@ -422,6 +631,20 @@ function populateCityFilter() {{
     const o = document.createElement('option');
     o.value = c; o.textContent = cityUA(c);
     sel.appendChild(o);
+  }});
+}}
+
+function populateOrdersStoreFilter() {{
+  const sel = document.getElementById('orders-store-filter');
+  sel.innerHTML = '<option value="__all__">Всі заклади</option>';
+  const ids = getFilteredStoreIds();
+  ids.forEach(id => {{
+    const s = D.stores[id];
+    if (s) {{
+      const o = document.createElement('option');
+      o.value = id; o.textContent = s.short + ' (' + s.city + ')';
+      sel.appendChild(o);
+    }}
   }});
 }}
 
@@ -677,6 +900,147 @@ function renderStoresTable() {{
   document.getElementById('stores-table-wrap').innerHTML = t;
 }}
 
+function renderRevenueChart() {{
+  const ids = getFilteredStoreIds();
+  const weeks = getFilteredWeeks();
+  const selW = getSelectedWeek();
+
+  destroyChart('chart-revenue');
+  const foodData = weeks.map(w => {{
+    const rw = D.revenue[w] || {{}};
+    return ids.reduce((s, id) => s + ((rw[id] && rw[id].food_revenue) || 0), 0);
+  }});
+  const feeData = weeks.map(w => {{
+    const rw = D.revenue[w] || {{}};
+    return ids.reduce((s, id) => s + ((rw[id] && rw[id].total_fee_gross) || 0), 0);
+  }});
+  const netData = weeks.map(w => {{
+    const rw = D.revenue[w] || {{}};
+    return ids.reduce((s, id) => s + ((rw[id] && rw[id].net_income) || 0), 0);
+  }});
+
+  chartInstances['chart-revenue'] = new Chart(document.getElementById('chart-revenue'), {{
+    type: 'bar',
+    data: {{
+      labels: weeks,
+      datasets: [
+        {{ label: 'Дохід від їжі', data: foodData, backgroundColor: 'rgba(59,130,246,.7)', borderRadius: 4, barPercentage: .7 }},
+        {{ label: 'Комісія (брутто)', data: feeData, backgroundColor: 'rgba(239,68,68,.6)', borderRadius: 4, barPercentage: .7 }},
+        {{ label: 'Чистий дохід', data: netData, backgroundColor: 'rgba(16,185,129,.7)', borderRadius: 4, barPercentage: .7 }}
+      ]
+    }},
+    options: {{
+      responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend: {{ position: 'bottom', labels: {{ usePointStyle: true, padding: 12, font: {{ size: 11 }} }} }} }},
+      scales: {{
+        x: {{ stacked: false, grid: {{ display: false }} }},
+        y: {{ beginAtZero: true, grid: {{ color: 'rgba(0,0,0,.05)' }}, ticks: {{ callback: v => '₴' + v.toLocaleString('uk-UA') }} }}
+      }}
+    }}
+  }});
+
+  let sumHtml = '<table class="revenue-summary-table"><thead><tr><th>Заклад</th><th class="text-right">Замовлення</th><th class="text-right">Дохід їжі</th><th class="text-right">Комісія</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th></tr></thead><tbody>';
+  const rw = D.revenue[selW] || {{}};
+  let tOrd = 0, tFood = 0, tFee = 0, tRef = 0, tNet = 0;
+  ids.filter(id => rw[id]).sort((a, b) => (rw[b].net_income || 0) - (rw[a].net_income || 0)).forEach(id => {{
+    const r = rw[id];
+    const s = D.stores[id];
+    tOrd += r.orders || 0; tFood += r.food_revenue || 0; tFee += r.total_fee_gross || 0; tRef += r.refund || 0; tNet += r.net_income || 0;
+    sumHtml += '<tr><td>' + (s ? s.short : id) + '</td><td class="text-right">' + (r.orders || 0) + '</td><td class="text-right">₴' + (r.food_revenue || 0).toLocaleString('uk-UA') + '</td><td class="text-right" style="color:var(--neg)">₴' + (r.total_fee_gross || 0).toLocaleString('uk-UA') + '</td><td class="text-right">₴' + (r.refund || 0).toLocaleString('uk-UA') + '</td><td class="text-right" style="color:var(--pos)">₴' + (r.net_income || 0).toLocaleString('uk-UA') + '</td></tr>';
+  }});
+  sumHtml += '<tr class="total-row"><td>Всього</td><td class="text-right">' + tOrd + '</td><td class="text-right">₴' + tFood.toLocaleString('uk-UA') + '</td><td class="text-right" style="color:var(--neg)">₴' + tFee.toLocaleString('uk-UA') + '</td><td class="text-right">₴' + tRef.toLocaleString('uk-UA') + '</td><td class="text-right" style="color:var(--pos)">₴' + tNet.toLocaleString('uk-UA') + '</td></tr>';
+  sumHtml += '</tbody></table>';
+  document.getElementById('revenue-summary').innerHTML = sumHtml;
+}}
+
+function renderOrdersDetail() {{
+  const ids = getFilteredStoreIds();
+  const selW = getSelectedWeek();
+  document.getElementById('orders-detail-week-label').textContent = '— ' + selW;
+
+  let rows = (D.orders || []).filter(r => r.order_week === selW && ids.includes(r.provider_id));
+  if (selectedOrdersStore !== '__all__') {{
+    rows = rows.filter(r => r.provider_id === Number(selectedOrdersStore));
+  }}
+
+  let t = '<table class="data-table"><thead><tr><th>Дата</th><th>Order Ref</th><th>Заклад</th><th class="text-right">Ціна до знижки</th><th class="text-right">Знижка</th><th class="text-right">Дохід від їжі</th><th class="text-right">Комісія (брутто)</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th></tr></thead><tbody>';
+  let totFood = 0, totDisc = 0, totRev = 0, totFee = 0, totRef = 0, totNet = 0;
+  rows.forEach(r => {{
+    const date = r.order_created_date ? String(r.order_created_date).substring(0, 10) : '';
+    totFood += r.food_before_discount || 0;
+    totDisc += r.total_discount || 0;
+    totRev += r.food_revenue || 0;
+    totFee += r.total_fee_gross || 0;
+    totRef += r.refund || 0;
+    totNet += r.net_income || 0;
+    const nc = (r.net_income || 0) < 0 ? ' style="color:var(--neg)"' : '';
+    t += '<tr><td>' + date + '</td><td>' + (r.order_reference_id || '') + '</td><td>' + (r.provider_short || '') + '</td>';
+    t += '<td class="text-right">' + (r.food_before_discount || 0).toFixed(2) + '</td>';
+    t += '<td class="text-right">' + (r.total_discount || 0).toFixed(2) + '</td>';
+    t += '<td class="text-right">' + (r.food_revenue || 0).toFixed(2) + '</td>';
+    t += '<td class="text-right" style="color:var(--neg)">' + (r.total_fee_gross || 0).toFixed(2) + '</td>';
+    t += '<td class="text-right">' + (r.refund || 0).toFixed(2) + '</td>';
+    t += '<td class="text-right"' + nc + '>' + (r.net_income || 0).toFixed(2) + '</td></tr>';
+  }});
+  t += '<tr class="total-row"><td colspan="3">Всього (' + rows.length + ' зам.)</td>';
+  t += '<td class="text-right">' + totFood.toFixed(2) + '</td>';
+  t += '<td class="text-right">' + totDisc.toFixed(2) + '</td>';
+  t += '<td class="text-right">' + totRev.toFixed(2) + '</td>';
+  t += '<td class="text-right" style="color:var(--neg)">' + totFee.toFixed(2) + '</td>';
+  t += '<td class="text-right">' + totRef.toFixed(2) + '</td>';
+  t += '<td class="text-right">' + totNet.toFixed(2) + '</td></tr>';
+  t += '</tbody></table>';
+  document.getElementById('orders-detail-wrap').innerHTML = t;
+}}
+
+function renderComplaints() {{
+  const ids = getFilteredStoreIds();
+  const selW = getSelectedWeek();
+  const rows = (D.complaints || []).filter(r => r.order_week === selW && ids.includes(r.provider_id));
+  document.getElementById('comp-count').textContent = '(' + rows.length + ' за ' + selW + ')';
+
+  let t = '<table class="data-table"><thead><tr><th>Дата</th><th>Order Ref</th><th>Заклад</th><th class="text-right">Сума</th><th>Тип проблеми</th><th>Винний</th><th class="text-center">Рейтинг</th><th>Коментар</th></tr></thead><tbody>';
+  if (rows.length === 0) {{
+    t += '<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:24px">Немає скарг за цей тиждень</td></tr>';
+  }} else {{
+    rows.forEach(r => {{
+      const date = r.order_created_date ? String(r.order_created_date).substring(0, 10) : '';
+      const comment = (r.provider_rating_comment || '').substring(0, 120);
+      t += '<tr><td>' + date + '</td><td>' + (r.order_reference_id || '') + '</td><td>' + (r.provider_short || '') + '</td>';
+      t += '<td class="text-right">₴' + (r.sum_uah || 0) + '</td>';
+      t += '<td>' + (r.bad_order_type || '') + '</td>';
+      t += '<td>' + (r.fault || '') + '</td>';
+      t += '<td class="text-center">' + (r.rating != null ? r.rating : '—') + '</td>';
+      t += '<td class="comment-cell">' + comment + '</td></tr>';
+    }});
+  }}
+  t += '</tbody></table>';
+  document.getElementById('complaints-wrap').innerHTML = t;
+}}
+
+function renderCancelled() {{
+  const ids = getFilteredStoreIds();
+  const selW = getSelectedWeek();
+  const rows = (D.cancelled || []).filter(r => r.order_week === selW && ids.includes(r.provider_id));
+  document.getElementById('canc-count').textContent = '(' + rows.length + ' за ' + selW + ')';
+
+  let t = '<table class="data-table"><thead><tr><th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Причина</th><th>Коментар</th></tr></thead><tbody>';
+  if (rows.length === 0) {{
+    t += '<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:24px">Немає скасованих за цей тиждень</td></tr>';
+  }} else {{
+    rows.forEach(r => {{
+      const date = r.order_created_date ? String(r.order_created_date).substring(0, 10) : '';
+      const comment = (r.comment || '').substring(0, 150);
+      t += '<tr><td>' + date + '</td><td>' + (r.order_reference_id || '') + '</td><td>' + (r.provider_short || '') + '</td>';
+      t += '<td>' + (r.order_state || '') + '</td>';
+      t += '<td>' + (r.reason || '') + '</td>';
+      t += '<td class="comment-cell">' + comment + '</td></tr>';
+    }});
+  }}
+  t += '</tbody></table>';
+  document.getElementById('cancelled-wrap').innerHTML = t;
+}}
+
 function renderTopItems() {{
   const ids = getFilteredStoreIds();
   let html = '';
@@ -699,6 +1063,10 @@ function renderAll() {{
   renderOrdersCharts();
   renderOpsCharts();
   renderStoresTable();
+  renderRevenueChart();
+  renderOrdersDetail();
+  renderComplaints();
+  renderCancelled();
   renderTopItems();
 }}
 
@@ -728,7 +1096,13 @@ function setupNav() {{
 document.getElementById('city-filter').addEventListener('change', function() {{
   selectedCity = this.value;
   populateWeekBar();
+  populateOrdersStoreFilter();
   renderAll();
+}});
+
+document.getElementById('orders-store-filter').addEventListener('change', function() {{
+  selectedOrdersStore = this.value;
+  renderOrdersDetail();
 }});
 
 window.toggleDark = function() {{
@@ -742,6 +1116,7 @@ window.toggleDark = function() {{
 (function() {{ try {{ if (localStorage.getItem('burek-dark') === '1') {{ document.body.classList.add('dark'); document.getElementById('theme-toggle').textContent = '☀️'; Chart.defaults.color = '#D1D5DB'; }} }} catch(e) {{}} }})();
 
 populateCityFilter();
+populateOrdersStoreFilter();
 populateWeekBar();
 setupNav();
 renderAll();
@@ -769,10 +1144,26 @@ def main():
         print("  Fetching top items…")
         items_df = fetch_top_items(conn)
         print(f"  → {len(items_df)} rows")
+
+        print("  Fetching orders detail…")
+        orders_df = fetch_orders_detail(conn)
+        print(f"  → {len(orders_df)} rows")
+
+        print("  Fetching complaints…")
+        complaints_df = fetch_complaints(conn)
+        print(f"  → {len(complaints_df)} rows")
+
+        print("  Fetching cancelled orders…")
+        cancelled_df = fetch_cancelled(conn)
+        print(f"  → {len(cancelled_df)} rows")
+
+        print("  Fetching revenue weekly…")
+        revenue_df = fetch_revenue_weekly(conn)
+        print(f"  → {len(revenue_df)} rows")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "burek"
