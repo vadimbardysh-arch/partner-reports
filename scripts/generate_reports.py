@@ -119,6 +119,7 @@ def fetch_orders_detail(conn, provider_id):
             f.order_id,
             f.order_reference_id,
             f.order_created_date,
+            f.order_week,
             f.order_state,
             CASE WHEN f.is_bolt_plus_order THEN 'Так' ELSE 'Ні' END AS bolt_plus,
             f.is_bolt_plus_order,
@@ -150,6 +151,7 @@ def fetch_cancelled(conn, provider_id):
             f.order_id,
             f.order_reference_id,
             f.order_created_date,
+            f.order_week,
             f.order_state,
             CASE
                 WHEN f.is_rejected_by_provider = true THEN 'Відхилено закладом'
@@ -173,6 +175,7 @@ def fetch_complaints(conn, provider_id):
             d.order_id,
             f.order_reference_id,
             f.order_created_date,
+            f.order_week,
             ROUND(f.order_gmv, 0) AS sum_uah,
             ROUND(f.order_actual_cooking_time_minutes, 1) AS cooking_min,
             d.provider_rating_value AS rating,
@@ -317,20 +320,37 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
     net_income = safe_list(rev_weekly["net_income"]) if len(rev_weekly) else []
     food_rev = safe_list(rev_weekly["food_revenue"]) if len(rev_weekly) else []
     fees = safe_list(rev_weekly["total_fee_gross"]) if len(rev_weekly) else []
-
-    total_delivered = int(sum(delivered))
-    total_cancelled = len(cancelled)
-    total_complaints = len(complaints)
-    avg_check_total = round(sum(c * o for c, o in zip(avg_check, delivered)) / max(total_delivered, 1), 0)
-    avg_cooking_total = round(sum(c * o for c, o in zip(cooking, delivered)) / max(total_delivered, 1), 1)
-    total_food_rev = round(sum(food_rev), 0)
-    total_fees = round(sum(fees), 0)
-    total_net = round(sum(net_income), 0)
-    total_refunds = round(sum(safe_list(rev_weekly["refund"])) if len(rev_weekly) else 0, 0)
+    refunds = safe_list(rev_weekly["refund"]) if len(rev_weekly) else []
 
     cancelled_json = safe_json(cancelled) if len(cancelled) else []
     complaints_json = safe_json(complaints) if len(complaints) else []
     orders_json = safe_json(orders_detail) if len(orders_detail) else []
+
+    # Build weekly data dict for JS (merge summary + revenue by week key)
+    weekly_data = {}
+    for i, w in enumerate(weeks):
+        wk = str(w)
+        weekly_data[wk] = {
+            "delivered": delivered[i], "avg_check": avg_check[i],
+            "cooking": cooking[i], "bad": bad[i],
+        }
+    for i, w in enumerate(rev_weeks):
+        wk = str(w)
+        if wk not in weekly_data:
+            weekly_data[wk] = {}
+        weekly_data[wk].update({
+            "food_rev": food_rev[i], "fees": fees[i],
+            "net_income": net_income[i], "refund": refunds[i],
+        })
+    # Count cancelled and complaints per week
+    for r in cancelled_json:
+        wk = str(r.get("order_week", ""))
+        if wk in weekly_data:
+            weekly_data[wk]["cancelled"] = weekly_data[wk].get("cancelled", 0) + 1
+    for r in complaints_json:
+        wk = str(r.get("order_week", ""))
+        if wk in weekly_data:
+            weekly_data[wk]["complaints"] = weekly_data[wk].get("complaints", 0) + 1
 
     ORDER_STATE_UA = {
         "delivered": "Доставлено",
@@ -377,9 +397,10 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
 
         state_raw = r.get('order_state', 'delivered') or 'delivered'
         state_ua = ORDER_STATE_UA.get(state_raw, state_raw)
+        row_week = str(r.get('order_week', ''))
 
         orders_rows += (
-            f"<tr>"
+            f"<tr data-week='{esc(row_week)}'>"
             f"<td>{esc(r.get('order_created_date',''))}</td>"
             f"<td>{esc(r.get('order_reference_id',''))}</td>"
             f"<td>{state_ua}</td>"
@@ -395,25 +416,25 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
             f"</tr>\n"
         )
 
-    # Build cancelled table
     canc_rows = ""
     for r in cancelled_json:
         raw_comment = r.get('comment') or ''
         cleaned_comment = clean_internal_info(raw_comment) if raw_comment else "—"
+        row_week = str(r.get('order_week', ''))
         canc_rows += (
-            f"<tr><td>{esc(r.get('order_created_date',''))}</td>"
+            f"<tr data-week='{esc(row_week)}'><td>{esc(r.get('order_created_date',''))}</td>"
             f"<td>{esc(r.get('order_reference_id',''))}</td>"
             f"<td>{esc(r.get('order_state',''))}</td>"
             f"<td>{esc(r.get('reason',''))}</td>"
             f"<td class='comment-cell'>{esc(cleaned_comment)}</td></tr>\n"
         )
 
-    # Build complaints table
     comp_rows = ""
     for r in complaints_json:
         comment = build_comment(r)
+        row_week = str(r.get('order_week', ''))
         comp_rows += (
-            f"<tr><td>{esc(r.get('order_created_date',''))}</td>"
+            f"<tr data-week='{esc(row_week)}'><td>{esc(r.get('order_created_date',''))}</td>"
             f"<td>{esc(r.get('order_reference_id',''))}</td>"
             f"<td>{r.get('order_id','')}</td>"
             f"<td>{r.get('sum_uah',''):,.0f} ₴</td>"
@@ -422,6 +443,8 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
             f"<td>{r.get('rating','') or '—'}</td>"
             f"<td class='comment-cell'>{esc(comment)}</td></tr>\n"
         )
+
+    all_weeks_sorted = sorted(set(weeks) | set(rev_weeks))
 
     return f"""<!DOCTYPE html>
 <html lang="uk">
@@ -433,18 +456,27 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
 <style>
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }}
-.header {{ text-align:center; margin-bottom:32px; }}
+.header {{ text-align:center; margin-bottom:24px; }}
 .header h1 {{ font-size:26px; font-weight:700; }}
 .header .sub {{ color:#94a3b8; font-size:14px; margin-top:4px; }}
 .header .updated {{ color:#64748b; font-size:12px; margin-top:8px; }}
 
-.kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:28px; }}
-.kpi {{ background:#1e293b; border:1px solid #334155; border-radius:10px; padding:16px; text-align:center; }}
+.week-filter {{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:24px; }}
+.week-btn {{ background:#1e293b; border:1px solid #334155; color:#94a3b8; border-radius:8px; padding:8px 16px; cursor:pointer; font-size:13px; transition:all .2s; }}
+.week-btn:hover {{ border-color:#60a5fa; color:#e2e8f0; }}
+.week-btn.active {{ background:#1d4ed8; border-color:#3b82f6; color:#fff; font-weight:600; }}
+
+.kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:28px; }}
+.kpi {{ background:#1e293b; border:1px solid #334155; border-radius:10px; padding:16px; text-align:center; position:relative; }}
 .kpi .value {{ font-size:26px; font-weight:700; color:#f8fafc; }}
 .kpi .label {{ font-size:11px; color:#94a3b8; margin-top:4px; }}
 .kpi.alert .value {{ color:#f87171; }}
 .kpi.green .value {{ color:#34d399; }}
 .kpi.blue .value {{ color:#60a5fa; }}
+.wow {{ display:inline-block; font-size:12px; font-weight:600; margin-left:6px; vertical-align:middle; }}
+.wow.up {{ color:#34d399; }}
+.wow.down {{ color:#f87171; }}
+.wow.neutral {{ color:#94a3b8; }}
 
 .charts {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:16px; margin-bottom:28px; }}
 .chart-card {{ background:#1e293b; border:1px solid #334155; border-radius:10px; padding:16px; }}
@@ -457,7 +489,7 @@ canvas {{ max-height:260px; }}
 
 .tbl-wrap {{ overflow-x:auto; border-radius:10px; border:1px solid #334155; }}
 table {{ width:100%; border-collapse:collapse; background:#1e293b; white-space:nowrap; }}
-th {{ background:#334155; color:#94a3b8; font-size:11px; text-transform:uppercase; padding:10px 12px; text-align:left; position:sticky; top:0; }}
+th {{ background:#334155; color:#94a3b8; font-size:11px; text-transform:uppercase; padding:10px 12px; text-align:left; position:sticky; top:0; z-index:1; }}
 td {{ padding:8px 12px; border-top:1px solid #293548; font-size:13px; }}
 td.num {{ text-align:right; font-variant-numeric:tabular-nums; }}
 td.highlight {{ color:#34d399; font-weight:600; }}
@@ -466,58 +498,53 @@ td.bp {{ color:#a78bfa; font-weight:600; }}
 td.sm {{ font-size:11px; color:#94a3b8; }}
 tr:nth-child(even) {{ background:#1e293b; }}
 tr:nth-child(odd) {{ background:#162032; }}
+tr.hidden {{ display:none; }}
 .empty {{ text-align:center; color:#64748b; padding:24px; }}
 
-.scroll-table {{ max-height:500px; overflow-y:auto; }}
+.scroll-table {{ max-height:600px; overflow-y:auto; }}
 
 @media(max-width:600px) {{
   .charts {{ grid-template-columns:1fr; }}
   .kpi-grid {{ grid-template-columns:repeat(2,1fr); }}
   body {{ padding:12px; }}
+  .week-filter {{ gap:4px; }}
+  .week-btn {{ padding:6px 10px; font-size:12px; }}
 }}
 </style>
 </head>
 <body>
 <div class="header">
   <h1>{info['name']}</h1>
-  <div class="sub">{info['city']} — Останні {WEEKS_BACK} тижні</div>
+  <div class="sub">{info['city']} — Останні {WEEKS_BACK} тижнів</div>
   <div class="updated">Оновлено: {generated_at}</div>
 </div>
 
-<div class="kpi-grid">
-  <div class="kpi green"><div class="value">{total_delivered}</div><div class="label">Виконано замовлень</div></div>
-  <div class="kpi blue"><div class="value">{avg_check_total:,.0f} ₴</div><div class="label">Середній чек</div></div>
-  <div class="kpi"><div class="value">{avg_cooking_total} хв</div><div class="label">Час приготування</div></div>
-  <div class="kpi green"><div class="value">{total_food_rev:,.0f} ₴</div><div class="label">Дохід від їжі</div></div>
-  <div class="kpi"><div class="value">{total_fees:,.0f} ₴</div><div class="label">Комісія (брутто)</div></div>
-  <div class="kpi green"><div class="value">{total_net:,.0f} ₴</div><div class="label">Чистий дохід</div></div>
-  <div class="kpi alert"><div class="value">{total_cancelled}</div><div class="label">Скасовано</div></div>
-  <div class="kpi alert"><div class="value">{total_complaints}</div><div class="label">Скарги / Bad Orders</div></div>
+<div class="week-filter" id="weekFilter">
+  <button class="week-btn active" data-week="all">Всі тижні</button>
+</div>
+
+<div class="kpi-grid" id="kpiGrid">
+  <div class="kpi green" id="kpiDelivered"><div class="value"><span id="vDelivered"></span><span class="wow" id="wDelivered"></span></div><div class="label">Виконано замовлень</div></div>
+  <div class="kpi blue" id="kpiCheck"><div class="value"><span id="vCheck"></span><span class="wow" id="wCheck"></span></div><div class="label">Середній чек</div></div>
+  <div class="kpi" id="kpiCooking"><div class="value"><span id="vCooking"></span><span class="wow" id="wCooking"></span></div><div class="label">Час приготування</div></div>
+  <div class="kpi green" id="kpiFoodRev"><div class="value"><span id="vFoodRev"></span><span class="wow" id="wFoodRev"></span></div><div class="label">Дохід від їжі</div></div>
+  <div class="kpi" id="kpiFees"><div class="value"><span id="vFees"></span><span class="wow" id="wFees"></span></div><div class="label">Комісія (брутто)</div></div>
+  <div class="kpi green" id="kpiNet"><div class="value"><span id="vNet"></span><span class="wow" id="wNet"></span></div><div class="label">Чистий дохід</div></div>
+  <div class="kpi alert" id="kpiCancelled"><div class="value"><span id="vCancelled"></span><span class="wow" id="wCancelled"></span></div><div class="label">Скасовано</div></div>
+  <div class="kpi alert" id="kpiComplaints"><div class="value"><span id="vComplaints"></span><span class="wow" id="wComplaints"></span></div><div class="label">Скарги / Bad Orders</div></div>
 </div>
 
 <div class="charts">
-  <div class="chart-card">
-    <h3>Виконані замовлення по тижнях</h3>
-    <canvas id="ordersChart"></canvas>
-  </div>
-  <div class="chart-card">
-    <h3>Середній чек (₴) по тижнях</h3>
-    <canvas id="checkChart"></canvas>
-  </div>
-  <div class="chart-card">
-    <h3>Час приготування (хв) по тижнях</h3>
-    <canvas id="cookingChart"></canvas>
-  </div>
-  <div class="chart-card">
-    <h3>Дохід по тижнях (₴)</h3>
-    <canvas id="revenueChart"></canvas>
-  </div>
+  <div class="chart-card"><h3>Виконані замовлення по тижнях</h3><canvas id="ordersChart"></canvas></div>
+  <div class="chart-card"><h3>Середній чек (₴) по тижнях</h3><canvas id="checkChart"></canvas></div>
+  <div class="chart-card"><h3>Час приготування (хв) по тижнях</h3><canvas id="cookingChart"></canvas></div>
+  <div class="chart-card"><h3>Дохід по тижнях (₴)</h3><canvas id="revenueChart"></canvas></div>
 </div>
 
 <div class="section">
-  <h2>Дохідність по замовленнях <span class="count">({total_delivered} замовлень, всі суми в ₴)</span></h2>
+  <h2>Дохідність по замовленнях <span class="count" id="ordersCount"></span></h2>
   <div class="tbl-wrap scroll-table">
-    <table>
+    <table id="ordersTable">
       <thead><tr>
         <th>Дата</th><th>Order Ref</th><th>Статус</th><th>Bolt+</th>
         <th>Ціна до знижки</th><th>Знижка (за чий рахунок)</th><th>Дохід від їжі</th>
@@ -530,31 +557,31 @@ tr:nth-child(odd) {{ background:#162032; }}
 </div>
 
 <div class="section">
-  <h2>Замовлення зі скаргами <span class="count">({total_complaints})</span></h2>
-  {f'<p class="empty">Немає скарг за цей період</p>' if total_complaints == 0 else
-  f'''<div class="tbl-wrap">
-    <table>
+  <h2>Замовлення зі скаргами <span class="count" id="compCount"></span></h2>
+  <div class="tbl-wrap" id="compSection">
+    <table id="compTable">
       <thead><tr>
         <th>Дата</th><th>Order Ref</th><th>Order ID</th><th>Сума</th>
         <th>Тип проблеми</th><th>Винний</th><th>Рейтинг</th><th>Коментар / Деталі</th>
       </tr></thead>
       <tbody>{comp_rows}</tbody>
     </table>
-  </div>'''}
+  </div>
 </div>
 
 <div class="section">
-  <h2>Скасовані замовлення <span class="count">({total_cancelled})</span></h2>
-  {f'<p class="empty">Немає скасованих замовлень за цей період</p>' if total_cancelled == 0 else
-  f'''<div class="tbl-wrap">
-    <table>
+  <h2>Скасовані замовлення <span class="count" id="cancCount"></span></h2>
+  <div class="tbl-wrap" id="cancSection">
+    <table id="cancTable">
       <thead><tr><th>Дата</th><th>Order Ref</th><th>Статус</th><th>Причина</th><th>Коментар</th></tr></thead>
       <tbody>{canc_rows}</tbody>
     </table>
-  </div>'''}
+  </div>
 </div>
 
 <script>
+const W = {json.dumps(weekly_data)};
+const allWeeks = {json.dumps(all_weeks_sorted)};
 const weeks = {json.dumps(weeks)};
 const delivered = {json.dumps(delivered)};
 const avgCheck = {json.dumps(avg_check)};
@@ -564,26 +591,203 @@ const netIncome = {json.dumps(net_income)};
 const foodRev = {json.dumps(food_rev)};
 const feesData = {json.dumps(fees)};
 
+// Build week filter buttons
+const filterEl = document.getElementById('weekFilter');
+allWeeks.forEach(w => {{
+  const btn = document.createElement('button');
+  btn.className = 'week-btn';
+  btn.dataset.week = w;
+  btn.textContent = w;
+  filterEl.appendChild(btn);
+}});
+
+// Charts
 Chart.defaults.color = '#94a3b8';
 Chart.defaults.borderColor = '#334155';
 const barOpts = {{ responsive:true, plugins:{{ legend:{{ display:false }} }}, scales:{{ y:{{ beginAtZero:true }} }} }};
 
-new Chart(document.getElementById('ordersChart'), {{
-  type:'bar', data:{{ labels:weeks, datasets:[{{ data:delivered, backgroundColor:'#34d399', borderRadius:4 }}] }}, options:barOpts
+const ordersChart = new Chart(document.getElementById('ordersChart'), {{
+  type:'bar', data:{{ labels:weeks, datasets:[{{ data:[...delivered], backgroundColor:weeks.map(()=>'#34d399'), borderRadius:4 }}] }}, options:barOpts
 }});
-new Chart(document.getElementById('checkChart'), {{
-  type:'line', data:{{ labels:weeks, datasets:[{{ data:avgCheck, borderColor:'#60a5fa', backgroundColor:'rgba(96,165,250,0.1)', fill:true, tension:0.3, pointRadius:4 }}] }}, options:barOpts
+const checkChart = new Chart(document.getElementById('checkChart'), {{
+  type:'line', data:{{ labels:weeks, datasets:[{{ data:[...avgCheck], borderColor:'#60a5fa', backgroundColor:'rgba(96,165,250,0.1)', fill:true, tension:0.3, pointRadius:weeks.map(()=>4), pointBackgroundColor:weeks.map(()=>'#60a5fa') }}] }}, options:barOpts
 }});
-new Chart(document.getElementById('cookingChart'), {{
-  type:'line', data:{{ labels:weeks, datasets:[{{ data:cookingTime, borderColor:'#fbbf24', backgroundColor:'rgba(251,191,36,0.1)', fill:true, tension:0.3, pointRadius:4 }}] }}, options:barOpts
+const cookingChart = new Chart(document.getElementById('cookingChart'), {{
+  type:'line', data:{{ labels:weeks, datasets:[{{ data:[...cookingTime], borderColor:'#fbbf24', backgroundColor:'rgba(251,191,36,0.1)', fill:true, tension:0.3, pointRadius:weeks.map(()=>4), pointBackgroundColor:weeks.map(()=>'#fbbf24') }}] }}, options:barOpts
 }});
-new Chart(document.getElementById('revenueChart'), {{
+const revenueChart = new Chart(document.getElementById('revenueChart'), {{
   type:'bar', data:{{ labels:revWeeks, datasets:[
-    {{ label:'Дохід від їжі', data:foodRev, backgroundColor:'#818cf8', borderRadius:4 }},
-    {{ label:'Комісія', data:feesData, backgroundColor:'#f87171', borderRadius:4 }},
-    {{ label:'Чистий дохід', data:netIncome, backgroundColor:'#34d399', borderRadius:4 }}
+    {{ label:'Дохід від їжі', data:[...foodRev], backgroundColor:revWeeks.map(()=>'#818cf8'), borderRadius:4 }},
+    {{ label:'Комісія', data:[...feesData], backgroundColor:revWeeks.map(()=>'#f87171'), borderRadius:4 }},
+    {{ label:'Чистий дохід', data:[...netIncome], backgroundColor:revWeeks.map(()=>'#34d399'), borderRadius:4 }}
   ] }}, options:{{ ...barOpts, plugins:{{ legend:{{ display:true, position:'top' }} }} }}
 }});
+
+function fmt(n, suffix) {{
+  if (n === null || n === undefined) return '—';
+  return n.toLocaleString('uk-UA', {{maximumFractionDigits: suffix === ' хв' ? 1 : 0}}) + (suffix || '');
+}}
+
+function wow(cur, prev, invert) {{
+  if (prev === null || prev === undefined || prev === 0) return '<span class="wow neutral">—</span>';
+  const pct = ((cur - prev) / Math.abs(prev) * 100).toFixed(0);
+  const isUp = cur > prev;
+  const cls = invert ? (isUp ? 'down' : 'up') : (isUp ? 'up' : 'down');
+  if (cur === prev) return '<span class="wow neutral">0%</span>';
+  const arrow = isUp ? '&#9650;' : '&#9660;';
+  return `<span class="wow ${{cls}}">${{arrow}} ${{Math.abs(pct)}}%</span>`;
+}}
+
+function getWeekData(wk) {{
+  return W[wk] || {{}};
+}}
+
+function sumAll(key) {{
+  return allWeeks.reduce((s, w) => s + (W[w]?.[key] || 0), 0);
+}}
+
+function avgWeighted(valKey, weightKey) {{
+  let num = 0, den = 0;
+  allWeeks.forEach(w => {{
+    const d = W[w] || {{}};
+    num += (d[valKey] || 0) * (d[weightKey] || 0);
+    den += (d[weightKey] || 0);
+  }});
+  return den > 0 ? num / den : 0;
+}}
+
+function filterRows(tableId, week) {{
+  const rows = document.querySelectorAll(`#${{tableId}} tbody tr`);
+  let visible = 0;
+  rows.forEach(r => {{
+    if (week === 'all' || r.dataset.week === week) {{
+      r.classList.remove('hidden');
+      visible++;
+    }} else {{
+      r.classList.add('hidden');
+    }}
+  }});
+  return visible;
+}}
+
+function highlightChart(chart, labels, week, colors) {{
+  if (typeof colors === 'string') colors = labels.map(() => colors);
+  const ds = chart.data.datasets[0];
+  if (week === 'all') {{
+    if (ds.backgroundColor instanceof Array) ds.backgroundColor = colors;
+    if (ds.pointRadius instanceof Array) ds.pointRadius = labels.map(() => 4);
+    if (ds.pointBackgroundColor instanceof Array) ds.pointBackgroundColor = colors;
+  }} else {{
+    if (ds.backgroundColor instanceof Array) {{
+      ds.backgroundColor = labels.map(l => l === week ? colors[0] : colors[0] + '33');
+    }}
+    if (ds.pointRadius instanceof Array) {{
+      ds.pointRadius = labels.map(l => l === week ? 8 : 3);
+    }}
+    if (ds.pointBackgroundColor instanceof Array) {{
+      ds.pointBackgroundColor = labels.map(l => l === week ? colors[0] : colors[0] + '66');
+    }}
+  }}
+  chart.update();
+}}
+
+function highlightRevenueChart(week) {{
+  const ds = revenueChart.data.datasets;
+  const cols = ['#818cf8', '#f87171', '#34d399'];
+  ds.forEach((d, i) => {{
+    if (week === 'all') {{
+      d.backgroundColor = revWeeks.map(() => cols[i]);
+    }} else {{
+      d.backgroundColor = revWeeks.map(l => l === week ? cols[i] : cols[i] + '33');
+    }}
+  }});
+  revenueChart.update();
+}}
+
+function updateView(week) {{
+  // Update button states
+  document.querySelectorAll('.week-btn').forEach(b => {{
+    b.classList.toggle('active', b.dataset.week === week);
+  }});
+
+  let d, prevD;
+  if (week === 'all') {{
+    d = {{
+      delivered: sumAll('delivered'), avg_check: avgWeighted('avg_check', 'delivered'),
+      cooking: avgWeighted('cooking', 'delivered'), food_rev: sumAll('food_rev'),
+      fees: sumAll('fees'), net_income: sumAll('net_income'),
+      cancelled: sumAll('cancelled'), complaints: sumAll('complaints')
+    }};
+    prevD = null;
+  }} else {{
+    const wd = getWeekData(week);
+    d = {{
+      delivered: wd.delivered || 0, avg_check: wd.avg_check || 0,
+      cooking: wd.cooking || 0, food_rev: wd.food_rev || 0,
+      fees: wd.fees || 0, net_income: wd.net_income || 0,
+      cancelled: wd.cancelled || 0, complaints: wd.complaints || 0
+    }};
+    const idx = allWeeks.indexOf(week);
+    if (idx > 0) {{
+      const pw = getWeekData(allWeeks[idx - 1]);
+      prevD = {{
+        delivered: pw.delivered || 0, avg_check: pw.avg_check || 0,
+        cooking: pw.cooking || 0, food_rev: pw.food_rev || 0,
+        fees: pw.fees || 0, net_income: pw.net_income || 0,
+        cancelled: pw.cancelled || 0, complaints: pw.complaints || 0
+      }};
+    }} else {{
+      prevD = null;
+    }}
+  }}
+
+  document.getElementById('vDelivered').textContent = fmt(d.delivered, '');
+  document.getElementById('vCheck').textContent = fmt(d.avg_check, ' ₴');
+  document.getElementById('vCooking').textContent = fmt(d.cooking, ' хв');
+  document.getElementById('vFoodRev').textContent = fmt(d.food_rev, ' ₴');
+  document.getElementById('vFees').textContent = fmt(d.fees, ' ₴');
+  document.getElementById('vNet').textContent = fmt(d.net_income, ' ₴');
+  document.getElementById('vCancelled').textContent = fmt(d.cancelled, '');
+  document.getElementById('vComplaints').textContent = fmt(d.complaints, '');
+
+  if (prevD) {{
+    document.getElementById('wDelivered').innerHTML = wow(d.delivered, prevD.delivered, false);
+    document.getElementById('wCheck').innerHTML = wow(d.avg_check, prevD.avg_check, false);
+    document.getElementById('wCooking').innerHTML = wow(d.cooking, prevD.cooking, true);
+    document.getElementById('wFoodRev').innerHTML = wow(d.food_rev, prevD.food_rev, false);
+    document.getElementById('wFees').innerHTML = wow(d.fees, prevD.fees, true);
+    document.getElementById('wNet').innerHTML = wow(d.net_income, prevD.net_income, false);
+    document.getElementById('wCancelled').innerHTML = wow(d.cancelled, prevD.cancelled, true);
+    document.getElementById('wComplaints').innerHTML = wow(d.complaints, prevD.complaints, true);
+  }} else {{
+    ['wDelivered','wCheck','wCooking','wFoodRev','wFees','wNet','wCancelled','wComplaints'].forEach(id => {{
+      document.getElementById(id).innerHTML = '';
+    }});
+  }}
+
+  const oVis = filterRows('ordersTable', week);
+  const cVis = filterRows('compTable', week);
+  const xVis = filterRows('cancTable', week);
+
+  document.getElementById('ordersCount').textContent = `(${{oVis}} замовлень, всі суми в ₴)`;
+  document.getElementById('compCount').textContent = `(${{cVis}})`;
+  document.getElementById('cancCount').textContent = `(${{xVis}})`;
+
+  highlightChart(ordersChart, weeks, week, weeks.map(() => '#34d399'));
+  highlightChart(checkChart, weeks, week, weeks.map(() => '#60a5fa'));
+  highlightChart(cookingChart, weeks, week, weeks.map(() => '#fbbf24'));
+  highlightRevenueChart(week);
+}}
+
+// Event listeners
+document.getElementById('weekFilter').addEventListener('click', e => {{
+  if (e.target.classList.contains('week-btn')) {{
+    updateView(e.target.dataset.week);
+  }}
+}});
+
+// Initial render
+updateView('all');
 </script>
 </body>
 </html>"""

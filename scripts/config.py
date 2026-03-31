@@ -12,4 +12,4 @@ PROVIDERS = {
     31503: {"name": "Cukor Black", "slug": "cukor-black", "city": "Львів"},
 }
 
-WEEKS_BACK = 4
+WEEKS_BACK = 8
