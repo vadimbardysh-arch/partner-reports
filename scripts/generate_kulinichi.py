@@ -190,11 +190,16 @@ def fetch_orders_detail(conn):
     ROUND(f.provider_price_after_discount, 2) AS food_revenue,
     ROUND(m.provider_commission_net_eur * m.currency_rate, 2) AS fee_net,
     ROUND(m.provider_commission_gross_eur * m.currency_rate, 2) AS fee_gross,
-    0 AS bp_fee_net,
-    0 AS bp_fee_gross,
+    ROUND(f.commission_local - m.provider_commission_net_eur * m.currency_rate, 2) AS campaign_fee_net,
+    ROUND((f.commission_local - m.provider_commission_net_eur * m.currency_rate) * 1.2, 2) AS campaign_fee_gross,
     ROUND(f.commission_local * 1.2, 2) AS total_fee_gross,
     ROUND(COALESCE(f.total_refunded_amount, 0), 2) AS refund,
-    ROUND(f.provider_price_after_discount - f.commission_local * 1.2 - COALESCE(f.total_refunded_amount, 0), 2) AS net_income
+    ROUND(
+        f.provider_price_after_discount
+        + (COALESCE(m.bolt_delivery_campaign_cost_eur, 0) + COALESCE(m.bolt_menu_campaign_cost_eur, 0)) * m.currency_rate
+        - f.commission_local * 1.2
+        - COALESCE(f.total_refunded_amount, 0)
+    , 2) AS net_income
     FROM ng_delivery_spark.fact_order_delivery f
     JOIN ng_public_spark.etl_delivery_order_monetary_metrics m ON f.order_id = m.order_id
     WHERE f.provider_id IN ({PROVIDER_IDS})
@@ -255,11 +260,19 @@ def fetch_revenue_weekly(conn):
     ROUND(SUM(f.provider_price_after_discount), 0) AS food_revenue,
     ROUND(SUM(f.commission_local * 1.2), 0) AS total_fee_gross,
     ROUND(SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS refund,
-    ROUND(SUM(f.provider_price_after_discount) - SUM(f.commission_local * 1.2) - SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS net_income
+    ROUND(SUM((COALESCE(m.bolt_delivery_campaign_cost_eur, 0) + COALESCE(m.bolt_menu_campaign_cost_eur, 0)) * m.currency_rate), 0) AS bolt_compensation,
+    ROUND(
+        SUM(f.provider_price_after_discount)
+        + SUM((COALESCE(m.bolt_delivery_campaign_cost_eur, 0) + COALESCE(m.bolt_menu_campaign_cost_eur, 0)) * m.currency_rate)
+        - SUM(f.commission_local * 1.2)
+        - SUM(COALESCE(f.total_refunded_amount, 0))
+    , 0) AS net_income
     FROM ng_delivery_spark.fact_order_delivery f
+    JOIN ng_public_spark.etl_delivery_order_monetary_metrics m ON f.order_id = m.order_id
     WHERE f.provider_id IN ({PROVIDER_IDS})
     AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
     AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
+    AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
     AND f.order_state = 'delivered'
     GROUP BY f.order_week, f.provider_id
     ORDER BY f.order_week, f.provider_id
@@ -486,6 +499,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             "food_revenue": to_native(r["food_revenue"]),
             "total_fee_gross": to_native(r["total_fee_gross"]),
             "refund": to_native(r["refund"]),
+            "bolt_compensation": to_native(r["bolt_compensation"]),
             "net_income": to_native(r["net_income"]),
         }
     revenue = dict(sorted(revenue.items(), key=lambda x: week_sort_key(x[0])))
@@ -1325,39 +1339,35 @@ function renderOrdersDetail() {{
  t += '<th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Bolt+</th>';
  t += '<th class="text-right">Ціна до знижки</th><th>Знижка (за чий рахунок)</th>';
  t += '<th class="text-right">Дохід від їжі</th><th>Комісія (нетто+ПДВ=брутто)</th>';
- t += '<th class="text-right">Bolt Plus комісія</th><th class="text-right">Всього комісія</th>';
+ t += '<th class="text-right">Компенсація Bolt</th><th class="text-right">Всього комісія</th>';
  t += '<th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th>';
  t += '</tr></thead><tbody>';
 
- let totFood = 0, totRev = 0, totFee = 0, totBpFee = 0, totRef = 0, totNet = 0;
+ let totFood = 0, totRev = 0, totFee = 0, totBoltComp = 0, totRef = 0, totNet = 0;
  rows.forEach(r => {{
  const date = r.order_created_date ? String(r.order_created_date).substring(0, 10) : '';
  totFood += r.food_before_discount || 0;
  totRev += r.food_revenue || 0;
  totFee += r.total_fee_gross || 0;
- totBpFee += r.bp_fee_gross || 0;
+ totBoltComp += r.bolt_discount || 0;
  totRef += r.refund || 0;
  totNet += r.net_income || 0;
 
- const isBp = (r.bp_fee_net || 0) > 0.5;
- const bpLabel = r.bolt_plus || 'Ні';
- const bpClass = isBp ? ' class="bp"' : '';
  const feeNet = r.fee_net || 0;
  const feeGross = r.fee_gross || 0;
- const bpFeeNet = r.bp_fee_net || 0;
- const bpFeeGross = r.bp_fee_gross || 0;
- const bpText = (isBp && bpFeeNet > 0.5) ? fmtFee(bpFeeNet, bpFeeGross) : '—';
+ const boltComp = r.bolt_discount || 0;
+ const boltCompText = boltComp > 0.5 ? '+' + boltComp.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) : '—';
 
  const nc = (r.net_income || 0) < 0 ? ' style="color:var(--neg)"' : '';
  t += '<tr><td>' + date + '</td>';
  t += '<td>' + (r.order_reference_id || '') + '</td>';
  t += '<td>' + (r.provider_short || '') + '</td>';
- t += '<td' + bpClass + '>' + bpLabel + '</td>';
+ t += '<td>Ні</td>';
  t += '<td class="text-right">' + (r.food_before_discount || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
  t += '<td>' + fmtDiscount(r) + '</td>';
  t += '<td class="text-right">' + (r.food_revenue || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
  t += '<td>' + fmtFee(feeNet, feeGross) + '</td>';
- t += '<td class="text-right">' + bpText + '</td>';
+ t += '<td class="text-right" style="color:var(--pos)">' + boltCompText + '</td>';
  t += '<td class="text-right">' + (r.total_fee_gross || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
  t += '<td class="text-right">' + (r.refund || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
  t += '<td class="text-right"' + nc + '>' + (r.net_income || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
@@ -1368,7 +1378,7 @@ function renderOrdersDetail() {{
  t += '<td></td>';
  t += '<td class="text-right">' + totRev.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
  t += '<td></td>';
- t += '<td class="text-right">' + totBpFee.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+ t += '<td class="text-right" style="color:var(--pos)">+' + totBoltComp.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
  t += '<td class="text-right">' + totFee.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
  t += '<td class="text-right">' + totRef.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
  t += '<td class="text-right">' + totNet.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
