@@ -1343,6 +1343,31 @@ function fmtFee(net, gross) {{
  return Math.round(net) + ' + ' + vat + ' = ' + Math.round(gross);
 }}
 
+function shortenPromo(raw) {{
+ if (!raw) return '';
+ return raw.split('; ').map(function(s) {{
+  const m1 = s.match(/(\\d+)%\\s*%?\\s*(Menu|Item)\\s*Discount.*?(\\d+)%\\s*On Provider/i);
+  if (m1) {{
+   const provPct = parseInt(m1[3]);
+   const boltPct = 100 - provPct;
+   const type = m1[2].toLowerCase() === 'menu' ? 'меню' : 'товар';
+   return m1[1] + '% ' + type + ' (' + boltPct + '/' + provPct + ')';
+  }}
+  if (/Free Delivery/i.test(s)) {{
+   const up = s.match(/Up to (\\d+)/i);
+   return 'Безк. доставка' + (up ? ' до ' + up[1] : '');
+  }}
+  if (/Provider Targeting/i.test(s)) {{
+   if (/NEW_CITY/i.test(s)) return 'Таргетинг (нове місто)';
+   if (/Signup/i.test(s)) return 'Таргетинг (signup)';
+   if (/Never Activated/i.test(s)) return 'Таргетинг (реактивація)';
+   if (/Engagement/i.test(s)) return 'Таргетинг (engagement)';
+   return 'Таргетинг';
+  }}
+  return s.length > 40 ? s.substring(0, 37) + '…' : s;
+ }}).join('; ');
+}}
+
 function renderOrdersDetail() {{
  const ids = getFilteredStoreIds();
  const selW = getSelectedWeek();
@@ -1391,8 +1416,8 @@ function renderOrdersDetail() {{
  t += '<td class="text-right">' + (r.refund || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
  t += '<td class="text-right"' + nc + '>' + (r.net_income || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
  const promoName = r.promo_names || '';
- const promoShort = promoName.length > 60 ? promoName.substring(0, 57) + '…' : promoName;
- t += '<td class="comment-cell" title="' + promoName.replace(/"/g, '&quot;') + '">' + (promoShort || '—') + '</td>';
+ const promoShort = shortenPromo(promoName);
+ t += '<td style="max-width:220px;white-space:normal;font-size:0.82em" title="' + promoName.replace(/"/g, '&quot;') + '">' + (promoShort || '—') + '</td>';
  const pDisc = r.promo_total_discount || 0;
  const pBolt = r.promo_bolt_spend || 0;
  const pProv = r.promo_provider_spend || 0;
