@@ -7,6 +7,7 @@ import os
 import sys
 import json
 import math
+import re
 from pathlib import Path
 from datetime import datetime
 from decimal import Decimal
@@ -126,6 +127,7 @@ def fetch_weekly_per_store(conn):
     FROM ng_delivery_spark.fact_order_delivery f
     WHERE f.provider_id IN ({PROVIDER_IDS})
     AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
     AND f.order_state = 'delivered'
     GROUP BY f.provider_id, f.provider_name, f.city_name, f.order_week
     ORDER BY f.order_week, f.provider_id
@@ -161,6 +163,7 @@ def fetch_top_items(conn):
     JOIN ng_delivery_spark.fact_order_delivery f ON b.order_id = f.order_id
     WHERE f.provider_id IN ({PROVIDER_IDS})
     AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
     AND b.created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
     AND f.order_state = 'delivered'
     AND b.total_price IS NOT NULL
@@ -178,8 +181,8 @@ def fetch_orders_detail(conn):
     SELECT
     f.order_id, f.order_reference_id, f.order_created_date, f.order_week,
     f.provider_id, f.provider_name, f.order_state,
-    CASE WHEN f.is_bolt_plus_order THEN 'Bolt Plus' ELSE 'Ні' END AS bolt_plus,
-    f.is_bolt_plus_order,
+    'Ні' AS bolt_plus,
+    false AS is_bolt_plus_order,
     ROUND(f.provider_price_before_discount, 2) AS food_before_discount,
     ROUND(f.total_order_item_discount, 2) AS total_discount,
     ROUND((COALESCE(m.bolt_delivery_campaign_cost_eur, 0) + COALESCE(m.bolt_menu_campaign_cost_eur, 0)) * m.currency_rate, 2) AS bolt_discount,
@@ -187,8 +190,8 @@ def fetch_orders_detail(conn):
     ROUND(f.provider_price_after_discount, 2) AS food_revenue,
     ROUND(m.provider_commission_net_eur * m.currency_rate, 2) AS fee_net,
     ROUND(m.provider_commission_gross_eur * m.currency_rate, 2) AS fee_gross,
-    ROUND(f.commission_local - m.provider_commission_net_eur * m.currency_rate, 2) AS bp_fee_net,
-    ROUND((f.commission_local - m.provider_commission_net_eur * m.currency_rate) * 1.2, 2) AS bp_fee_gross,
+    0 AS bp_fee_net,
+    0 AS bp_fee_gross,
     ROUND(f.commission_local * 1.2, 2) AS total_fee_gross,
     ROUND(COALESCE(f.total_refunded_amount, 0), 2) AS refund,
     ROUND(f.provider_price_after_discount - f.commission_local * 1.2 - COALESCE(f.total_refunded_amount, 0), 2) AS net_income
@@ -196,6 +199,7 @@ def fetch_orders_detail(conn):
     JOIN ng_public_spark.etl_delivery_order_monetary_metrics m ON f.order_id = m.order_id
     WHERE f.provider_id IN ({PROVIDER_IDS})
     AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
     AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
     AND f.order_state = 'delivered'
     ORDER BY f.order_created_date DESC, f.order_id DESC
@@ -215,6 +219,7 @@ def fetch_complaints(conn):
     JOIN ng_delivery_spark.fact_order_delivery f ON d.order_id = f.order_id
     WHERE f.provider_id IN ({PROVIDER_IDS})
     AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
     AND (d.is_bad_order = true OR d.is_cs_ticket_order = true)
     ORDER BY f.order_created_date DESC
     """)
@@ -236,6 +241,7 @@ def fetch_cancelled(conn):
     LEFT JOIN ng_delivery_spark.dim_order_delivery d ON f.order_id = d.order_id
     WHERE f.provider_id IN ({PROVIDER_IDS})
     AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
     AND f.order_state IN ('rejected', 'cancelled', 'failed')
     ORDER BY f.order_created_date DESC
     """)
@@ -253,6 +259,7 @@ def fetch_revenue_weekly(conn):
     FROM ng_delivery_spark.fact_order_delivery f
     WHERE f.provider_id IN ({PROVIDER_IDS})
     AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
     AND f.order_state = 'delivered'
     GROUP BY f.order_week, f.provider_id
     ORDER BY f.order_week, f.provider_id
@@ -290,9 +297,45 @@ def fetch_availability_log(conn):
     """)
 
 
+def fetch_promo_data(conn):
+    return query(conn, f"""
+    SELECT
+    f.order_week,
+    f.provider_id,
+    c.name AS campaign_name,
+    c.campaign_type,
+    c.spend_objective,
+    COUNT(DISTINCT c.order_id) AS promo_orders,
+    ROUND(SUM(c.discount_value_local), 0) AS total_discount,
+    ROUND(SUM(c.bolt_spend_local), 0) AS bolt_spend,
+    ROUND(SUM(c.provider_spend_local), 0) AS provider_spend
+    FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+    JOIN ng_delivery_spark.fact_order_delivery f ON c.order_id = f.order_id
+    WHERE c.provider_id IN ({PROVIDER_IDS})
+    AND c.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    AND c.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
+    AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
+    AND f.order_state = 'delivered'
+    GROUP BY f.order_week, f.provider_id, c.name, c.campaign_type, c.spend_objective
+    ORDER BY f.order_week DESC, promo_orders DESC
+    """)
+
+
 # ── Build data for HTML ──────────────────────────────────────────────────
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df):
+def strip_nda(text):
+    """Remove admin names, beehive URLs, and 'Reason:' prefixes from comments."""
+    if not text:
+        return ""
+    text = re.sub(r'Admin:\s*[A-Za-zА-Яа-яІіЇїЄєҐґ\s\-]+?\s*Reason:\s*', '', text)
+    text = re.sub(r'h?t?tps?://beehive[^\s]*', '', text)
+    text = re.sub(r'beehive\.bolt\.eu\S*', '', text)
+    text = re.sub(r'https?://\S*beehive\S*', '', text)
+    return text.strip()
+
+
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df):
     data = {}
 
     stores_map = {}
@@ -412,6 +455,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             row["provider_short"] = KULINICHI_PROVIDERS[int(pid)]["short"]
         else:
             row["provider_short"] = row.get("provider_name", "")
+        row["comment"] = strip_nda(row.get("comment", ""))
     data["cancelled"] = canc_list
 
     revenue = {}
@@ -469,6 +513,27 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             "offline_reason": offline_reason_ua,
         })
     data["avail_events"] = avail_events
+
+    # Promo data: { week: [ { campaign_name, promo_orders, total_discount, bolt_spend, provider_spend, provider_id } ] }
+    promo = {}
+    for _, r in promo_df.iterrows():
+        week = str(r["order_week"])
+        pid = int(to_native(r["provider_id"]))
+        if week not in promo:
+            promo[week] = []
+        short = KULINICHI_PROVIDERS.get(pid, {}).get("short", str(pid))
+        promo[week].append({
+            "pid": pid,
+            "short": short,
+            "name": str(r["campaign_name"]),
+            "type": str(r["spend_objective"] or r["campaign_type"]),
+            "orders": to_native(r["promo_orders"]),
+            "discount": to_native(r["total_discount"]),
+            "bolt_spend": to_native(r["bolt_spend"]),
+            "provider_spend": to_native(r["provider_spend"]),
+        })
+    promo = dict(sorted(promo.items(), key=lambda x: week_sort_key(x[0])))
+    data["promo"] = promo
 
     return data
 
@@ -647,6 +712,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
  <a href="#sec-orders-detail" class="nav-link">Деталі замовлень</a>
  <a href="#sec-complaints" class="nav-link">Скарги</a>
  <a href="#sec-cancelled" class="nav-link">Скасовані</a>
+ <a href="#sec-promo" class="nav-link">Промо</a>
  <a href="#sec-items" class="nav-link">Топ позиції</a>
 </nav>
 
@@ -724,6 +790,12 @@ body.dark .revenue-summary-table th{{background:#111827}}
  <div class="section" id="sec-cancelled">
  <div class="section-title"><span class="section-icon">❌</span> Скасовані замовлення <span id="canc-count" style="font-size:13px;font-weight:400;color:var(--text2)"></span></div>
  <div id="cancelled-wrap" class="table-wrap"><div class="scroll-table"></div></div>
+ </div>
+
+ <div class="section" id="sec-promo">
+ <div class="section-title"><span class="section-icon">🎯</span> Промо-аналітика <span id="promo-week-label" style="font-size:13px;font-weight:400;color:var(--text2)"></span></div>
+ <div id="promo-kpi" class="kpi-grid" style="margin-bottom:16px"></div>
+ <div id="promo-table-wrap" class="table-wrap"></div>
  </div>
 
  <div class="section" id="sec-items">
@@ -812,13 +884,16 @@ function getFilteredWeeks() {{
 
 function getWeekDates(weekStr) {{
  const [y, w] = weekStr.split('-W').map(Number);
- const jan4 = new Date(y, 0, 4);
- const d = jan4.getDate() - (jan4.getDay() || 7) + 1;
- const monday = new Date(y, 0, d + (w - 1) * 7);
+ const jan1 = new Date(Date.UTC(y, 0, 1));
+ const jan1dow = jan1.getUTCDay() || 7;
+ const mondayOfW1 = new Date(Date.UTC(y, 0, 1 + (1 - jan1dow)));
+ if (jan1dow > 4) mondayOfW1.setUTCDate(mondayOfW1.getUTCDate() + 7);
+ const monday = new Date(mondayOfW1);
+ monday.setUTCDate(mondayOfW1.getUTCDate() + (w - 1) * 7);
  const dates = [];
  for (let i = 0; i < 7; i++) {{
   const dt = new Date(monday);
-  dt.setDate(monday.getDate() + i);
+  dt.setUTCDate(monday.getUTCDate() + i);
   dates.push(dt.toISOString().slice(0, 10));
  }}
  return dates;
@@ -1326,6 +1401,77 @@ function renderCancelled() {{
  document.getElementById('cancelled-wrap').innerHTML = t;
 }}
 
+function renderPromo() {{
+ const ids = getFilteredStoreIds();
+ const selW = getSelectedWeek();
+ document.getElementById('promo-week-label').textContent = '— ' + selW;
+
+ const promoWeek = D.promo[selW] || [];
+ const filteredPromo = promoWeek.filter(p => ids.includes(p.pid));
+
+ const wd = D.weekly[selW] || {{}};
+ let totalOrders = 0;
+ ids.forEach(id => {{ if (wd[id]) totalOrders += wd[id].orders; }});
+
+ let totalPromoOrders = 0;
+ const uniqueOrders = new Set();
+ filteredPromo.forEach(p => {{ totalPromoOrders += p.orders; }});
+
+ const promoRate = totalOrders > 0 ? (totalPromoOrders / totalOrders * 100) : 0;
+ let totalDiscount = 0, totalBolt = 0, totalProv = 0;
+ filteredPromo.forEach(p => {{
+  totalDiscount += p.discount || 0;
+  totalBolt += p.bolt_spend || 0;
+  totalProv += p.provider_spend || 0;
+ }});
+
+ const kpis = [
+  {{ label: 'Замовлення з промо', value: totalPromoOrders + ' / ' + totalOrders, cls: 'neutral', text: promoRate.toFixed(1) + '% від усіх' }},
+  {{ label: 'Загальна знижка', value: '₴' + totalDiscount.toLocaleString('uk-UA'), cls: 'neutral', text: 'за тиждень' }},
+  {{ label: 'Витрати Bolt', value: '₴' + totalBolt.toLocaleString('uk-UA'), cls: 'neutral', text: 'за рахунок Bolt' }},
+  {{ label: 'Витрати закладу', value: '₴' + totalProv.toLocaleString('uk-UA'), cls: totalProv > 0 ? 'down' : 'neutral', text: 'за рахунок закладу' }},
+ ];
+
+ document.getElementById('promo-kpi').innerHTML = kpis.map(k =>
+  '<div class="kpi-card"><div class="kpi-label">' + k.label + '</div><div class="kpi-value">' + k.value + '</div>' +
+  '<div class="kpi-change ' + k.cls + '">' + k.text + '</div></div>'
+ ).join('');
+
+ let t = '<table class="data-table"><thead><tr><th>Назва промо</th><th>Тип</th><th class="text-right">Замовлення</th><th class="text-right">% від усіх</th><th class="text-right">Знижка (₴)</th><th class="text-right">Bolt (₴)</th><th class="text-right">Заклад (₴)</th></tr></thead><tbody>';
+ if (filteredPromo.length === 0) {{
+  t += '<tr><td colspan="7" class="text-center" style="padding:24px;color:var(--text2)">Немає промо за цей тиждень</td></tr>';
+ }} else {{
+  const grouped = {{}};
+  filteredPromo.forEach(p => {{
+   const key = p.name;
+   if (!grouped[key]) grouped[key] = {{ name: p.name, type: p.type, orders: 0, discount: 0, bolt: 0, prov: 0 }};
+   grouped[key].orders += p.orders;
+   grouped[key].discount += p.discount || 0;
+   grouped[key].bolt += p.bolt_spend || 0;
+   grouped[key].prov += p.provider_spend || 0;
+  }});
+  const sorted = Object.values(grouped).sort((a, b) => b.orders - a.orders);
+  sorted.forEach(p => {{
+   const pct = totalOrders > 0 ? (p.orders / totalOrders * 100).toFixed(1) : '0.0';
+   t += '<tr><td style="white-space:normal;max-width:350px;word-break:break-word">' + p.name + '</td>';
+   t += '<td>' + p.type + '</td>';
+   t += '<td class="text-right">' + p.orders + '</td>';
+   t += '<td class="text-right">' + pct + '%</td>';
+   t += '<td class="text-right">₴' + p.discount.toLocaleString('uk-UA') + '</td>';
+   t += '<td class="text-right">₴' + p.bolt.toLocaleString('uk-UA') + '</td>';
+   t += '<td class="text-right">₴' + p.prov.toLocaleString('uk-UA') + '</td></tr>';
+  }});
+  t += '<tr class="total-row"><td colspan="2">Всього</td>';
+  t += '<td class="text-right">' + totalPromoOrders + '</td>';
+  t += '<td class="text-right">' + promoRate.toFixed(1) + '%</td>';
+  t += '<td class="text-right">₴' + totalDiscount.toLocaleString('uk-UA') + '</td>';
+  t += '<td class="text-right">₴' + totalBolt.toLocaleString('uk-UA') + '</td>';
+  t += '<td class="text-right">₴' + totalProv.toLocaleString('uk-UA') + '</td></tr>';
+ }}
+ t += '</tbody></table>';
+ document.getElementById('promo-table-wrap').innerHTML = t;
+}}
+
 function renderTopItems() {{
  const ids = getFilteredStoreIds();
  const selW = getSelectedWeek();
@@ -1357,6 +1503,7 @@ function renderAll() {{
  renderOrdersDetail();
  renderComplaints();
  renderCancelled();
+ renderPromo();
  renderTopItems();
 }}
 
@@ -1465,10 +1612,14 @@ def main():
         print("  Fetching availability log…")
         avail_log_df = fetch_availability_log(conn)
         print(f"  → {len(avail_log_df)} rows")
+
+        print("  Fetching promo data…")
+        promo_df = fetch_promo_data(conn)
+        print(f"  → {len(promo_df)} rows")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "kulinichi"
