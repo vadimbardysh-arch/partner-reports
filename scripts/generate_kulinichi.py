@@ -178,6 +178,19 @@ def fetch_top_items(conn):
 
 def fetch_orders_detail(conn):
     return query(conn, f"""
+    WITH order_promos AS (
+        SELECT
+            c.order_id,
+            CONCAT_WS('; ', COLLECT_SET(c.name)) AS promo_names,
+            ROUND(SUM(c.bolt_spend_local), 2) AS promo_bolt_spend,
+            ROUND(SUM(c.provider_spend_local), 2) AS promo_provider_spend,
+            ROUND(SUM(c.discount_value_local), 2) AS promo_total_discount
+        FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+        WHERE c.provider_id IN ({PROVIDER_IDS})
+        AND c.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
+        AND c.order_created_date < DATE_FORMAT(DATE_TRUNC('WEEK', CURRENT_DATE()), 'yyyy-MM-dd')
+        GROUP BY c.order_id
+    )
     SELECT
     f.order_id, f.order_reference_id, f.order_created_date, f.order_week,
     f.provider_id, f.provider_name, f.order_state,
@@ -199,9 +212,14 @@ def fetch_orders_detail(conn):
         + (COALESCE(m.bolt_delivery_campaign_cost_eur, 0) + COALESCE(m.bolt_menu_campaign_cost_eur, 0)) * m.currency_rate
         - f.commission_local * 1.2
         - COALESCE(f.total_refunded_amount, 0)
-    , 2) AS net_income
+    , 2) AS net_income,
+    p.promo_names,
+    COALESCE(p.promo_bolt_spend, 0) AS promo_bolt_spend,
+    COALESCE(p.promo_provider_spend, 0) AS promo_provider_spend,
+    COALESCE(p.promo_total_discount, 0) AS promo_total_discount
     FROM ng_delivery_spark.fact_order_delivery f
     JOIN ng_public_spark.etl_delivery_order_monetary_metrics m ON f.order_id = m.order_id
+    LEFT JOIN order_promos p ON f.order_id = p.order_id
     WHERE f.provider_id IN ({PROVIDER_IDS})
     AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
     AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
@@ -1341,6 +1359,7 @@ function renderOrdersDetail() {{
  t += '<th class="text-right">Дохід від їжі</th><th>Комісія (нетто+ПДВ=брутто)</th>';
  t += '<th class="text-right">Компенсація Bolt</th><th class="text-right">Всього комісія</th>';
  t += '<th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th>';
+ t += '<th>Промо</th><th class="text-right">Знижка промо</th><th class="text-right">Bolt оплатив</th><th class="text-right">Заклад оплатив</th>';
  t += '</tr></thead><tbody>';
 
  let totFood = 0, totRev = 0, totFee = 0, totBoltComp = 0, totRef = 0, totNet = 0;
@@ -1371,6 +1390,19 @@ function renderOrdersDetail() {{
  t += '<td class="text-right">' + (r.total_fee_gross || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
  t += '<td class="text-right">' + (r.refund || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
  t += '<td class="text-right"' + nc + '>' + (r.net_income || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+ const promoName = r.promo_names || '';
+ const promoShort = promoName.length > 60 ? promoName.substring(0, 57) + '…' : promoName;
+ t += '<td class="comment-cell" title="' + promoName.replace(/"/g, '&quot;') + '">' + (promoShort || '—') + '</td>';
+ const pDisc = r.promo_total_discount || 0;
+ const pBolt = r.promo_bolt_spend || 0;
+ const pProv = r.promo_provider_spend || 0;
+ if (pDisc > 0) {{
+   t += '<td class="text-right">' + pDisc.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+   t += '<td class="text-right">' + pBolt.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+   t += '<td class="text-right">' + pProv.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+ }} else {{
+   t += '<td class="text-right">—</td><td class="text-right">—</td><td class="text-right">—</td>';
+ }}
  }});
 
  t += '<tr class="total-row"><td colspan="3">Всього (' + rows.length + ' зам.)</td><td></td>';
@@ -1382,6 +1414,7 @@ function renderOrdersDetail() {{
  t += '<td class="text-right">' + totFee.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
  t += '<td class="text-right">' + totRef.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
  t += '<td class="text-right">' + totNet.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+ t += '<td></td><td></td><td></td><td></td>';
  t += '</tr></tbody></table></div>';
  document.getElementById('orders-detail-wrap').innerHTML = t;
 }}
