@@ -322,6 +322,23 @@ def fetch_promo_data(conn):
     """)
 
 
+def fetch_promo_unique_orders(conn):
+    return query(conn, f"""
+    SELECT
+    f.order_week,
+    COUNT(DISTINCT c.order_id) AS unique_promo_orders
+    FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+    JOIN ng_delivery_spark.fact_order_delivery f ON c.order_id = f.order_id
+    WHERE c.provider_id IN ({PROVIDER_IDS})
+    AND c.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    AND c.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
+    AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
+    AND f.order_state = 'delivered'
+    GROUP BY f.order_week
+    """)
+
+
 # ── Build data for HTML ──────────────────────────────────────────────────
 
 def strip_nda(text):
@@ -335,7 +352,7 @@ def strip_nda(text):
     return text.strip()
 
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df):
     data = {}
 
     stores_map = {}
@@ -534,6 +551,12 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         })
     promo = dict(sorted(promo.items(), key=lambda x: week_sort_key(x[0])))
     data["promo"] = promo
+
+    promo_unique = {}
+    for _, r in promo_unique_df.iterrows():
+        week = str(r["order_week"])
+        promo_unique[week] = to_native(r["unique_promo_orders"])
+    data["promo_unique"] = promo_unique
 
     return data
 
@@ -1413,11 +1436,8 @@ function renderPromo() {{
  let totalOrders = 0;
  ids.forEach(id => {{ if (wd[id]) totalOrders += wd[id].orders; }});
 
- let totalPromoOrders = 0;
- const uniqueOrders = new Set();
- filteredPromo.forEach(p => {{ totalPromoOrders += p.orders; }});
-
- const promoRate = totalOrders > 0 ? (totalPromoOrders / totalOrders * 100) : 0;
+ const uniquePromoOrders = D.promo_unique[selW] || 0;
+ const promoRate = totalOrders > 0 ? (uniquePromoOrders / totalOrders * 100) : 0;
  let totalDiscount = 0, totalBolt = 0, totalProv = 0;
  filteredPromo.forEach(p => {{
   totalDiscount += p.discount || 0;
@@ -1426,7 +1446,7 @@ function renderPromo() {{
  }});
 
  const kpis = [
-  {{ label: 'Замовлення з промо', value: totalPromoOrders + ' / ' + totalOrders, cls: 'neutral', text: promoRate.toFixed(1) + '% від усіх' }},
+  {{ label: 'Замовлення з промо', value: uniquePromoOrders + ' / ' + totalOrders, cls: 'neutral', text: promoRate.toFixed(1) + '% від усіх' }},
   {{ label: 'Загальна знижка', value: '₴' + totalDiscount.toLocaleString('uk-UA'), cls: 'neutral', text: 'за тиждень' }},
   {{ label: 'Витрати Bolt', value: '₴' + totalBolt.toLocaleString('uk-UA'), cls: 'neutral', text: 'за рахунок Bolt' }},
   {{ label: 'Витрати закладу', value: '₴' + totalProv.toLocaleString('uk-UA'), cls: totalProv > 0 ? 'down' : 'neutral', text: 'за рахунок закладу' }},
@@ -1461,8 +1481,8 @@ function renderPromo() {{
    t += '<td class="text-right">₴' + p.bolt.toLocaleString('uk-UA') + '</td>';
    t += '<td class="text-right">₴' + p.prov.toLocaleString('uk-UA') + '</td></tr>';
   }});
-  t += '<tr class="total-row"><td colspan="2">Всього</td>';
-  t += '<td class="text-right">' + totalPromoOrders + '</td>';
+  t += '<tr class="total-row"><td colspan="2">Всього (унікальних)</td>';
+  t += '<td class="text-right">' + uniquePromoOrders + '</td>';
   t += '<td class="text-right">' + promoRate.toFixed(1) + '%</td>';
   t += '<td class="text-right">₴' + totalDiscount.toLocaleString('uk-UA') + '</td>';
   t += '<td class="text-right">₴' + totalBolt.toLocaleString('uk-UA') + '</td>';
@@ -1616,10 +1636,14 @@ def main():
         print("  Fetching promo data…")
         promo_df = fetch_promo_data(conn)
         print(f"  → {len(promo_df)} rows")
+
+        print("  Fetching promo unique orders…")
+        promo_unique_df = fetch_promo_unique_orders(conn)
+        print(f"  → {len(promo_unique_df)} rows")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "kulinichi"
