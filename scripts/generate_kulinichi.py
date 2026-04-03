@@ -900,46 +900,46 @@ body.dark .revenue-summary-table th{{background:#111827}}
     <th>Тиждень</th><th>Дати</th><th>Bolt Plus</th><th>Menu Discount</th><th>Item Discount</th><th>Listing</th><th>Інше</th><th>Очікуваний ефект</th>
    </tr></thead>
    <tbody>
-    <tr><td><strong>W15</strong></td><td>07-13 квіт</td>
+    <tr><td><strong>W15</strong></td><td>06-12 квіт</td>
      <td><span style="background:#ff660020;color:#ff6600;padding:2px 8px;border-radius:4px;font-weight:600">3% запуск</span></td>
      <td>10% (50/50)</td><td>—</td>
      <td><span style="background:#3b82f620;color:#3b82f6;padding:2px 8px;border-radius:4px">Запуск 5 точок</span></td>
      <td>Fix availability + fail rate</td>
      <td>Базовий ефект: +10%</td>
     </tr>
-    <tr><td><strong>W16</strong></td><td>14-20 квіт</td>
+    <tr><td><strong>W16</strong></td><td>13-19 квіт</td>
      <td>3%</td><td>10% (50/50)</td><td>—</td><td>5 точок</td>
      <td>Smart Promo активація</td>
      <td>+15-20% замовлень</td>
     </tr>
-    <tr><td><strong>W17</strong></td><td>21-27 квіт</td>
+    <tr><td><strong>W17</strong></td><td>20-26 квіт</td>
      <td>3%</td><td>10% (50/50)</td>
      <td><span style="background:#22c55e20;color:#22c55e;padding:2px 8px;border-radius:4px">10% топ-3 (50/50)</span></td>
      <td>5 точок</td>
      <td>—</td>
      <td>+20-25%</td>
     </tr>
-    <tr><td><strong>W18</strong></td><td>28 квіт — 04 трав</td>
+    <tr><td><strong>W18</strong></td><td>27 квіт — 03 трав</td>
      <td>3%</td><td>10% (50/50)</td><td>10% топ-3</td><td>5 точок</td>
      <td>Time-promo Вт-Чт обід</td>
      <td>+25-30%</td>
     </tr>
-    <tr style="background:var(--bg)"><td><strong>W19</strong></td><td>05-11 трав</td>
+    <tr style="background:var(--bg)"><td><strong>W19</strong></td><td>04-10 трав</td>
      <td>3%</td><td>10% (50/50)</td><td>10% топ-3</td><td>Розширення на 8 точок</td>
      <td>Рівне: окремий Menu Discount</td>
      <td>Цільова: 50+ замовлень</td>
     </tr>
-    <tr style="background:var(--bg)"><td><strong>W20</strong></td><td>12-18 трав</td>
+    <tr style="background:var(--bg)"><td><strong>W20</strong></td><td>11-17 трав</td>
      <td>3%</td><td>10% (50/50)</td><td>Ротація позицій</td><td>8 точок</td>
      <td>Аналіз ROI по кожному інструменту</td>
      <td>Стабілізація 50+</td>
     </tr>
-    <tr style="background:var(--bg)"><td><strong>W21</strong></td><td>19-25 трав</td>
+    <tr style="background:var(--bg)"><td><strong>W21</strong></td><td>18-24 трав</td>
      <td>3%</td><td>10% (50/50)</td><td>За результатами</td><td>Оптимізація точок</td>
      <td>Масштабування успішних промо</td>
      <td>55+ замовлень</td>
     </tr>
-    <tr style="background:var(--bg)"><td><strong>W22</strong></td><td>26 трав — 01 черв</td>
+    <tr style="background:var(--bg)"><td><strong>W22</strong></td><td>25-31 трав</td>
      <td>3%</td><td>За результатами</td><td>За результатами</td><td>Оптимізація</td>
      <td>Підсумки 2 місяців, план на червень</td>
      <td>55+ стабільно</td>
