@@ -883,10 +883,10 @@ body.dark .revenue-summary-table th{{background:#111827}}
   <div style="background:var(--card);border-radius:12px;padding:20px;border-left:4px solid #3b82f6">
    <h3 style="margin:0 0 12px;font-size:15px;color:var(--text)">🔄 Фаза 3 — Оптимізація (тижні 5-8)</h3>
    <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--text2);line-height:1.8">
-    <li><strong>Підвищення комісії</strong> на 1-2% (до 26-27%)</li>
-    <li><strong>B+ знизити до 2%</strong> — компенсація для партнера</li>
     <li>Аналіз результатів: відключити неефективні промо</li>
-    <li>Масштабування на всі 16 закладів або фокус на топ-10</li>
+    <li>Масштабування Listing на всі активні заклади</li>
+    <li>Оптимізація Item Discount — ротація позицій</li>
+    <li>Фокус на топ-10 закладів або розширення мережі</li>
     <li>Відключити/реструктурувати "мертві" заклади</li>
    </ul>
   </div>
@@ -931,18 +931,17 @@ body.dark .revenue-summary-table th{{background:#111827}}
     </tr>
     <tr style="background:var(--bg)"><td><strong>W20</strong></td><td>12-18 трав</td>
      <td>3%</td><td>10% (50/50)</td><td>Ротація позицій</td><td>8 точок</td>
-     <td>Збір даних для комісії</td>
+     <td>Аналіз ROI по кожному інструменту</td>
      <td>Стабілізація 50+</td>
     </tr>
     <tr style="background:var(--bg)"><td><strong>W21</strong></td><td>19-25 трав</td>
-     <td><span style="background:#f59e0b20;color:#f59e0b;padding:2px 8px;border-radius:4px;font-weight:600">→ 2%</span></td>
-     <td>10% (50/50)</td><td>За результатами</td><td>8 точок</td>
-     <td><span style="background:#ef444420;color:#ef4444;padding:2px 8px;border-radius:4px">Комісія +1-2%</span></td>
+     <td>3%</td><td>10% (50/50)</td><td>За результатами</td><td>Оптимізація точок</td>
+     <td>Масштабування успішних промо</td>
      <td>55+ замовлень</td>
     </tr>
     <tr style="background:var(--bg)"><td><strong>W22</strong></td><td>26 трав — 01 черв</td>
-     <td>2%</td><td>Оцінка ефективності</td><td>За результатами</td><td>Оптимізація</td>
-     <td>Аналіз ROI всіх інструментів</td>
+     <td>3%</td><td>За результатами</td><td>За результатами</td><td>Оптимізація</td>
+     <td>Підсумки 2 місяців, план на червень</td>
      <td>55+ стабільно</td>
     </tr>
    </tbody>
@@ -963,30 +962,20 @@ body.dark .revenue-summary-table th{{background:#111827}}
    </table>
   </div>
   <div style="background:var(--card);border-radius:12px;padding:20px">
-   <h4 style="margin:0 0 10px;font-size:14px;color:var(--text)">💰 Після підвищення комісії</h4>
-   <table style="width:100%;font-size:12px;color:var(--text2)">
-    <tr><td>Типове замовлення</td><td style="text-align:right;font-weight:600">400 грн</td></tr>
-    <tr><td>Знижка B+ 2%</td><td style="text-align:right;color:#ef4444">-8 грн</td></tr>
-    <tr><td>Доставка для клієнта</td><td style="text-align:right;color:#22c55e;font-weight:600">0 грн</td></tr>
-    <tr><td>Комісія (27% + ПДВ)</td><td style="text-align:right">-127 грн</td></tr>
-    <tr style="border-top:1px solid var(--border)"><td style="font-weight:600;padding-top:8px">Чистий дохід закладу</td><td style="text-align:right;font-weight:600;padding-top:8px;color:#22c55e">265 грн</td></tr>
-    <tr><td style="font-size:11px;color:var(--text2)">vs зараз без B+</td><td style="text-align:right;font-size:11px">280 грн (-5.4%)</td></tr>
-   </table>
-  </div>
-  <div style="background:var(--card);border-radius:12px;padding:20px">
    <h4 style="margin:0 0 10px;font-size:14px;color:var(--text)">📊 Прогноз тижневого доходу</h4>
    <table style="width:100%;font-size:12px;color:var(--text2)">
-    <tr><td>Зараз</td><td style="text-align:right">37 зам. × 280</td><td style="text-align:right;font-weight:600">10 360 грн</td></tr>
-    <tr><td>W17-18 (B+3% + промо)</td><td style="text-align:right">48 зам. × 272</td><td style="text-align:right;font-weight:600;color:#22c55e">13 056 грн</td></tr>
-    <tr><td>W21+ (B+2% + ком.27%)</td><td style="text-align:right">55 зам. × 265</td><td style="text-align:right;font-weight:600;color:#22c55e">14 575 грн</td></tr>
-    <tr style="border-top:1px solid var(--border)"><td colspan="2" style="font-weight:600;padding-top:8px">Ріст доходу закладу</td><td style="text-align:right;font-weight:600;padding-top:8px;color:#22c55e">+41%</td></tr>
+    <tr><td>Зараз (без B+)</td><td style="text-align:right">37 зам. × 280</td><td style="text-align:right;font-weight:600">10 360 грн</td></tr>
+    <tr><td>W15-16 (B+3% старт)</td><td style="text-align:right">42 зам. × 272</td><td style="text-align:right;font-weight:600;color:#22c55e">11 424 грн</td></tr>
+    <tr><td>W17-18 (B+ + Item + Listing)</td><td style="text-align:right">48 зам. × 272</td><td style="text-align:right;font-weight:600;color:#22c55e">13 056 грн</td></tr>
+    <tr><td>W21-22 (повний комплекс)</td><td style="text-align:right">55 зам. × 272</td><td style="text-align:right;font-weight:600;color:#22c55e">14 960 грн</td></tr>
+    <tr style="border-top:1px solid var(--border)"><td colspan="2" style="font-weight:600;padding-top:8px">Цільовий ріст доходу</td><td style="text-align:right;font-weight:600;padding-top:8px;color:#22c55e">+44%</td></tr>
    </table>
   </div>
  </div>
 
  <div style="margin-top:20px;padding:16px;background:linear-gradient(135deg,#ff660010,#22c55e10);border-radius:12px;border:1px solid var(--border)">
   <p style="margin:0;font-size:13px;color:var(--text2);line-height:1.7">
-   <strong style="color:var(--text)">Ключовий меседж для партнера:</strong> Навіть після підвищення комісії та B+ знижки, загальний тижневий дохід закладу зростає з <strong>10 360 грн до 14 575+ грн (+41%)</strong> за рахунок збільшення кількості замовлень. Bolt інвестує у безкоштовну доставку, видимість та промо — заклад отримує більше клієнтів і вищий оборот.
+   <strong style="color:var(--text)">Мета:</strong> Збільшити тижневий дохід закладу з <strong>10 360 грн до 14 960+ грн (+44%)</strong> за рахунок комплексної стратегії: Bolt Plus (безкоштовна доставка для підписників), Sponsored Listing (видимість у додатку), Menu та Item Discount (залучення нових клієнтів). Bolt інвестує у доставку та промо — заклад отримує більше замовлень і вищий оборот.
   </p>
  </div>
  </div>
