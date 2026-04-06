@@ -2,10 +2,10 @@ name: Update Partner Reports
 
 on:
   schedule:
-    # Primary: Monday 13:00 UTC (16:00 Kyiv)
+    # Primary: Monday 10:00 UTC (13:00 Kyiv)
+    - cron: '0 10 * * 1'
+    # Backup: Monday 13:00 UTC (16:00 Kyiv) — runs if primary was skipped
     - cron: '0 13 * * 1'
-    # Backup: Monday 16:00 UTC (19:00 Kyiv) — runs if primary was skipped
-    - cron: '0 16 * * 1'
     # Keep-alive: Thursday 06:00 UTC — prevents GitHub from disabling scheduled workflows
     - cron: '0 6 * * 4'
   workflow_dispatch:
