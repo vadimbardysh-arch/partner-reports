@@ -2,9 +2,13 @@ name: Update Partner Reports
 
 on:
   schedule:
-    # Every Monday at 13:00 UTC
+    # Primary: Monday 13:00 UTC (16:00 Kyiv)
     - cron: '0 13 * * 1'
-  workflow_dispatch:  # allows manual trigger from GitHub UI
+    # Backup: Monday 16:00 UTC (19:00 Kyiv) — runs if primary was skipped
+    - cron: '0 16 * * 1'
+    # Keep-alive: Thursday 06:00 UTC — prevents GitHub from disabling scheduled workflows
+    - cron: '0 6 * * 4'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,33 +19,69 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 10
+
+      - name: Check if reports already updated today
+        id: check
+        run: |
+          TODAY=$(date -u +'%Y-%m-%d')
+          LAST_COMMIT_MSG=$(git log -1 --format='%s')
+          if [[ "$LAST_COMMIT_MSG" == *"Auto-update reports ${TODAY}"* ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "✓ Reports already updated today ($TODAY). Skipping."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "→ Reports not yet updated today ($TODAY). Proceeding."
+          fi
 
       - uses: actions/setup-python@v5
+        if: steps.check.outputs.skip != 'true'
         with:
           python-version: '3.12'
 
       - name: Install dependencies
+        if: steps.check.outputs.skip != 'true'
         run: pip install -r scripts/requirements.txt
 
       - name: Generate single-provider reports
+        if: steps.check.outputs.skip != 'true'
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_reports.py
 
       - name: Generate BUREK multi-store report
+        if: steps.check.outputs.skip != 'true'
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_burek.py
 
       - name: Generate Kulinichi multi-store report
+        if: steps.check.outputs.skip != 'true'
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_kulinichi.py
 
       - name: Commit and push
+        if: steps.check.outputs.skip != 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
           git diff --staged --quiet || git commit -m "Auto-update reports $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push
+
+  notify-on-failure:
+    runs-on: ubuntu-latest
+    needs: generate
+    if: failure()
+    steps:
+      - name: Send failure notification
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "⚠️ Partner Reports update FAILED\nWorkflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\nTriggered by: ${{ github.event_name }}"
+            }
