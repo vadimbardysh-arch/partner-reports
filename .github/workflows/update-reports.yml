@@ -2,12 +2,10 @@ name: Update Partner Reports
 
 on:
   schedule:
-    # Primary: Monday 10:00 UTC (13:00 Kyiv)
-    - cron: '0 10 * * 1'
-    # Backup: Monday 13:00 UTC (16:00 Kyiv) — runs if primary was skipped
+    # Daily 08:00 UTC (11:00 Kyiv) — Smart Promo dashboard + weekly reports on Mondays
+    - cron: '0 8 * * *'
+    # Backup Monday: 13:00 UTC (16:00 Kyiv) — runs if primary was skipped
     - cron: '0 13 * * 1'
-    # Keep-alive: Thursday 06:00 UTC — prevents GitHub from disabling scheduled workflows
-    - cron: '0 6 * * 4'
   workflow_dispatch:
 
 permissions:
@@ -26,6 +24,7 @@ jobs:
         id: check
         run: |
           TODAY=$(date -u +'%Y-%m-%d')
+          DOW=$(date -u +'%u')
           LAST_COMMIT_MSG=$(git log -1 --format='%s')
           if [[ "$LAST_COMMIT_MSG" == *"Auto-update reports ${TODAY}"* ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -33,6 +32,11 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "→ Reports not yet updated today ($TODAY). Proceeding."
+          fi
+          if [[ "$DOW" == "1" ]]; then
+            echo "is_monday=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_monday=false" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/setup-python@v5
@@ -44,20 +48,26 @@ jobs:
         if: steps.check.outputs.skip != 'true'
         run: pip install -r scripts/requirements.txt
 
-      - name: Generate single-provider reports
+      - name: Generate Smart Promo Traits dashboard data
         if: steps.check.outputs.skip != 'true'
+        env:
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: python scripts/generate_smart_promo.py
+
+      - name: Generate single-provider reports (Monday / manual only)
+        if: steps.check.outputs.skip != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_reports.py
 
-      - name: Generate BUREK multi-store report
-        if: steps.check.outputs.skip != 'true'
+      - name: Generate BUREK multi-store report (Monday / manual only)
+        if: steps.check.outputs.skip != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_burek.py
 
-      - name: Generate Kulinichi multi-store report
-        if: steps.check.outputs.skip != 'true'
+      - name: Generate Kulinichi multi-store report (Monday / manual only)
+        if: steps.check.outputs.skip != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_kulinichi.py

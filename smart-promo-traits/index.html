@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Smart Promo Topup Traits | Аналіз</title>
+<title>Smart Promo Topup Traits | Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -13,11 +13,13 @@
   --pos:#10B981;--neg:#EF4444;--warn:#F59E0B;--blue:#3B82F6;--purple:#8B5CF6;
   --r:12px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
   --accent:#8B5CF6;--accent-bg:rgba(139,92,246,.08);
+  --search-bg:#FFF;--search-border:#D1D5DB;
 }
 [data-theme="dark"]{
   --bg:#111827;--card:#1F2937;--text:#F9FAFB;--text2:#9CA3AF;
   --border:#374151;--shadow:0 1px 3px rgba(0,0,0,.3);
   --accent-bg:rgba(139,92,246,.15);--green-bg:rgba(52,209,134,.15);
+  --search-bg:#1F2937;--search-border:#4B5563;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
@@ -31,16 +33,28 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .theme-toggle:hover{background:var(--bg);color:var(--text)}
 .last-update{font-size:12px;color:var(--text2)}
 
-.main-nav{position:sticky;top:52px;z-index:100;background:var(--card);border-bottom:1px solid var(--border);display:flex;gap:0;overflow-x:auto;scrollbar-width:none;padding:0 16px}
+.search-container{position:sticky;top:53px;z-index:101;background:var(--card);border-bottom:1px solid var(--border);padding:12px 24px}
+.search-box{max-width:640px;margin:0 auto;position:relative}
+.search-box input{width:100%;padding:10px 16px 10px 42px;border-radius:10px;border:1.5px solid var(--search-border);background:var(--search-bg);color:var(--text);font-size:14px;font-family:inherit;outline:none;transition:border-color .15s,box-shadow .15s}
+.search-box input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(139,92,246,.12)}
+.search-box input::placeholder{color:var(--text2)}
+.search-icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--text2);font-size:16px;pointer-events:none}
+.search-clear{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text2);font-size:18px;cursor:pointer;display:none;line-height:1}
+.search-clear.visible{display:block}
+.search-hint{font-size:11px;color:var(--text2);margin-top:6px;text-align:center}
+
+.main-nav{position:sticky;top:103px;z-index:100;background:var(--card);border-bottom:1px solid var(--border);display:flex;gap:0;overflow-x:auto;scrollbar-width:none;padding:0 16px}
 .main-nav::-webkit-scrollbar{display:none}
-.nav-link{padding:12px 16px;font-size:13px;font-weight:500;color:var(--text2);white-space:nowrap;border-bottom:2px solid transparent;transition:all .15s;cursor:pointer;text-decoration:none}
+.nav-link{padding:12px 16px;font-size:13px;font-weight:500;color:var(--text2);white-space:nowrap;border-bottom:2px solid transparent;transition:all .15s;cursor:pointer;text-decoration:none;user-select:none}
 .nav-link:hover{color:var(--text);background:var(--bg)}
 .nav-link.active{color:var(--accent);border-bottom-color:var(--accent)}
 
-.main-content{max-width:1360px;margin:0 auto;padding:20px}
-.section{margin-bottom:32px;scroll-margin-top:100px}
+.main-content{max-width:1400px;margin:0 auto;padding:20px}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+.section{margin-bottom:32px;scroll-margin-top:160px}
 .section-title{font-size:18px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}
-.section-icon{font-size:20px}
 
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:28px}
 .kpi-card{background:var(--card);border-radius:var(--r);padding:18px 20px;box-shadow:var(--shadow);border:1px solid var(--border)}
@@ -51,17 +65,16 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 
 .insight-box{background:linear-gradient(135deg,rgba(139,92,246,.06),rgba(59,130,246,.04));border:1px solid rgba(139,92,246,.15);border-radius:10px;padding:14px 18px;margin-bottom:16px;font-size:13px;line-height:1.6;color:var(--text)}
 .insight-box b{font-weight:600}
-.insight-warn{background:linear-gradient(135deg,rgba(245,158,11,.06),rgba(239,68,68,.04));border-color:rgba(245,158,11,.2)}
 
 .table-wrap{overflow-x:auto;border-radius:var(--r);border:1px solid var(--border);background:var(--card);margin-bottom:20px}
 .data-table{width:100%;border-collapse:collapse;font-size:13px}
 .data-table th{background:var(--bg);font-weight:600;text-align:left;padding:10px 14px;white-space:nowrap;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:1}
-.data-table td{padding:9px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+.data-table td{padding:9px 14px;border-bottom:1px solid var(--border)}
 .data-table tr:last-child td{border-bottom:none}
 .data-table tr:hover td{background:rgba(139,92,246,.04)}
-.data-table tr.total-row td{background:var(--bg);font-weight:700}
-.text-right{text-align:right}
-.text-center{text-align:center}
+.data-table .text-right{text-align:right}
+.data-table .text-center{text-align:center}
+.data-table .mono{font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:12px}
 
 .badge{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
 .badge-green{color:var(--pos);background:rgba(16,185,129,.1)}
@@ -71,20 +84,47 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .badge-warn{color:var(--warn);background:rgba(245,158,11,.1)}
 .badge-gray{color:var(--text2);background:var(--bg)}
 
+/* Provider search result card */
+.provider-result{background:var(--card);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden}
+.provider-result-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.provider-result-header h3{font-size:16px;font-weight:700}
+.provider-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.provider-meta .mono{font-family:'SF Mono',SFMono-Regular,Consolas,monospace;font-size:12px;color:var(--text2)}
+.provider-result-body{padding:16px 20px}
+.provider-result-body h4{font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.3px;margin:16px 0 8px}
+.provider-result-body h4:first-child{margin-top:0}
+
+.trait-badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.trait-badge{padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600}
+.trait-low{color:var(--pos);background:rgba(16,185,129,.1)}
+.trait-med{color:var(--warn);background:rgba(245,158,11,.1)}
+.trait-high{color:var(--neg);background:rgba(239,68,68,.1)}
+
+.mini-table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px}
+.mini-table th{text-align:left;padding:6px 10px;font-weight:600;background:var(--bg);border-bottom:1px solid var(--border)}
+.mini-table td{padding:6px 10px;border-bottom:1px solid var(--border)}
+.mini-table tr:last-child td{border-bottom:none}
+
+.empty-state{text-align:center;padding:60px 20px;color:var(--text2)}
+.empty-state .icon{font-size:48px;margin-bottom:12px}
+.empty-state h3{font-size:16px;margin-bottom:8px;color:var(--text)}
+
+.search-results-count{font-size:13px;color:var(--text2);margin-bottom:16px}
+
+.loading-state{text-align:center;padding:80px 20px;color:var(--text2)}
+.loading-spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.error-state{text-align:center;padding:60px 20px;color:var(--neg)}
+.error-state .icon{font-size:48px;margin-bottom:12px}
+
 .trait-card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);border:1px solid var(--border);padding:20px;margin-bottom:20px}
 .trait-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
 .trait-card-title{font-size:16px;font-weight:700}
 .trait-card-id{font-size:12px;color:var(--text2);font-family:monospace}
 
-.offer-group{margin-bottom:20px}
+.offer-group{margin-bottom:24px}
 .offer-group-title{font-size:14px;font-weight:600;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
-
-.grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
-@media(max-width:768px){.grid-2{grid-template-columns:1fr}.charts-grid{grid-template-columns:1fr}}
-
-.provider-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:500;background:var(--bg);border:1px solid var(--border);color:var(--text)}
-.chip-id{color:var(--text2);font-family:monospace;font-size:10px}
 
 .confluence-links{list-style:none;padding:0}
 .confluence-links li{margin-bottom:10px;padding:10px 14px;background:var(--bg);border-radius:8px;border:1px solid var(--border)}
@@ -92,8 +132,19 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .confluence-links a:hover{text-decoration:underline}
 .confluence-links .desc{font-size:12px;color:var(--text2);margin-top:4px}
 
-.empty-state{text-align:center;padding:40px;color:var(--text2)}
-.empty-state .icon{font-size:40px;margin-bottom:10px}
+.pagination{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px}
+.pagination button{padding:6px 12px;border:1px solid var(--border);background:var(--card);color:var(--text);border-radius:6px;cursor:pointer;font-size:12px;font-family:inherit}
+.pagination button:hover{background:var(--bg)}
+.pagination button:disabled{opacity:.4;cursor:default}
+.pagination span{font-size:12px;color:var(--text2)}
+
+@media(max-width:768px){
+  .header{padding:12px 16px}
+  .search-container{padding:10px 16px}
+  .main-content{padding:16px}
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .provider-result-header{flex-direction:column;align-items:flex-start}
+}
 </style>
 </head>
 <body>
@@ -104,466 +155,544 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
     <h1>Smart Promo Topup Traits</h1>
   </div>
   <div class="header-right">
-    <span class="last-update">Дата: 5 квітня 2026</span>
+    <span class="last-update" id="lastUpdate">Loading...</span>
     <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
   </div>
 </div>
 
-<nav class="main-nav">
-  <a class="nav-link active" href="#overview">Огляд</a>
-  <a class="nav-link" href="#trait-258321">Topup Low</a>
-  <a class="nav-link" href="#trait-258322">Topup Med</a>
-  <a class="nav-link" href="#trait-258323">Topup High</a>
-  <a class="nav-link" href="#offers">Пропозиції</a>
-  <a class="nav-link" href="#active-providers">Активні провайдери</a>
-  <a class="nav-link" href="#confluence">Confluence</a>
+<div class="search-container">
+  <div class="search-box">
+    <span class="search-icon">🔍</span>
+    <input type="text" id="searchInput" placeholder="Search by Provider ID, Vendor ID, or name..." autocomplete="off">
+    <button class="search-clear" id="searchClear" onclick="clearSearch()">&times;</button>
+  </div>
+  <div class="search-hint">Enter at least 2 characters to search across all providers in traits</div>
+</div>
+
+<nav class="main-nav" id="mainNav">
+  <a class="nav-link active" data-tab="overview">Overview</a>
+  <a class="nav-link" data-tab="offers">Offers</a>
+  <a class="nav-link" data-tab="active-providers">Active Providers</a>
+  <a class="nav-link" data-tab="dd-orders">DD Orders</a>
+  <a class="nav-link" data-tab="confluence">Confluence</a>
 </nav>
 
 <div class="main-content">
-
-<!-- OVERVIEW -->
-<div class="section" id="overview">
-  <h2 class="section-title"><span class="section-icon">📊</span> Загальний огляд</h2>
-
-  <div class="insight-box">
-    <b>Що це:</b> Трейти <b>Smart Promo Topup Low / Med / High</b> створені 13 березня 2026 для сегментації провайдерів за рівнем topup (доплати) в Smart Promo кампаніях.
-    Провайдери з цих трейтів отримують пропозиції через Provider Portal, де можуть активувати кампанії з різними рівнями знижок та кофінансування.
+  <div id="loadingState" class="loading-state">
+    <div class="loading-spinner"></div>
+    <div>Loading dashboard data...</div>
+  </div>
+  <div id="errorState" class="error-state" style="display:none">
+    <div class="icon">⚠️</div>
+    <h3>Failed to load data</h3>
+    <p id="errorMessage"></p>
   </div>
 
-  <div class="kpi-grid">
-    <div class="kpi-card">
-      <div class="kpi-label">Трейти</div>
-      <div class="kpi-value accent">3</div>
-      <div class="kpi-sub">Low / Med / High</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Topup Low (258321)</div>
-      <div class="kpi-value">94</div>
-      <div class="kpi-sub">активних провайдерів</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Topup Med (258322)</div>
-      <div class="kpi-value">129</div>
-      <div class="kpi-sub">активних провайдерів</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Topup High (258323)</div>
-      <div class="kpi-value" style="color:var(--warn)">0</div>
-      <div class="kpi-sub">провайдерів не додано</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Країна</div>
-      <div class="kpi-value" style="font-size:20px">🇺🇦 Україна</div>
-      <div class="kpi-sub">Kyiv, Irpin, Lviv, Dnipro</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Дата створення</div>
-      <div class="kpi-value" style="font-size:18px">13.03.2026</div>
-      <div class="kpi-sub">всі три трейти</div>
-    </div>
-  </div>
+  <!-- Search results overlay -->
+  <div id="searchResults" style="display:none"></div>
 
-  <div class="insight-box insight-warn">
-    <b>⚠️ Увага:</b> Trait <b>258323 (Smart Promo Topup High)</b> створений, але <b>не має жодного провайдера</b>. Можливо, ще не налаштований або заплановано додавання пізніше.
-  </div>
-</div>
-
-<!-- TRAIT 258321 -->
-<div class="section" id="trait-258321">
-  <h2 class="section-title"><span class="section-icon">🟢</span> Trait 258321 — Smart Promo Topup Low</h2>
-
-  <div class="trait-card">
-    <div class="trait-card-header">
-      <div>
-        <div class="trait-card-title">Smart Promo Topup Low</div>
-        <div class="trait-card-id">ID: 258321 | Slug: smart-promo-topup-low | Status: <span class="badge badge-green">active</span> | Global: Yes</div>
+  <!-- OVERVIEW TAB -->
+  <div class="tab-panel active" id="tab-overview">
+    <div class="section">
+      <h2 class="section-title">📊 Overview</h2>
+      <div class="insight-box">
+        <b>Smart Promo Topup Low / Med / High</b> traits segment providers by topup level for Smart Promo campaigns.
+        Providers in these traits receive offers via the Provider Portal where they can activate campaigns with various discount &amp; co-financing levels.
       </div>
-      <span class="badge badge-purple">94 провайдерів</span>
+      <div class="kpi-grid" id="overviewKpis"></div>
     </div>
-
-    <div class="kpi-grid">
-      <div class="kpi-card"><div class="kpi-label">Унікальних брендів</div><div class="kpi-value">20</div></div>
-      <div class="kpi-card"><div class="kpi-label">SP-активних провайдерів</div><div class="kpi-value">12</div><div class="kpi-sub">з 94 в трейті</div></div>
-    </div>
+    <div class="section" id="traitBreakdowns"></div>
   </div>
 
-  <h3 style="font-size:15px;font-weight:600;margin-bottom:12px">Бренди (20):</h3>
-  <div class="table-wrap">
-    <table class="data-table">
-      <thead><tr><th>#</th><th>Бренд</th><th>Провайдерів</th></tr></thead>
-      <tbody>
-        <tr><td>1</td><td>EVRAZIYA</td><td class="text-center">19</td></tr>
-        <tr><td>2</td><td>KYIVSKA SHAURMA №1</td><td class="text-center">14</td></tr>
-        <tr><td>3</td><td>SALATEIRA</td><td class="text-center">12</td></tr>
-        <tr><td>4</td><td>MUZA BY KLOPOTENKO</td><td class="text-center">9</td></tr>
-        <tr><td>5</td><td>GREEK HOUSE</td><td class="text-center">8</td></tr>
-        <tr><td>6</td><td>THIS IS PIVBAR</td><td class="text-center">5</td></tr>
-        <tr><td>7</td><td>GAMBURGERNA NUNU</td><td class="text-center">4</td></tr>
-        <tr><td>8</td><td>PHILADELPHIA ROLL & BOWL</td><td class="text-center">4</td></tr>
-        <tr><td>9</td><td>BIG MAMA</td><td class="text-center">3</td></tr>
-        <tr><td>10</td><td>MUZA BY KLOPOTENKO LVIV</td><td class="text-center">3</td></tr>
-        <tr><td>11</td><td>NUNU</td><td class="text-center">3</td></tr>
-        <tr><td>12</td><td>VIET BAR</td><td class="text-center">1</td></tr>
-        <tr><td>13</td><td>KHVYLIA</td><td class="text-center">1</td></tr>
-        <tr><td>14</td><td>MANGAL MANGALOVYCH</td><td class="text-center">1</td></tr>
-        <tr><td>15</td><td>PEROGI</td><td class="text-center">1</td></tr>
-        <tr><td>16</td><td>SUSHI NA SUSHI</td><td class="text-center">1</td></tr>
-        <tr><td>17</td><td>TEPLYI</td><td class="text-center">1</td></tr>
-        <tr><td>18</td><td>THE DONER</td><td class="text-center">1</td></tr>
-        <tr><td>19</td><td>THE ROLL</td><td class="text-center">1</td></tr>
-        <tr><td>20</td><td>THE SALAD</td><td class="text-center">1</td></tr>
-        <tr class="total-row"><td></td><td>ВСЬОГО</td><td class="text-center">94</td></tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<!-- TRAIT 258322 -->
-<div class="section" id="trait-258322">
-  <h2 class="section-title"><span class="section-icon">🟡</span> Trait 258322 — Smart Promo Topup Med</h2>
-
-  <div class="trait-card">
-    <div class="trait-card-header">
-      <div>
-        <div class="trait-card-title">Smart Promo Topup Med</div>
-        <div class="trait-card-id">ID: 258322 | Slug: smart-promo-topup-med | Status: <span class="badge badge-green">active</span> | Global: Yes</div>
+  <!-- OFFERS TAB -->
+  <div class="tab-panel" id="tab-offers">
+    <div class="section">
+      <h2 class="section-title">🎯 SP Offers</h2>
+      <div class="insight-box">
+        <b>Double Deal</b> bundles combine Menu Discount + Free Delivery campaigns. <b>Regular</b> offers are single campaigns.
+        <b>Cost Share 50%</b> = provider pays 50% of the discount. <b>100% Bolt</b> = fully funded by Bolt.
       </div>
-      <span class="badge badge-purple">129 провайдерів</span>
-    </div>
-
-    <div class="kpi-grid">
-      <div class="kpi-card"><div class="kpi-label">Унікальних брендів</div><div class="kpi-value">31</div></div>
-      <div class="kpi-card"><div class="kpi-label">SP-активних провайдерів</div><div class="kpi-value">16</div><div class="kpi-sub">з 129 в трейті</div></div>
+      <div id="offersContent"></div>
     </div>
   </div>
 
-  <h3 style="font-size:15px;font-weight:600;margin-bottom:12px">Додаткові бренди (окрім тих що в Topup Low):</h3>
-  <div class="table-wrap">
-    <table class="data-table">
-      <thead><tr><th>#</th><th>Бренд</th><th>Тільки в Med</th><th>Провайдерів</th></tr></thead>
-      <tbody>
-        <tr><td>1</td><td>115 KITCHEN&BAR</td><td class="text-center">✅</td><td class="text-center">3</td></tr>
-        <tr><td>2</td><td>DOGGERIZ</td><td class="text-center">✅</td><td class="text-center">3</td></tr>
-        <tr><td>3</td><td>MAMYNA KOTLETKA</td><td class="text-center">✅</td><td class="text-center">2</td></tr>
-        <tr><td>4</td><td>MISIS BOUL</td><td class="text-center">✅</td><td class="text-center">4</td></tr>
-        <tr><td>5</td><td>PAPITO (Pani Mozzarella)</td><td class="text-center">✅</td><td class="text-center">6</td></tr>
-        <tr><td>6</td><td>PASTA ITALIANO</td><td class="text-center">✅</td><td class="text-center">4</td></tr>
-        <tr><td>7</td><td>PIZZA TODAY</td><td class="text-center">✅</td><td class="text-center">4</td></tr>
-        <tr><td>8</td><td>POOBIDAY</td><td class="text-center">✅</td><td class="text-center">1</td></tr>
-        <tr><td>9</td><td>SUSHI FAMILY</td><td class="text-center">✅</td><td class="text-center">1</td></tr>
-        <tr><td>10</td><td>SUSHI TODAY</td><td class="text-center">✅</td><td class="text-center">3</td></tr>
-        <tr><td>11</td><td>SUSHI VIBE</td><td class="text-center">✅</td><td class="text-center">3</td></tr>
-        <tr><td>12</td><td>URBAN BURGER</td><td class="text-center">✅</td><td class="text-center">4</td></tr>
-        <tr class="total-row"><td></td><td>Додаткових брендів</td><td></td><td class="text-center">+38</td></tr>
-      </tbody>
-    </table>
+  <!-- ACTIVE PROVIDERS TAB -->
+  <div class="tab-panel" id="tab-active-providers">
+    <div class="section">
+      <h2 class="section-title">👥 Active Enrollments</h2>
+      <div id="enrollmentsSummary"></div>
+      <div id="enrollmentsContent"></div>
+    </div>
   </div>
-  <div class="insight-box">
-    Trait <b>Topup Med</b> включає <b>всіх 94 провайдерів</b> з Topup Low + ще <b>35 додаткових</b> провайдерів з 12 нових брендів.
+
+  <!-- DD ORDERS TAB -->
+  <div class="tab-panel" id="tab-dd-orders">
+    <div class="section">
+      <h2 class="section-title">📦 Double Deal Orders (Last 28 Days)</h2>
+      <div id="ddOrdersContent"></div>
+    </div>
   </div>
-</div>
 
-<!-- TRAIT 258323 -->
-<div class="section" id="trait-258323">
-  <h2 class="section-title"><span class="section-icon">🔴</span> Trait 258323 — Smart Promo Topup High</h2>
-
-  <div class="trait-card">
-    <div class="trait-card-header">
-      <div>
-        <div class="trait-card-title">Smart Promo Topup High</div>
-        <div class="trait-card-id">ID: 258323 | Slug: smart-promo-topup-high | Status: <span class="badge badge-green">active</span> | Global: Yes</div>
+  <!-- CONFLUENCE TAB -->
+  <div class="tab-panel" id="tab-confluence">
+    <div class="section">
+      <h2 class="section-title">📖 Documentation (Confluence)</h2>
+      <div class="insight-box">
+        Relevant Confluence pages for Smart Promotions, provider traits, and targeting.
       </div>
-      <span class="badge badge-warn">0 провайдерів</span>
+      <ul class="confluence-links">
+        <li>
+          <a href="https://taxify.atlassian.net/wiki/spaces/CAM/pages/5590089743/Intro+to+Smart+Promotions" target="_blank">Intro to Smart Promotions</a>
+          <div class="desc">Main documentation: SP types (Top-Up & Double Deal), city config, campaign creation, eligibility criteria.</div>
+        </li>
+        <li>
+          <a href="https://taxify.atlassian.net/wiki/spaces/ENGINEERING/pages/5740134569/Design+Doc+Smart+Promotions+flexible+access+to+solutions+and+offers" target="_blank">[Design Doc] Smart Promotions: flexible access to solutions and offers</a>
+          <div class="desc">Technical design: blacklist/whitelist, provider targeting for Smart Offers, quality eligibility.</div>
+        </li>
+        <li>
+          <a href="https://taxify.atlassian.net/wiki/spaces/CAM/pages/5908038212/Smart+Promotions+Quality+Eligibility" target="_blank">Smart Promotions Quality Eligibility</a>
+          <div class="desc">Quality criteria for provider admission to SP across Ukrainian cities.</div>
+        </li>
+        <li>
+          <a href="https://taxify.atlassian.net/wiki/spaces/CAM/pages/4538270066/Using+Provider+Profiling+Features+in+Incentives+Targeting" target="_blank">Using Provider Profiling Features in Incentives Targeting</a>
+          <div class="desc">How to use trait_ids in profiling and provider targeting for campaigns.</div>
+        </li>
+        <li>
+          <a href="https://taxify.atlassian.net/wiki/spaces/BF/pages/3995862854/Provider+Traits" target="_blank">Provider Traits</a>
+          <div class="desc">General documentation on Provider Traits: creation, assignment, Redshift/Databricks tables.</div>
+        </li>
+        <li>
+          <a href="https://taxify.atlassian.net/wiki/spaces/CAM/pages/5593300996/Smart+Promotions+for+New+Cities" target="_blank">Smart Promotions for New Cities</a>
+          <div class="desc">Options for launching Smart Promotions in new cities, recommendations and limitations.</div>
+        </li>
+        <li>
+          <a href="https://taxify.atlassian.net/wiki/spaces/BF/pages/6961954945/Bulk+Provider+Traits+Assignment" target="_blank">Bulk Provider Traits Assignment</a>
+          <div class="desc">Tool for bulk-assigning traits to providers via CSV upload.</div>
+        </li>
+      </ul>
     </div>
   </div>
-
-  <div class="empty-state">
-    <div class="icon">📭</div>
-    <h3 style="margin-bottom:8px">Трейт порожній</h3>
-    <p>Створений 13.03.2026, але жодного провайдера не було додано.<br>Можливо, заплановано активацію пізніше.</p>
-  </div>
-</div>
-
-<!-- OFFERS -->
-<div class="section" id="offers">
-  <h2 class="section-title"><span class="section-icon">🎯</span> Пропозиції Smart Promo (знижки та кофінансування)</h2>
-
-  <div class="insight-box">
-    <b>Як це працює:</b> Bolt запускає базову кампанію зі знижкою. Провайдери через Portal можуть «добити» (topup) — додати свою частку до знижки.
-    У <b>Double Deal</b> — бандл з кількох кампаній (MD + FFD). У <b>Regular</b> — одна кампанія. <b>Cost Share 50%</b> = провайдер платить 50% знижки, <b>100%</b> = Bolt повністю фінансує.
-  </div>
-
-  <!-- Double Deal offers -->
-  <div class="offer-group">
-    <h3 class="offer-group-title">🔥 Double Deal (бандли) — Тиждень W13 (24-31 березня 2026)</h3>
-    <div class="table-wrap">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Offer ID</th>
-            <th>Spend Objective</th>
-            <th>Таргетинг</th>
-            <th>Знижка (Menu)</th>
-            <th>Знижка (Delivery)</th>
-            <th>Cost Share (провайдер)</th>
-            <th>MOV</th>
-            <th>Mode</th>
-            <th>Доступно для трейтів</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>132098</code></td>
-            <td><span class="badge badge-green">Activation</span></td>
-            <td>Нові користувачі</td>
-            <td><b>30%</b> (cap 25,000₴)</td>
-            <td><b>100% FFD</b> (cap 70₴)</td>
-            <td><span class="badge badge-blue">50%</span></td>
-            <td>500₴</td>
-            <td><span class="badge badge-gray">black_box</span></td>
-            <td>258321, 258322</td>
-          </tr>
-          <tr>
-            <td><code>132100</code></td>
-            <td><span class="badge badge-warn">Reactivation</span></td>
-            <td>Churning users (low/med/high conv.)</td>
-            <td><b>30%</b> (cap 25,000₴)</td>
-            <td><b>100% FFD</b> (cap 70₴)</td>
-            <td><span class="badge badge-blue">50%</span></td>
-            <td>700₴</td>
-            <td><span class="badge badge-gray">black_box</span></td>
-            <td>258321, 258322</td>
-          </tr>
-          <tr>
-            <td><code>132103</code></td>
-            <td><span class="badge badge-purple">Engagement</span></td>
-            <td>Engaged low activity, low/med/high conv.</td>
-            <td><b>25%</b> (cap 1,000₴)</td>
-            <td><b>100% FFD</b> (cap 70₴)</td>
-            <td><span class="badge badge-blue">50%</span></td>
-            <td>700₴</td>
-            <td><span class="badge badge-gray">black_box</span></td>
-            <td>258321, 258322</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Regular SP-funded -->
-  <div class="offer-group">
-    <h3 class="offer-group-title">💰 Regular — Fully Funded (Bolt 100%) — W13</h3>
-    <div class="table-wrap">
-      <table class="data-table">
-        <thead>
-          <tr><th>Offer ID</th><th>Spend Objective</th><th>Таргетинг</th><th>Знижка</th><th>Cost Share</th><th>MOV</th><th>Mode</th><th>Трейти</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>132106</code></td>
-            <td><span class="badge badge-green">Fully Funded</span></td>
-            <td>High conversion engaged users</td>
-            <td><b>10% MD</b> (cap 1,000₴)</td>
-            <td><span class="badge badge-green">100% Bolt</span></td>
-            <td>700₴</td>
-            <td><span class="badge badge-gray">black_box</span></td>
-            <td>258321, 258322</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Regular Engagement W14 -->
-  <div class="offer-group">
-    <h3 class="offer-group-title">📈 Regular — Engagement — Тиждень W14 (31 березня — 7 квітня 2026)</h3>
-    <div class="table-wrap">
-      <table class="data-table">
-        <thead>
-          <tr><th>Offer ID</th><th>Campaign</th><th>Місто</th><th>Знижка</th><th>Cost Share</th><th>MOV</th><th>Mode</th><th>Трейти</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>135311</code></td>
-            <td>1033068</td>
-            <td>Kyiv</td>
-            <td><b>20% MD</b> (cap 1,000₴)</td>
-            <td><span class="badge badge-green">100% Bolt</span></td>
-            <td>700₴</td>
-            <td><span class="badge badge-gray">black_box</span> + <span class="badge badge-blue">white_box</span></td>
-            <td>258321, 258322</td>
-          </tr>
-          <tr>
-            <td><code>135313</code></td>
-            <td>1033066</td>
-            <td>Kyiv</td>
-            <td><b>10% MD</b> (cap 1,000₴)</td>
-            <td><span class="badge badge-green">100% Bolt</span></td>
-            <td>700₴</td>
-            <td><span class="badge badge-blue">white_box</span></td>
-            <td>258321, 258322</td>
-          </tr>
-          <tr>
-            <td><code>135317</code></td>
-            <td>1033074</td>
-            <td>Dnipro</td>
-            <td><b>20% MD</b> (cap 1,000₴)</td>
-            <td><span class="badge badge-green">100% Bolt</span></td>
-            <td>700₴</td>
-            <td><span class="badge badge-blue">white_box</span></td>
-            <td>258322</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Upcoming W15 -->
-  <div class="offer-group">
-    <h3 class="offer-group-title">🔮 Regular — Engagement — Тиждень W15 (7-14 квітня 2026) — Запланований</h3>
-    <div class="table-wrap">
-      <table class="data-table">
-        <thead>
-          <tr><th>Offer ID</th><th>Campaign</th><th>Місто</th><th>Знижка</th><th>Cost Share</th><th>MOV</th><th>Mode</th><th>Трейти</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>141601</code></td>
-            <td>1051133</td>
-            <td>Kyiv</td>
-            <td><b>10% MD</b> (cap 1,000₴)</td>
-            <td><span class="badge badge-green">100% Bolt</span></td>
-            <td>700₴</td>
-            <td><span class="badge badge-gray">black_box</span></td>
-            <td>258321, 258322</td>
-          </tr>
-          <tr>
-            <td><code>141602</code></td>
-            <td>1051134</td>
-            <td>Kyiv</td>
-            <td><b>15% MD</b> (cap 1,000₴)</td>
-            <td><span class="badge badge-green">100% Bolt</span></td>
-            <td>700₴</td>
-            <td><span class="badge badge-gray">black_box</span></td>
-            <td>258321, 258322</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- ACTIVE PROVIDERS -->
-<div class="section" id="active-providers">
-  <h2 class="section-title"><span class="section-icon">👥</span> Провайдери з активними SP пропозиціями</h2>
-
-  <div class="insight-box">
-    З <b>94</b> провайдерів у Topup Low, тільки <b>12</b> мають активні SP enrollments. З <b>129</b> у Topup Med — <b>16</b>.
-    Це провайдери, які бачать пропозиції на Provider Portal і мають статус <code>active</code>.
-  </div>
-
-  <h3 style="font-size:15px;font-weight:600;margin:16px 0 12px">Black Box провайдери (автоматична активація):</h3>
-  <div class="table-wrap">
-    <table class="data-table">
-      <thead>
-        <tr><th>Provider ID</th><th>Назва</th><th>Бренд</th><th>Трейти</th><th>Доступні пропозиції</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>8093</code></td><td>Viet Bar</td><td>VIET BAR</td>
-          <td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td>
-          <td>DD Activation, DD Reactivation, DD Engagement, Regular Fully Funded, Regular Engagement</td>
-        </tr>
-        <tr>
-          <td><code>177094</code></td><td>Greek House ТРЦ Smart Plaza</td><td>GREEK HOUSE</td>
-          <td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td>
-          <td>DD Activation, DD Reactivation, Regular Fully Funded, Regular Engagement</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3 style="font-size:15px;font-weight:600;margin:16px 0 12px">White Box провайдери (самостійна активація через Portal):</h3>
-  <div class="table-wrap">
-    <table class="data-table">
-      <thead>
-        <tr><th>Provider ID</th><th>Назва</th><th>Бренд</th><th>Трейти</th><th>Активна пропозиція</th></tr>
-      </thead>
-      <tbody>
-        <tr><td><code>36455</code></td><td>Sushi Family Робоча 67к</td><td>SUSHI FAMILY</td><td><span class="badge badge-warn">Med</span></td><td>Regular Engagement 20% MD (Dnipro)</td></tr>
-        <tr><td><code>71613</code></td><td>Київська шаурма №1 пр-т Перемоги, 94</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% MD</td></tr>
-        <tr><td><code>78560</code></td><td>Київська шаурма №1 Радужна, 6</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% MD</td></tr>
-        <tr><td><code>79718</code></td><td>Київська шаурма №1 Голосіївський просп. 36</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% MD</td></tr>
-        <tr><td><code>81633</code></td><td>Doggeriz Предславинська</td><td>DOGGERIZ</td><td><span class="badge badge-warn">Med</span></td><td>Regular Engagement 20% MD</td></tr>
-        <tr><td><code>81634</code></td><td>Doggeriz Гоголівська</td><td>DOGGERIZ</td><td><span class="badge badge-warn">Med</span></td><td>Regular Engagement 20% MD</td></tr>
-        <tr><td><code>81648</code></td><td>Doggeriz Спаська</td><td>DOGGERIZ</td><td><span class="badge badge-warn">Med</span></td><td>Regular Engagement 20% MD</td></tr>
-        <tr><td><code>84580</code></td><td>Київська шаурма №1 Дегтярівська, 32а</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% MD</td></tr>
-        <tr><td><code>89540</code></td><td>Київська шаурма №1 вул. Дорогожицька 15</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% MD</td></tr>
-        <tr><td><code>155737</code></td><td>Київська шаурма №1 Данила Щербаківського 2</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% MD</td></tr>
-        <tr><td><code>179182</code></td><td>Київська шаурма №1 вул. Табірна</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% + 20% MD</td></tr>
-        <tr><td><code>182076</code></td><td>Київська шаурма №1 Кирилівська</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% MD</td></tr>
-        <tr><td><code>195322</code></td><td>Київська шаурма №1 вул. Шамо</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% + 20% MD</td></tr>
-        <tr><td><code>195423</code></td><td>Київська шаурма №1 вул. Олександра Архипенка</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% + 20% MD</td></tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<!-- CONFLUENCE -->
-<div class="section" id="confluence">
-  <h2 class="section-title"><span class="section-icon">📖</span> Документація (Confluence)</h2>
-
-  <div class="insight-box">
-    Конкретних сторінок з ID трейтів 258321/258322/258323 на Confluence <b>не знайдено</b>. Нижче — релевантні сторінки по Smart Promotions.
-  </div>
-
-  <ul class="confluence-links">
-    <li>
-      <a href="https://taxify.atlassian.net/wiki/spaces/CAM/pages/5590089743/Intro+to+Smart+Promotions" target="_blank">Intro to Smart Promotions</a>
-      <div class="desc">Основна документація: типи SP (Top-Up та Double Deal), налаштування міста, створення кампаній, criteria еліджібіліті.</div>
-    </li>
-    <li>
-      <a href="https://taxify.atlassian.net/wiki/spaces/ENGINEERING/pages/5740134569/Design+Doc+Smart+Promotions+flexible+access+to+solutions+and+offers" target="_blank">[Design Doc] Smart Promotions: flexible access to solutions and offers</a>
-      <div class="desc">Технічний дизайн-документ: blacklist/whitelist провайдерів, provider targeting для Smart Offers, quality eligibility.</div>
-    </li>
-    <li>
-      <a href="https://taxify.atlassian.net/wiki/spaces/CAM/pages/5908038212/Smart+Promotions+Quality+Eligibility" target="_blank">Smart Promotions Quality Eligibility</a>
-      <div class="desc">Критерії якості для допуску провайдерів до SP по містах України (Kyiv, Brovary, Irpin тощо).</div>
-    </li>
-    <li>
-      <a href="https://taxify.atlassian.net/wiki/spaces/CAM/pages/4538270066/Using+Provider+Profiling+Features+in+Incentives+Targeting" target="_blank">Using Provider Profiling Features in Incentives Targeting</a>
-      <div class="desc">Як використовувати trait_ids у профілюванні та таргетингу провайдерів для кампаній.</div>
-    </li>
-    <li>
-      <a href="https://taxify.atlassian.net/wiki/spaces/BF/pages/3995862854/Provider+Traits" target="_blank">Provider Traits</a>
-      <div class="desc">Загальна документація про Provider Traits: створення, призначення, таблиці в Redshift/Databricks.</div>
-    </li>
-    <li>
-      <a href="https://taxify.atlassian.net/wiki/spaces/CAM/pages/5593300996/Smart+Promotions+for+New+Cities" target="_blank">Smart Promotions for New Cities</a>
-      <div class="desc">Опції запуску Smart Promotions в нових містах, рекомендації та обмеження.</div>
-    </li>
-    <li>
-      <a href="https://taxify.atlassian.net/wiki/spaces/BF/pages/6961954945/Bulk+Provider+Traits+Assignment" target="_blank">Bulk Provider Traits Assignment</a>
-      <div class="desc">Інструмент масового додавання трейтів до провайдерів через CSV.</div>
-    </li>
-  </ul>
-</div>
-
 </div>
 
 <script>
+const TRAIT_NAMES = {258321:'Topup Low',258322:'Topup Med',258323:'Topup High'};
+const TRAIT_COLORS = {258321:'trait-low',258322:'trait-med',258323:'trait-high'};
+const TRAIT_BADGE_CLASSES = {258321:'badge-green',258322:'badge-warn',258323:'badge-red'};
+const ITEMS_PER_PAGE = 50;
+
+let DATA = null;
+let providerIndex = {};
+
 function toggleTheme(){
-  const t=document.documentElement.dataset.theme==='dark'?'':'dark';
-  document.documentElement.dataset.theme=t;
-  document.querySelector('.theme-toggle').textContent=t==='dark'?'☀️':'🌙';
+  const t = document.documentElement.dataset.theme === 'dark' ? '' : 'dark';
+  document.documentElement.dataset.theme = t;
+  document.querySelector('.theme-toggle').textContent = t === 'dark' ? '☀️' : '🌙';
+  localStorage.setItem('sp-theme', t);
 }
 
-document.querySelectorAll('.nav-link').forEach(l=>{
-  l.addEventListener('click',function(){
-    document.querySelectorAll('.nav-link').forEach(n=>n.classList.remove('active'));
+(function(){
+  const saved = localStorage.getItem('sp-theme');
+  if(saved === 'dark'){
+    document.documentElement.dataset.theme = 'dark';
+    document.querySelector('.theme-toggle').textContent = '☀️';
+  }
+})();
+
+document.querySelectorAll('.nav-link').forEach(link => {
+  link.addEventListener('click', function(){
+    document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
     this.classList.add('active');
+    const tab = this.dataset.tab;
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    clearSearch();
   });
 });
+
+const searchInput = document.getElementById('searchInput');
+const searchClear = document.getElementById('searchClear');
+
+searchInput.addEventListener('input', function(){
+  const q = this.value.trim();
+  searchClear.classList.toggle('visible', q.length > 0);
+  if(q.length >= 2) performSearch(q);
+  else hideSearchResults();
+});
+
+function clearSearch(){
+  searchInput.value = '';
+  searchClear.classList.remove('visible');
+  hideSearchResults();
+}
+
+function hideSearchResults(){
+  document.getElementById('searchResults').style.display = 'none';
+  document.querySelectorAll('.tab-panel').forEach(p => {
+    if(p.classList.contains('active-before-search')) {
+      p.classList.add('active');
+      p.classList.remove('active-before-search');
+    }
+  });
+}
+
+function performSearch(q){
+  if(!DATA) return;
+  const ql = q.toLowerCase();
+
+  document.querySelectorAll('.tab-panel.active').forEach(p => {
+    p.classList.add('active-before-search');
+    p.classList.remove('active');
+  });
+
+  const matches = DATA.providers.filter(p => {
+    const pid = String(p.provider_id || '');
+    const vid = String(p.vendor_id || '');
+    const pname = (p.provider_name || '').toLowerCase();
+    const bname = (p.brand_name || '').toLowerCase();
+    return pid.includes(ql) || vid.includes(ql) || pname.includes(ql) || bname.includes(ql);
+  });
+
+  const container = document.getElementById('searchResults');
+  container.style.display = 'block';
+
+  if(matches.length === 0){
+    container.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><h3>No providers found</h3><p>No match for "${esc(q)}" in traits ${DATA.meta.trait_ids.join(', ')}</p></div>`;
+    return;
+  }
+
+  const limited = matches.slice(0, 30);
+  let html = `<div class="search-results-count">${matches.length} provider${matches.length !== 1 ? 's' : ''} found${matches.length > 30 ? ' (showing first 30)' : ''}</div>`;
+  limited.forEach(p => { html += renderProviderCard(p); });
+  container.innerHTML = html;
+}
+
+function renderProviderCard(p){
+  const pid = p.provider_id;
+  const traits = (p.trait_ids || []).map(tid => `<span class="trait-badge ${TRAIT_COLORS[tid] || ''}">${TRAIT_NAMES[tid] || tid} (${tid})</span>`).join('');
+
+  const enrollments = (DATA.enrollments || []).filter(e => e.provider_id === pid);
+  const orders = (DATA.dd_orders || []).filter(o => o.provider_id === pid);
+
+  let enrollHtml = '';
+  if(enrollments.length > 0){
+    enrollHtml = `<h4>Active Enrollments (${enrollments.length})</h4><table class="mini-table"><thead><tr><th>Offer ID</th><th>Type</th><th>Mode</th><th>Spend Obj.</th><th>State</th></tr></thead><tbody>`;
+    enrollments.forEach(e => {
+      enrollHtml += `<tr><td class="mono">${e.smart_promo_offer_id || '-'}</td><td><span class="badge ${e.smart_promo_offer_type === 'double_deal' ? 'badge-purple' : 'badge-blue'}">${e.smart_promo_offer_type || '-'}</span></td><td>${e.smart_promo_offer_mode || '-'}</td><td>${e.campaign_spend_objective || '-'}</td><td><span class="badge badge-green">${e.smart_promo_enrollment_state || '-'}</span></td></tr>`;
+    });
+    enrollHtml += '</tbody></table>';
+  } else {
+    enrollHtml = `<h4>Enrollments</h4><div style="font-size:12px;color:var(--text2);padding:8px 0">No active SP enrollments</div>`;
+  }
+
+  let ordersHtml = '';
+  if(orders.length > 0){
+    ordersHtml = `<h4>DD Orders (${orders.length})</h4><table class="mini-table"><thead><tr><th>Order ID</th><th>Date</th><th>Spend Obj.</th><th>Discount</th><th>Provider Spend</th><th>Bolt Spend</th></tr></thead><tbody>`;
+    orders.slice(0, 20).forEach(o => {
+      ordersHtml += `<tr><td class="mono">${o.order_id || '-'}</td><td>${o.order_created_date || '-'}</td><td>${o.spend_objective || '-'}</td><td>${fmt(o.discount_uah)}</td><td>${fmt(o.provider_uah)}</td><td>${fmt(o.bolt_uah)}</td></tr>`;
+    });
+    ordersHtml += '</tbody></table>';
+    if(orders.length > 20) ordersHtml += `<div style="font-size:11px;color:var(--text2);padding:4px 0">+ ${orders.length - 20} more orders</div>`;
+  }
+
+  return `<div class="provider-result">
+    <div class="provider-result-header">
+      <h3>${esc(p.provider_name || 'Unknown')}</h3>
+      <div class="provider-meta">
+        <span class="mono">PID: ${pid}</span>
+        <span class="mono">VID: ${p.vendor_id || '-'}</span>
+        <span class="badge badge-gray">${esc(p.city_name || '-')}</span>
+        <span class="badge ${p.provider_status === 'active' ? 'badge-green' : 'badge-red'}">${p.provider_status || '-'}</span>
+      </div>
+    </div>
+    <div class="provider-result-body">
+      <h4>Brand</h4>
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">${esc(p.brand_name || '-')}</div>
+      <h4>Traits</h4>
+      <div class="trait-badges">${traits || '<span style="font-size:12px;color:var(--text2)">None</span>'}</div>
+      ${enrollHtml}
+      ${ordersHtml}
+    </div>
+  </div>`;
+}
+
+function renderOverview(){
+  const traits = DATA.traits || [];
+  const providers = DATA.providers || [];
+  const enrollments = DATA.enrollments || [];
+
+  const totalProviders = providers.length;
+  const uniqueBrands = new Set(providers.map(p => p.brand_name).filter(Boolean)).size;
+  const totalEnrollments = enrollments.length;
+  const enrolledProviders = new Set(enrollments.map(e => e.provider_id)).size;
+  const totalOrders = (DATA.dd_orders || []).length;
+
+  let kpiHtml = `
+    <div class="kpi-card"><div class="kpi-label">Traits</div><div class="kpi-value accent">${traits.length}</div><div class="kpi-sub">Low / Med / High</div></div>
+    <div class="kpi-card"><div class="kpi-label">Total Providers</div><div class="kpi-value">${totalProviders}</div><div class="kpi-sub">across all traits</div></div>
+    <div class="kpi-card"><div class="kpi-label">Unique Brands</div><div class="kpi-value">${uniqueBrands}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Active Enrollments</div><div class="kpi-value">${totalEnrollments}</div><div class="kpi-sub">${enrolledProviders} providers</div></div>
+    <div class="kpi-card"><div class="kpi-label">DD Orders (28d)</div><div class="kpi-value">${totalOrders}</div></div>`;
+
+  traits.forEach(t => {
+    const count = t.provider_count || 0;
+    kpiHtml += `<div class="kpi-card"><div class="kpi-label">${esc(TRAIT_NAMES[t.trait_id] || t.name)} (${t.trait_id})</div><div class="kpi-value${count === 0 ? '" style="color:var(--warn)' : ''}">${count}</div><div class="kpi-sub">providers</div></div>`;
+  });
+
+  document.getElementById('overviewKpis').innerHTML = kpiHtml;
+
+  let breakdownHtml = '<h2 class="section-title">📋 Providers by Trait</h2>';
+  traits.forEach(t => {
+    const tid = t.trait_id;
+    const traitProviders = providers.filter(p => (p.trait_ids || []).includes(tid));
+    const brandCounts = {};
+    traitProviders.forEach(p => {
+      const b = p.brand_name || 'Unknown';
+      brandCounts[b] = (brandCounts[b] || 0) + 1;
+    });
+    const sorted = Object.entries(brandCounts).sort((a, b) => b[1] - a[1]);
+
+    breakdownHtml += `<div class="trait-card">
+      <div class="trait-card-header">
+        <div>
+          <div class="trait-card-title">${esc(t.name || TRAIT_NAMES[tid])}</div>
+          <div class="trait-card-id">ID: ${tid} | Slug: ${esc(t.slug || '-')} | Status: <span class="badge ${t.status === 'active' ? 'badge-green' : 'badge-red'}">${t.status || '-'}</span></div>
+        </div>
+        <span class="badge badge-purple">${t.provider_count || 0} providers</span>
+      </div>`;
+
+    if(sorted.length > 0){
+      breakdownHtml += `<div class="table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Brand</th><th class="text-center">Providers</th></tr></thead><tbody>`;
+      sorted.forEach(([brand, count], i) => {
+        breakdownHtml += `<tr><td>${i + 1}</td><td>${esc(brand)}</td><td class="text-center">${count}</td></tr>`;
+      });
+      breakdownHtml += `<tr style="font-weight:700;background:var(--bg)"><td></td><td>TOTAL</td><td class="text-center">${traitProviders.length}</td></tr>`;
+      breakdownHtml += '</tbody></table></div>';
+    } else {
+      breakdownHtml += `<div class="empty-state" style="padding:30px"><div class="icon">📭</div><h3>Empty trait</h3><p>No providers assigned yet</p></div>`;
+    }
+    breakdownHtml += '</div>';
+  });
+
+  document.getElementById('traitBreakdowns').innerHTML = breakdownHtml;
+}
+
+function renderOffers(){
+  const offers = DATA.offers || [];
+  const container = document.getElementById('offersContent');
+
+  if(offers.length === 0){
+    container.innerHTML = `<div class="empty-state"><div class="icon">🎯</div><h3>No offers found</h3><p>No active SP offers currently associated with trait providers</p></div>`;
+    return;
+  }
+
+  const dd = offers.filter(o => o.smart_promo_offer_type === 'double_deal');
+  const regular = offers.filter(o => o.smart_promo_offer_type !== 'double_deal');
+
+  let html = '';
+
+  if(dd.length > 0){
+    html += `<div class="offer-group"><h3 class="offer-group-title">🔥 Double Deal Offers (${dd.length})</h3>`;
+    html += renderOffersTable(dd);
+    html += '</div>';
+  }
+
+  if(regular.length > 0){
+    html += `<div class="offer-group"><h3 class="offer-group-title">💰 Regular Offers (${regular.length})</h3>`;
+    html += renderOffersTable(regular);
+    html += '</div>';
+  }
+
+  container.innerHTML = html;
+}
+
+function renderOffersTable(offers){
+  let html = `<div class="table-wrap"><table class="data-table"><thead><tr>
+    <th>Offer ID</th><th>Type</th><th>Mode</th><th>Spend Obj.</th>
+    <th>Campaign</th><th>Discount %</th><th>Cost Share %</th><th>City</th>
+    <th>Start</th><th>End</th></tr></thead><tbody>`;
+
+  offers.forEach(o => {
+    const typeBadge = o.smart_promo_offer_type === 'double_deal'
+      ? '<span class="badge badge-purple">DD</span>'
+      : '<span class="badge badge-blue">Regular</span>';
+    const modeBadge = o.smart_promo_offer_mode === 'black_box'
+      ? '<span class="badge badge-gray">black_box</span>'
+      : '<span class="badge badge-blue">white_box</span>';
+
+    html += `<tr>
+      <td class="mono">${o.smart_promo_offer_id || '-'}</td>
+      <td>${typeBadge}</td>
+      <td>${modeBadge}</td>
+      <td>${o.campaign_spend_objective || o.spend_objective || '-'}</td>
+      <td class="mono">${o.campaign_id || '-'}</td>
+      <td>${o.bonus_data_percentage != null ? o.bonus_data_percentage + '%' : '-'}</td>
+      <td>${o.cost_share_percentage != null ? o.cost_share_percentage + '%' : '-'}</td>
+      <td>${o.city_id || '-'}</td>
+      <td>${fmtDate(o.smart_promo_offer_start_ts || o.start)}</td>
+      <td>${fmtDate(o.smart_promo_offer_end_ts || o.end)}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function renderEnrollments(){
+  const enrollments = DATA.enrollments || [];
+  const providers = DATA.providers || [];
+  const container = document.getElementById('enrollmentsContent');
+  const summary = document.getElementById('enrollmentsSummary');
+
+  const enrolledPids = new Set(enrollments.map(e => e.provider_id));
+  const totalInTraits = providers.length;
+
+  summary.innerHTML = `<div class="insight-box">Out of <b>${totalInTraits}</b> providers in traits, <b>${enrolledPids.size}</b> have active SP enrollments.</div>`;
+
+  if(enrollments.length === 0){
+    container.innerHTML = `<div class="empty-state"><div class="icon">👥</div><h3>No active enrollments</h3><p>No providers have activated SP offers yet</p></div>`;
+    return;
+  }
+
+  const providerMap = {};
+  providers.forEach(p => { providerMap[p.provider_id] = p; });
+
+  let html = `<div class="table-wrap"><table class="data-table"><thead><tr>
+    <th>Provider ID</th><th>Name</th><th>Brand</th><th>Traits</th>
+    <th>Offer ID</th><th>Type</th><th>Mode</th><th>Spend Obj.</th>
+    <th>State</th></tr></thead><tbody>`;
+
+  enrollments.forEach(e => {
+    const p = providerMap[e.provider_id] || {};
+    const traitBadges = (p.trait_ids || []).map(tid => `<span class="badge ${TRAIT_BADGE_CLASSES[tid] || 'badge-gray'}">${TRAIT_NAMES[tid] || tid}</span>`).join(' ');
+    const typeBadge = e.smart_promo_offer_type === 'double_deal'
+      ? '<span class="badge badge-purple">DD</span>'
+      : '<span class="badge badge-blue">Regular</span>';
+
+    html += `<tr>
+      <td class="mono">${e.provider_id}</td>
+      <td>${esc(p.provider_name || '-')}</td>
+      <td>${esc(p.brand_name || '-')}</td>
+      <td>${traitBadges}</td>
+      <td class="mono">${e.smart_promo_offer_id || '-'}</td>
+      <td>${typeBadge}</td>
+      <td>${e.smart_promo_offer_mode || '-'}</td>
+      <td>${e.campaign_spend_objective || '-'}</td>
+      <td><span class="badge badge-green">${e.smart_promo_enrollment_state || '-'}</span></td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  container.innerHTML = html;
+}
+
+function renderDDOrders(){
+  const orders = DATA.dd_orders || [];
+  const container = document.getElementById('ddOrdersContent');
+
+  if(orders.length === 0){
+    container.innerHTML = `<div class="empty-state"><div class="icon">📦</div><h3>No DD orders</h3><p>No Double Deal orders found in the last 28 days</p></div>`;
+    return;
+  }
+
+  const providers = DATA.providers || [];
+  const providerMap = {};
+  providers.forEach(p => { providerMap[p.provider_id] = p; });
+
+  const totalPages = Math.ceil(orders.length / ITEMS_PER_PAGE);
+  let currentPage = 1;
+
+  function renderPage(page){
+    const start = (page - 1) * ITEMS_PER_PAGE;
+    const pageOrders = orders.slice(start, start + ITEMS_PER_PAGE);
+
+    let html = `<div style="font-size:13px;color:var(--text2);margin-bottom:12px">${orders.length} orders total</div>`;
+    html += `<div class="table-wrap"><table class="data-table"><thead><tr>
+      <th>Order ID</th><th>Provider ID</th><th>Provider</th><th>Date</th>
+      <th>Spend Obj.</th><th>Discount</th><th>Provider Spend</th><th>Bolt Spend</th>
+    </tr></thead><tbody>`;
+
+    pageOrders.forEach(o => {
+      const p = providerMap[o.provider_id] || {};
+      html += `<tr>
+        <td class="mono">${o.order_id || '-'}</td>
+        <td class="mono">${o.provider_id || '-'}</td>
+        <td>${esc(p.provider_name || '-')}</td>
+        <td>${o.order_created_date || '-'}</td>
+        <td>${o.spend_objective || '-'}</td>
+        <td>${fmt(o.discount_uah)}</td>
+        <td>${fmt(o.provider_uah)}</td>
+        <td>${fmt(o.bolt_uah)}</td>
+      </tr>`;
+    });
+
+    html += '</tbody></table></div>';
+
+    if(totalPages > 1){
+      html += `<div class="pagination">
+        <button onclick="goPage(${page - 1})" ${page === 1 ? 'disabled' : ''}>← Prev</button>
+        <span>Page ${page} of ${totalPages}</span>
+        <button onclick="goPage(${page + 1})" ${page === totalPages ? 'disabled' : ''}>Next →</button>
+      </div>`;
+    }
+
+    container.innerHTML = html;
+  }
+
+  window.goPage = function(page){
+    currentPage = Math.max(1, Math.min(totalPages, page));
+    renderPage(currentPage);
+    container.scrollIntoView({behavior:'smooth', block:'start'});
+  };
+
+  renderPage(1);
+}
+
+function fmt(val){
+  if(val == null) return '-';
+  const n = Number(val);
+  if(isNaN(n)) return String(val);
+  return n.toLocaleString('uk-UA', {minimumFractionDigits: 0, maximumFractionDigits: 2});
+}
+
+function fmtDate(val){
+  if(!val) return '-';
+  const s = String(val);
+  if(s.length >= 10) return s.substring(0, 10);
+  return s;
+}
+
+function esc(s){
+  if(!s) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+async function loadData(){
+  try {
+    const resp = await fetch('data.json?_=' + Date.now());
+    if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    DATA = await resp.json();
+
+    document.getElementById('loadingState').style.display = 'none';
+
+    if(DATA.meta && DATA.meta.last_updated){
+      document.getElementById('lastUpdate').textContent = 'Updated: ' + DATA.meta.last_updated;
+    }
+
+    renderOverview();
+    renderOffers();
+    renderEnrollments();
+    renderDDOrders();
+
+  } catch(e){
+    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('errorState').style.display = 'block';
+    document.getElementById('errorMessage').textContent = e.message;
+  }
+}
+
+loadData();
 </script>
 </body>
 </html>
