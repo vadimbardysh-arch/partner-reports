@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Пошуковий попит — Тбілісо — Bolt Food Україна</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --card: #1a1d27;
+            --border: #2a2d3a;
+            --text: #e4e6ed;
+            --muted: #8b8fa3;
+            --accent: #a78bfa;
+            --yellow: #fbbf24;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 32px;
+            min-height: 100vh;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--accent);
+        }
+        .header p {
+            color: var(--muted);
+            font-size: 14px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 12px;
+            background: rgba(167,139,250,0.15);
+            color: var(--accent);
+        }
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .kpi-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+        .kpi-label {
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .kpi-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .kpi-sub {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 4px;
+        }
+        .section {
+            margin-bottom: 40px;
+        }
+        .section h2 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+        .chart-container {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        th {
+            text-align: left;
+            padding: 10px 12px;
+            background: rgba(255,255,255,0.03);
+            border-bottom: 2px solid var(--border);
+            font-weight: 600;
+            color: var(--muted);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        tr:hover td { background: rgba(255,255,255,0.02); }
+        .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .city-bar {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        .city-bar-name {
+            width: 150px;
+            flex-shrink: 0;
+            color: var(--muted);
+        }
+        .city-bar-fill {
+            height: 22px;
+            border-radius: 4px;
+            margin-right: 10px;
+            min-width: 4px;
+        }
+        .city-bar-val {
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+        .footer {
+            text-align: center;
+            color: var(--muted);
+            font-size: 12px;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+        }
+        .note-box {
+            background: rgba(251,191,36,0.08);
+            border: 1px solid rgba(251,191,36,0.2);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-bottom: 24px;
+            font-size: 13px;
+            color: var(--yellow);
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 13px;
+            margin-bottom: 20px;
+        }
+        .back-link:hover { color: var(--text); }
+        @media (max-width: 768px) {
+            .kpi-grid { grid-template-columns: 1fr; }
+            body { padding: 16px; }
+        }
+    </style>
+</head>
+<body>
+
+<a href="../search-demand/" class="back-link">&larr; Назад до зведеного звіту</a>
+
+<div class="header">
+    <h1>Тбілісо</h1>
+    <p>Пошуковий попит в Bolt Food Україна</p>
+    <span class="badge">Q1 2024 — Q2 2026</span>
+</div>
+
+<div class="note-box">
+    Дані відображають кількість разів, коли клієнти вводили назву закладу в пошук Bolt Food в Україні.
+    Q1 2024 — неповні дані. Q2 2026 — лише перший тиждень квітня.
+</div>
+
+<div class="kpi-grid">
+    <div class="kpi-card">
+        <div class="kpi-label">Всього запитів</div>
+        <div class="kpi-value">2,597</div>
+        <div class="kpi-sub">за весь період</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Пік</div>
+        <div class="kpi-value">389</div>
+        <div class="kpi-sub">2025-Q2</div>
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-label">Топ місто</div>
+        <div class="kpi-value">Київ</div>
+        <div class="kpi-sub">2,436 запитів</div>
+    </div>
+</div>
+
+<div class="section">
+    <h2>Динаміка по кварталах</h2>
+    <div class="chart-container">
+        <canvas id="mainChart" height="110"></canvas>
+    </div>
+    <div class="chart-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Квартал</th>
+                    <th class="num">Пошукових запитів</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>2024-Q1</td>
+                    <td class="num">9</td>
+                </tr>
+                <tr>
+                    <td>2024-Q2</td>
+                    <td class="num">197</td>
+                </tr>
+                <tr>
+                    <td>2024-Q3</td>
+                    <td class="num">327</td>
+                </tr>
+                <tr>
+                    <td>2024-Q4</td>
+                    <td class="num">359</td>
+                </tr>
+                <tr>
+                    <td>2025-Q1</td>
+                    <td class="num">347</td>
+                </tr>
+                <tr>
+                    <td>2025-Q2</td>
+                    <td class="num">389</td>
+                </tr>
+                <tr>
+                    <td>2025-Q3</td>
+                    <td class="num">288</td>
+                </tr>
+                <tr>
+                    <td>2025-Q4</td>
+                    <td class="num">367</td>
+                </tr>
+                <tr>
+                    <td>2026-Q1</td>
+                    <td class="num">296</td>
+                </tr>
+                <tr style="color:var(--muted)">
+                    <td>2026-Q2*</td>
+                    <td class="num">18</td>
+                </tr>
+            </tbody>
+        </table>
+        <p style="font-size:11px;color:var(--muted);margin-top:8px">* Q2 2026 — неповний квартал</p>
+    </div>
+</div>
+
+<div class="section">
+    <h2>Географія попиту</h2>
+    <div class="chart-container">
+        <div id="cityBars"></div>
+    </div>
+</div>
+
+<div class="footer">
+    Звіт згенеровано: 8 квітня 2026 · Джерело: Databricks
+</div>
+
+<script>
+const quarters = ["2024-Q1", "2024-Q2", "2024-Q3", "2024-Q4", "2025-Q1", "2025-Q2", "2025-Q3", "2025-Q4", "2026-Q1"];
+const searches = [9, 197, 327, 359, 347, 389, 288, 367, 296];
+const cities = [["Київ", 2436], ["Львів", 27], ["Одеса", 21], ["Вінниця", 18], ["Харків", 12], ["Ів-Франківськ", 11], ["Ірпінь", 10], ["Чернівці", 9], ["Дніпро", 8], ["Вишгород", 7], ["Ужгород", 6], ["Тернопіль", 6]];
+const accentColor = '#a78bfa';
+
+new Chart(document.getElementById('mainChart'), {
+    type: 'bar',
+    data: {
+        labels: quarters,
+        datasets: [{
+            label: 'Пошукових запитів',
+            data: searches,
+            backgroundColor: accentColor + '80',
+            borderColor: accentColor,
+            borderWidth: 1.5,
+            borderRadius: 6
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { display: false },
+            title: { display: false }
+        },
+        scales: {
+            x: { grid: { color: '#2a2d3a' }, ticks: { color: '#8b8fa3' } },
+            y: { grid: { color: '#2a2d3a' }, ticks: { color: '#8b8fa3' }, beginAtZero: true }
+        }
+    }
+});
+
+const container = document.getElementById('cityBars');
+const maxVal = cities[0][1];
+cities.forEach(([name, val]) => {
+    const pct = (val / maxVal * 100).toFixed(1);
+    container.innerHTML += `
+        <div class="city-bar">
+            <span class="city-bar-name">${name}</span>
+            <div class="city-bar-fill" style="width:${Math.max(pct * 2.2, 4)}px;background:${accentColor}"></div>
+            <span class="city-bar-val">${val.toLocaleString()}</span>
+        </div>`;
+});
+</script>
+
+</body>
+</html>
