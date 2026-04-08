@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Promo Topup Traits | Аналіз</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --green:#34D186;--green-bg:rgba(52,209,134,.08);--dark:#1A1D21;
+  --bg:#F3F4F6;--card:#FFF;--text:#111827;--text2:#6B7280;--border:#E5E7EB;
+  --pos:#10B981;--neg:#EF4444;--warn:#F59E0B;--blue:#3B82F6;--purple:#8B5CF6;
+  --r:12px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+  --accent:#8B5CF6;--accent-bg:rgba(139,92,246,.08);
+}
+[data-theme="dark"]{
+  --bg:#111827;--card:#1F2937;--text:#F9FAFB;--text2:#9CA3AF;
+  --border:#374151;--shadow:0 1px 3px rgba(0,0,0,.3);
+  --accent-bg:rgba(139,92,246,.15);--green-bg:rgba(52,209,134,.15);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
+
+.header{position:sticky;top:0;z-index:102;background:var(--card);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.header-left{display:flex;align-items:center;gap:12px}
+.header-left h1{font-size:20px;font-weight:800;letter-spacing:-.3px}
+.brand-dot{width:10px;height:10px;border-radius:50%;background:var(--purple);display:inline-block}
+.header-right{display:flex;align-items:center;gap:10px}
+.theme-toggle{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 12px;font-size:16px;cursor:pointer;transition:all .15s;line-height:1}
+.theme-toggle:hover{background:var(--bg);color:var(--text)}
+.last-update{font-size:12px;color:var(--text2)}
+
+.main-nav{position:sticky;top:52px;z-index:100;background:var(--card);border-bottom:1px solid var(--border);display:flex;gap:0;overflow-x:auto;scrollbar-width:none;padding:0 16px}
+.main-nav::-webkit-scrollbar{display:none}
+.nav-link{padding:12px 16px;font-size:13px;font-weight:500;color:var(--text2);white-space:nowrap;border-bottom:2px solid transparent;transition:all .15s;cursor:pointer;text-decoration:none}
+.nav-link:hover{color:var(--text);background:var(--bg)}
+.nav-link.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+.main-content{max-width:1360px;margin:0 auto;padding:20px}
+.section{margin-bottom:32px;scroll-margin-top:100px}
+.section-title{font-size:18px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.section-icon{font-size:20px}
+
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:28px}
+.kpi-card{background:var(--card);border-radius:var(--r);padding:18px 20px;box-shadow:var(--shadow);border:1px solid var(--border)}
+.kpi-label{font-size:12px;color:var(--text2);font-weight:500;text-transform:uppercase;letter-spacing:.3px;margin-bottom:8px}
+.kpi-value{font-size:26px;font-weight:700;letter-spacing:-.5px;line-height:1.1}
+.kpi-sub{font-size:12px;color:var(--text2);margin-top:6px}
+.kpi-value.accent{color:var(--accent)}
+
+.insight-box{background:linear-gradient(135deg,rgba(139,92,246,.06),rgba(59,130,246,.04));border:1px solid rgba(139,92,246,.15);border-radius:10px;padding:14px 18px;margin-bottom:16px;font-size:13px;line-height:1.6;color:var(--text)}
+.insight-box b{font-weight:600}
+.insight-warn{background:linear-gradient(135deg,rgba(245,158,11,.06),rgba(239,68,68,.04));border-color:rgba(245,158,11,.2)}
+
+.table-wrap{overflow-x:auto;border-radius:var(--r);border:1px solid var(--border);background:var(--card);margin-bottom:20px}
+.data-table{width:100%;border-collapse:collapse;font-size:13px}
+.data-table th{background:var(--bg);font-weight:600;text-align:left;padding:10px 14px;white-space:nowrap;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:1}
+.data-table td{padding:9px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+.data-table tr:last-child td{border-bottom:none}
+.data-table tr:hover td{background:rgba(139,92,246,.04)}
+.data-table tr.total-row td{background:var(--bg);font-weight:700}
+.text-right{text-align:right}
+.text-center{text-align:center}
+
+.badge{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
+.badge-green{color:var(--pos);background:rgba(16,185,129,.1)}
+.badge-red{color:var(--neg);background:rgba(239,68,68,.1)}
+.badge-blue{color:var(--blue);background:rgba(59,130,246,.1)}
+.badge-purple{color:var(--purple);background:rgba(139,92,246,.1)}
+.badge-warn{color:var(--warn);background:rgba(245,158,11,.1)}
+.badge-gray{color:var(--text2);background:var(--bg)}
+
+.trait-card{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);border:1px solid var(--border);padding:20px;margin-bottom:20px}
+.trait-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+.trait-card-title{font-size:16px;font-weight:700}
+.trait-card-id{font-size:12px;color:var(--text2);font-family:monospace}
+
+.offer-group{margin-bottom:20px}
+.offer-group-title{font-size:14px;font-weight:600;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+
+.grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+@media(max-width:768px){.grid-2{grid-template-columns:1fr}.charts-grid{grid-template-columns:1fr}}
+
+.provider-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:500;background:var(--bg);border:1px solid var(--border);color:var(--text)}
+.chip-id{color:var(--text2);font-family:monospace;font-size:10px}
+
+.confluence-links{list-style:none;padding:0}
+.confluence-links li{margin-bottom:10px;padding:10px 14px;background:var(--bg);border-radius:8px;border:1px solid var(--border)}
+.confluence-links a{color:var(--blue);font-weight:500;text-decoration:none}
+.confluence-links a:hover{text-decoration:underline}
+.confluence-links .desc{font-size:12px;color:var(--text2);margin-top:4px}
+
+.empty-state{text-align:center;padding:40px;color:var(--text2)}
+.empty-state .icon{font-size:40px;margin-bottom:10px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <span class="brand-dot"></span>
+    <h1>Smart Promo Topup Traits</h1>
+  </div>
+  <div class="header-right">
+    <span class="last-update">Дата: 5 квітня 2026</span>
+    <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+  </div>
+</div>
+
+<nav class="main-nav">
+  <a class="nav-link active" href="#overview">Огляд</a>
+  <a class="nav-link" href="#trait-258321">Topup Low</a>
+  <a class="nav-link" href="#trait-258322">Topup Med</a>
+  <a class="nav-link" href="#trait-258323">Topup High</a>
+  <a class="nav-link" href="#offers">Пропозиції</a>
+  <a class="nav-link" href="#active-providers">Активні провайдери</a>
+  <a class="nav-link" href="#confluence">Confluence</a>
+</nav>
+
+<div class="main-content">
+
+<!-- OVERVIEW -->
+<div class="section" id="overview">
+  <h2 class="section-title"><span class="section-icon">📊</span> Загальний огляд</h2>
+
+  <div class="insight-box">
+    <b>Що це:</b> Трейти <b>Smart Promo Topup Low / Med / High</b> створені 13 березня 2026 для сегментації провайдерів за рівнем topup (доплати) в Smart Promo кампаніях.
+    Провайдери з цих трейтів отримують пропозиції через Provider Portal, де можуть активувати кампанії з різними рівнями знижок та кофінансування.
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Трейти</div>
+      <div class="kpi-value accent">3</div>
+      <div class="kpi-sub">Low / Med / High</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Topup Low (258321)</div>
+      <div class="kpi-value">94</div>
+      <div class="kpi-sub">активних провайдерів</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Topup Med (258322)</div>
+      <div class="kpi-value">129</div>
+      <div class="kpi-sub">активних провайдерів</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Topup High (258323)</div>
+      <div class="kpi-value" style="color:var(--warn)">0</div>
+      <div class="kpi-sub">провайдерів не додано</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Країна</div>
+      <div class="kpi-value" style="font-size:20px">🇺🇦 Україна</div>
+      <div class="kpi-sub">Kyiv, Irpin, Lviv, Dnipro</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Дата створення</div>
+      <div class="kpi-value" style="font-size:18px">13.03.2026</div>
+      <div class="kpi-sub">всі три трейти</div>
+    </div>
+  </div>
+
+  <div class="insight-box insight-warn">
+    <b>⚠️ Увага:</b> Trait <b>258323 (Smart Promo Topup High)</b> створений, але <b>не має жодного провайдера</b>. Можливо, ще не налаштований або заплановано додавання пізніше.
+  </div>
+</div>
+
+<!-- TRAIT 258321 -->
+<div class="section" id="trait-258321">
+  <h2 class="section-title"><span class="section-icon">🟢</span> Trait 258321 — Smart Promo Topup Low</h2>
+
+  <div class="trait-card">
+    <div class="trait-card-header">
+      <div>
+        <div class="trait-card-title">Smart Promo Topup Low</div>
+        <div class="trait-card-id">ID: 258321 | Slug: smart-promo-topup-low | Status: <span class="badge badge-green">active</span> | Global: Yes</div>
+      </div>
+      <span class="badge badge-purple">94 провайдерів</span>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Унікальних брендів</div><div class="kpi-value">20</div></div>
+      <div class="kpi-card"><div class="kpi-label">SP-активних провайдерів</div><div class="kpi-value">12</div><div class="kpi-sub">з 94 в трейті</div></div>
+    </div>
+  </div>
+
+  <h3 style="font-size:15px;font-weight:600;margin-bottom:12px">Бренди (20):</h3>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>#</th><th>Бренд</th><th>Провайдерів</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>EVRAZIYA</td><td class="text-center">19</td></tr>
+        <tr><td>2</td><td>KYIVSKA SHAURMA №1</td><td class="text-center">14</td></tr>
+        <tr><td>3</td><td>SALATEIRA</td><td class="text-center">12</td></tr>
+        <tr><td>4</td><td>MUZA BY KLOPOTENKO</td><td class="text-center">9</td></tr>
+        <tr><td>5</td><td>GREEK HOUSE</td><td class="text-center">8</td></tr>
+        <tr><td>6</td><td>THIS IS PIVBAR</td><td class="text-center">5</td></tr>
+        <tr><td>7</td><td>GAMBURGERNA NUNU</td><td class="text-center">4</td></tr>
+        <tr><td>8</td><td>PHILADELPHIA ROLL & BOWL</td><td class="text-center">4</td></tr>
+        <tr><td>9</td><td>BIG MAMA</td><td class="text-center">3</td></tr>
+        <tr><td>10</td><td>MUZA BY KLOPOTENKO LVIV</td><td class="text-center">3</td></tr>
+        <tr><td>11</td><td>NUNU</td><td class="text-center">3</td></tr>
+        <tr><td>12</td><td>VIET BAR</td><td class="text-center">1</td></tr>
+        <tr><td>13</td><td>KHVYLIA</td><td class="text-center">1</td></tr>
+        <tr><td>14</td><td>MANGAL MANGALOVYCH</td><td class="text-center">1</td></tr>
+        <tr><td>15</td><td>PEROGI</td><td class="text-center">1</td></tr>
+        <tr><td>16</td><td>SUSHI NA SUSHI</td><td class="text-center">1</td></tr>
+        <tr><td>17</td><td>TEPLYI</td><td class="text-center">1</td></tr>
+        <tr><td>18</td><td>THE DONER</td><td class="text-center">1</td></tr>
+        <tr><td>19</td><td>THE ROLL</td><td class="text-center">1</td></tr>
+        <tr><td>20</td><td>THE SALAD</td><td class="text-center">1</td></tr>
+        <tr class="total-row"><td></td><td>ВСЬОГО</td><td class="text-center">94</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- TRAIT 258322 -->
+<div class="section" id="trait-258322">
+  <h2 class="section-title"><span class="section-icon">🟡</span> Trait 258322 — Smart Promo Topup Med</h2>
+
+  <div class="trait-card">
+    <div class="trait-card-header">
+      <div>
+        <div class="trait-card-title">Smart Promo Topup Med</div>
+        <div class="trait-card-id">ID: 258322 | Slug: smart-promo-topup-med | Status: <span class="badge badge-green">active</span> | Global: Yes</div>
+      </div>
+      <span class="badge badge-purple">129 провайдерів</span>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Унікальних брендів</div><div class="kpi-value">31</div></div>
+      <div class="kpi-card"><div class="kpi-label">SP-активних провайдерів</div><div class="kpi-value">16</div><div class="kpi-sub">з 129 в трейті</div></div>
+    </div>
+  </div>
+
+  <h3 style="font-size:15px;font-weight:600;margin-bottom:12px">Додаткові бренди (окрім тих що в Topup Low):</h3>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>#</th><th>Бренд</th><th>Тільки в Med</th><th>Провайдерів</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>115 KITCHEN&BAR</td><td class="text-center">✅</td><td class="text-center">3</td></tr>
+        <tr><td>2</td><td>DOGGERIZ</td><td class="text-center">✅</td><td class="text-center">3</td></tr>
+        <tr><td>3</td><td>MAMYNA KOTLETKA</td><td class="text-center">✅</td><td class="text-center">2</td></tr>
+        <tr><td>4</td><td>MISIS BOUL</td><td class="text-center">✅</td><td class="text-center">4</td></tr>
+        <tr><td>5</td><td>PAPITO (Pani Mozzarella)</td><td class="text-center">✅</td><td class="text-center">6</td></tr>
+        <tr><td>6</td><td>PASTA ITALIANO</td><td class="text-center">✅</td><td class="text-center">4</td></tr>
+        <tr><td>7</td><td>PIZZA TODAY</td><td class="text-center">✅</td><td class="text-center">4</td></tr>
+        <tr><td>8</td><td>POOBIDAY</td><td class="text-center">✅</td><td class="text-center">1</td></tr>
+        <tr><td>9</td><td>SUSHI FAMILY</td><td class="text-center">✅</td><td class="text-center">1</td></tr>
+        <tr><td>10</td><td>SUSHI TODAY</td><td class="text-center">✅</td><td class="text-center">3</td></tr>
+        <tr><td>11</td><td>SUSHI VIBE</td><td class="text-center">✅</td><td class="text-center">3</td></tr>
+        <tr><td>12</td><td>URBAN BURGER</td><td class="text-center">✅</td><td class="text-center">4</td></tr>
+        <tr class="total-row"><td></td><td>Додаткових брендів</td><td></td><td class="text-center">+38</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="insight-box">
+    Trait <b>Topup Med</b> включає <b>всіх 94 провайдерів</b> з Topup Low + ще <b>35 додаткових</b> провайдерів з 12 нових брендів.
+  </div>
+</div>
+
+<!-- TRAIT 258323 -->
+<div class="section" id="trait-258323">
+  <h2 class="section-title"><span class="section-icon">🔴</span> Trait 258323 — Smart Promo Topup High</h2>
+
+  <div class="trait-card">
+    <div class="trait-card-header">
+      <div>
+        <div class="trait-card-title">Smart Promo Topup High</div>
+        <div class="trait-card-id">ID: 258323 | Slug: smart-promo-topup-high | Status: <span class="badge badge-green">active</span> | Global: Yes</div>
+      </div>
+      <span class="badge badge-warn">0 провайдерів</span>
+    </div>
+  </div>
+
+  <div class="empty-state">
+    <div class="icon">📭</div>
+    <h3 style="margin-bottom:8px">Трейт порожній</h3>
+    <p>Створений 13.03.2026, але жодного провайдера не було додано.<br>Можливо, заплановано активацію пізніше.</p>
+  </div>
+</div>
+
+<!-- OFFERS -->
+<div class="section" id="offers">
+  <h2 class="section-title"><span class="section-icon">🎯</span> Пропозиції Smart Promo (знижки та кофінансування)</h2>
+
+  <div class="insight-box">
+    <b>Як це працює:</b> Bolt запускає базову кампанію зі знижкою. Провайдери через Portal можуть «добити» (topup) — додати свою частку до знижки.
+    У <b>Double Deal</b> — бандл з кількох кампаній (MD + FFD). У <b>Regular</b> — одна кампанія. <b>Cost Share 50%</b> = провайдер платить 50% знижки, <b>100%</b> = Bolt повністю фінансує.
+  </div>
+
+  <!-- Double Deal offers -->
+  <div class="offer-group">
+    <h3 class="offer-group-title">🔥 Double Deal (бандли) — Тиждень W13 (24-31 березня 2026)</h3>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Offer ID</th>
+            <th>Spend Objective</th>
+            <th>Таргетинг</th>
+            <th>Знижка (Menu)</th>
+            <th>Знижка (Delivery)</th>
+            <th>Cost Share (провайдер)</th>
+            <th>MOV</th>
+            <th>Mode</th>
+            <th>Доступно для трейтів</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>132098</code></td>
+            <td><span class="badge badge-green">Activation</span></td>
+            <td>Нові користувачі</td>
+            <td><b>30%</b> (cap 25,000₴)</td>
+            <td><b>100% FFD</b> (cap 70₴)</td>
+            <td><span class="badge badge-blue">50%</span></td>
+            <td>500₴</td>
+            <td><span class="badge badge-gray">black_box</span></td>
+            <td>258321, 258322</td>
+          </tr>
+          <tr>
+            <td><code>132100</code></td>
+            <td><span class="badge badge-warn">Reactivation</span></td>
+            <td>Churning users (low/med/high conv.)</td>
+            <td><b>30%</b> (cap 25,000₴)</td>
+            <td><b>100% FFD</b> (cap 70₴)</td>
+            <td><span class="badge badge-blue">50%</span></td>
+            <td>700₴</td>
+            <td><span class="badge badge-gray">black_box</span></td>
+            <td>258321, 258322</td>
+          </tr>
+          <tr>
+            <td><code>132103</code></td>
+            <td><span class="badge badge-purple">Engagement</span></td>
+            <td>Engaged low activity, low/med/high conv.</td>
+            <td><b>25%</b> (cap 1,000₴)</td>
+            <td><b>100% FFD</b> (cap 70₴)</td>
+            <td><span class="badge badge-blue">50%</span></td>
+            <td>700₴</td>
+            <td><span class="badge badge-gray">black_box</span></td>
+            <td>258321, 258322</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Regular SP-funded -->
+  <div class="offer-group">
+    <h3 class="offer-group-title">💰 Regular — Fully Funded (Bolt 100%) — W13</h3>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr><th>Offer ID</th><th>Spend Objective</th><th>Таргетинг</th><th>Знижка</th><th>Cost Share</th><th>MOV</th><th>Mode</th><th>Трейти</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>132106</code></td>
+            <td><span class="badge badge-green">Fully Funded</span></td>
+            <td>High conversion engaged users</td>
+            <td><b>10% MD</b> (cap 1,000₴)</td>
+            <td><span class="badge badge-green">100% Bolt</span></td>
+            <td>700₴</td>
+            <td><span class="badge badge-gray">black_box</span></td>
+            <td>258321, 258322</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Regular Engagement W14 -->
+  <div class="offer-group">
+    <h3 class="offer-group-title">📈 Regular — Engagement — Тиждень W14 (31 березня — 7 квітня 2026)</h3>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr><th>Offer ID</th><th>Campaign</th><th>Місто</th><th>Знижка</th><th>Cost Share</th><th>MOV</th><th>Mode</th><th>Трейти</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>135311</code></td>
+            <td>1033068</td>
+            <td>Kyiv</td>
+            <td><b>20% MD</b> (cap 1,000₴)</td>
+            <td><span class="badge badge-green">100% Bolt</span></td>
+            <td>700₴</td>
+            <td><span class="badge badge-gray">black_box</span> + <span class="badge badge-blue">white_box</span></td>
+            <td>258321, 258322</td>
+          </tr>
+          <tr>
+            <td><code>135313</code></td>
+            <td>1033066</td>
+            <td>Kyiv</td>
+            <td><b>10% MD</b> (cap 1,000₴)</td>
+            <td><span class="badge badge-green">100% Bolt</span></td>
+            <td>700₴</td>
+            <td><span class="badge badge-blue">white_box</span></td>
+            <td>258321, 258322</td>
+          </tr>
+          <tr>
+            <td><code>135317</code></td>
+            <td>1033074</td>
+            <td>Dnipro</td>
+            <td><b>20% MD</b> (cap 1,000₴)</td>
+            <td><span class="badge badge-green">100% Bolt</span></td>
+            <td>700₴</td>
+            <td><span class="badge badge-blue">white_box</span></td>
+            <td>258322</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Upcoming W15 -->
+  <div class="offer-group">
+    <h3 class="offer-group-title">🔮 Regular — Engagement — Тиждень W15 (7-14 квітня 2026) — Запланований</h3>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr><th>Offer ID</th><th>Campaign</th><th>Місто</th><th>Знижка</th><th>Cost Share</th><th>MOV</th><th>Mode</th><th>Трейти</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>141601</code></td>
+            <td>1051133</td>
+            <td>Kyiv</td>
+            <td><b>10% MD</b> (cap 1,000₴)</td>
+            <td><span class="badge badge-green">100% Bolt</span></td>
+            <td>700₴</td>
+            <td><span class="badge badge-gray">black_box</span></td>
+            <td>258321, 258322</td>
+          </tr>
+          <tr>
+            <td><code>141602</code></td>
+            <td>1051134</td>
+            <td>Kyiv</td>
+            <td><b>15% MD</b> (cap 1,000₴)</td>
+            <td><span class="badge badge-green">100% Bolt</span></td>
+            <td>700₴</td>
+            <td><span class="badge badge-gray">black_box</span></td>
+            <td>258321, 258322</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ACTIVE PROVIDERS -->
+<div class="section" id="active-providers">
+  <h2 class="section-title"><span class="section-icon">👥</span> Провайдери з активними SP пропозиціями</h2>
+
+  <div class="insight-box">
+    З <b>94</b> провайдерів у Topup Low, тільки <b>12</b> мають активні SP enrollments. З <b>129</b> у Topup Med — <b>16</b>.
+    Це провайдери, які бачать пропозиції на Provider Portal і мають статус <code>active</code>.
+  </div>
+
+  <h3 style="font-size:15px;font-weight:600;margin:16px 0 12px">Black Box провайдери (автоматична активація):</h3>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr><th>Provider ID</th><th>Назва</th><th>Бренд</th><th>Трейти</th><th>Доступні пропозиції</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>8093</code></td><td>Viet Bar</td><td>VIET BAR</td>
+          <td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td>
+          <td>DD Activation, DD Reactivation, DD Engagement, Regular Fully Funded, Regular Engagement</td>
+        </tr>
+        <tr>
+          <td><code>177094</code></td><td>Greek House ТРЦ Smart Plaza</td><td>GREEK HOUSE</td>
+          <td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td>
+          <td>DD Activation, DD Reactivation, Regular Fully Funded, Regular Engagement</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 style="font-size:15px;font-weight:600;margin:16px 0 12px">White Box провайдери (самостійна активація через Portal):</h3>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr><th>Provider ID</th><th>Назва</th><th>Бренд</th><th>Трейти</th><th>Активна пропозиція</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>36455</code></td><td>Sushi Family Робоча 67к</td><td>SUSHI FAMILY</td><td><span class="badge badge-warn">Med</span></td><td>Regular Engagement 20% MD (Dnipro)</td></tr>
+        <tr><td><code>71613</code></td><td>Київська шаурма №1 пр-т Перемоги, 94</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% MD</td></tr>
+        <tr><td><code>78560</code></td><td>Київська шаурма №1 Радужна, 6</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% MD</td></tr>
+        <tr><td><code>79718</code></td><td>Київська шаурма №1 Голосіївський просп. 36</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% MD</td></tr>
+        <tr><td><code>81633</code></td><td>Doggeriz Предславинська</td><td>DOGGERIZ</td><td><span class="badge badge-warn">Med</span></td><td>Regular Engagement 20% MD</td></tr>
+        <tr><td><code>81634</code></td><td>Doggeriz Гоголівська</td><td>DOGGERIZ</td><td><span class="badge badge-warn">Med</span></td><td>Regular Engagement 20% MD</td></tr>
+        <tr><td><code>81648</code></td><td>Doggeriz Спаська</td><td>DOGGERIZ</td><td><span class="badge badge-warn">Med</span></td><td>Regular Engagement 20% MD</td></tr>
+        <tr><td><code>84580</code></td><td>Київська шаурма №1 Дегтярівська, 32а</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% MD</td></tr>
+        <tr><td><code>89540</code></td><td>Київська шаурма №1 вул. Дорогожицька 15</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% MD</td></tr>
+        <tr><td><code>155737</code></td><td>Київська шаурма №1 Данила Щербаківського 2</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% MD</td></tr>
+        <tr><td><code>179182</code></td><td>Київська шаурма №1 вул. Табірна</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% + 20% MD</td></tr>
+        <tr><td><code>182076</code></td><td>Київська шаурма №1 Кирилівська</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% MD</td></tr>
+        <tr><td><code>195322</code></td><td>Київська шаурма №1 вул. Шамо</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% + 20% MD</td></tr>
+        <tr><td><code>195423</code></td><td>Київська шаурма №1 вул. Олександра Архипенка</td><td>KYIVSKA SHAURMA №1</td><td><span class="badge badge-purple">Low</span> <span class="badge badge-warn">Med</span></td><td>Regular Engagement 10% + 20% MD</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- CONFLUENCE -->
+<div class="section" id="confluence">
+  <h2 class="section-title"><span class="section-icon">📖</span> Документація (Confluence)</h2>
+
+  <div class="insight-box">
+    Конкретних сторінок з ID трейтів 258321/258322/258323 на Confluence <b>не знайдено</b>. Нижче — релевантні сторінки по Smart Promotions.
+  </div>
+
+  <ul class="confluence-links">
+    <li>
+      <a href="https://taxify.atlassian.net/wiki/spaces/CAM/pages/5590089743/Intro+to+Smart+Promotions" target="_blank">Intro to Smart Promotions</a>
+      <div class="desc">Основна документація: типи SP (Top-Up та Double Deal), налаштування міста, створення кампаній, criteria еліджібіліті.</div>
+    </li>
+    <li>
+      <a href="https://taxify.atlassian.net/wiki/spaces/ENGINEERING/pages/5740134569/Design+Doc+Smart+Promotions+flexible+access+to+solutions+and+offers" target="_blank">[Design Doc] Smart Promotions: flexible access to solutions and offers</a>
+      <div class="desc">Технічний дизайн-документ: blacklist/whitelist провайдерів, provider targeting для Smart Offers, quality eligibility.</div>
+    </li>
+    <li>
+      <a href="https://taxify.atlassian.net/wiki/spaces/CAM/pages/5908038212/Smart+Promotions+Quality+Eligibility" target="_blank">Smart Promotions Quality Eligibility</a>
+      <div class="desc">Критерії якості для допуску провайдерів до SP по містах України (Kyiv, Brovary, Irpin тощо).</div>
+    </li>
+    <li>
+      <a href="https://taxify.atlassian.net/wiki/spaces/CAM/pages/4538270066/Using+Provider+Profiling+Features+in+Incentives+Targeting" target="_blank">Using Provider Profiling Features in Incentives Targeting</a>
+      <div class="desc">Як використовувати trait_ids у профілюванні та таргетингу провайдерів для кампаній.</div>
+    </li>
+    <li>
+      <a href="https://taxify.atlassian.net/wiki/spaces/BF/pages/3995862854/Provider+Traits" target="_blank">Provider Traits</a>
+      <div class="desc">Загальна документація про Provider Traits: створення, призначення, таблиці в Redshift/Databricks.</div>
+    </li>
+    <li>
+      <a href="https://taxify.atlassian.net/wiki/spaces/CAM/pages/5593300996/Smart+Promotions+for+New+Cities" target="_blank">Smart Promotions for New Cities</a>
+      <div class="desc">Опції запуску Smart Promotions в нових містах, рекомендації та обмеження.</div>
+    </li>
+    <li>
+      <a href="https://taxify.atlassian.net/wiki/spaces/BF/pages/6961954945/Bulk+Provider+Traits+Assignment" target="_blank">Bulk Provider Traits Assignment</a>
+      <div class="desc">Інструмент масового додавання трейтів до провайдерів через CSV.</div>
+    </li>
+  </ul>
+</div>
+
+</div>
+
+<script>
+function toggleTheme(){
+  const t=document.documentElement.dataset.theme==='dark'?'':'dark';
+  document.documentElement.dataset.theme=t;
+  document.querySelector('.theme-toggle').textContent=t==='dark'?'☀️':'🌙';
+}
+
+document.querySelectorAll('.nav-link').forEach(l=>{
+  l.addEventListener('click',function(){
+    document.querySelectorAll('.nav-link').forEach(n=>n.classList.remove('active'));
+    this.classList.add('active');
+  });
+});
+</script>
+</body>
+</html>
