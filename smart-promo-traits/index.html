@@ -138,6 +138,18 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .pagination button:disabled{opacity:.4;cursor:default}
 .pagination span{font-size:12px;color:var(--text2)}
 
+.group-header{background:var(--card);border:1px solid var(--accent);border-radius:var(--r);padding:14px 20px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.group-header h3{font-size:15px;font-weight:700;color:var(--accent)}
+.group-header .group-meta{font-size:12px;color:var(--text2)}
+.group-header .group-type{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)}
+
+.no-trait-label{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);padding:3px 10px;border-radius:20px;background:var(--bg);border:1px dashed var(--border)}
+
+.provider-result.in-trait{border-left:3px solid var(--accent)}
+.provider-result.no-trait{border-left:3px solid var(--border);opacity:.85}
+
+.search-results-group{margin-bottom:24px}
+
 @media(max-width:768px){
   .header{padding:12px 16px}
   .search-container{padding:10px 16px}
@@ -163,10 +175,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 <div class="search-container">
   <div class="search-box">
     <span class="search-icon">🔍</span>
-    <input type="text" id="searchInput" placeholder="Search by Provider ID, Vendor ID, or name..." autocomplete="off">
+    <input type="text" id="searchInput" placeholder="Search by Provider ID, Vendor ID, name, brand, or group..." autocomplete="off">
     <button class="search-clear" id="searchClear" onclick="clearSearch()">&times;</button>
   </div>
-  <div class="search-hint">Enter at least 2 characters to search across all providers in traits</div>
+  <div class="search-hint">Search all UA providers. Vendor / brand / group matches expand to show all related providers.</div>
 </div>
 
 <nav class="main-nav" id="mainNav">
@@ -281,7 +293,8 @@ const TRAIT_BADGE_CLASSES = {258321:'badge-green',258322:'badge-warn',258323:'ba
 const ITEMS_PER_PAGE = 50;
 
 let DATA = null;
-let providerIndex = {};
+let enrollmentsByPid = {};
+let ordersByPid = {};
 
 function toggleTheme(){
   const t = document.documentElement.dataset.theme === 'dark' ? '' : 'dark';
@@ -311,12 +324,16 @@ document.querySelectorAll('.nav-link').forEach(link => {
 
 const searchInput = document.getElementById('searchInput');
 const searchClear = document.getElementById('searchClear');
+let searchTimer = null;
 
 searchInput.addEventListener('input', function(){
   const q = this.value.trim();
   searchClear.classList.toggle('visible', q.length > 0);
-  if(q.length >= 2) performSearch(q);
-  else hideSearchResults();
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    if(q.length >= 2) performSearch(q);
+    else hideSearchResults();
+  }, 200);
 });
 
 function clearSearch(){
@@ -335,43 +352,154 @@ function hideSearchResults(){
   });
 }
 
+function buildSearchIndex(){
+  enrollmentsByPid = {};
+  (DATA.enrollments || []).forEach(e => {
+    (enrollmentsByPid[e.provider_id] = enrollmentsByPid[e.provider_id] || []).push(e);
+  });
+  ordersByPid = {};
+  (DATA.dd_orders || []).forEach(o => {
+    (ordersByPid[o.provider_id] = ordersByPid[o.provider_id] || []).push(o);
+  });
+}
+
 function performSearch(q){
   if(!DATA) return;
   const ql = q.toLowerCase();
+  const isNumeric = /^\d+$/.test(q);
 
   document.querySelectorAll('.tab-panel.active').forEach(p => {
     p.classList.add('active-before-search');
     p.classList.remove('active');
   });
 
-  const matches = DATA.providers.filter(p => {
-    const pid = String(p.provider_id || '');
-    const vid = String(p.vendor_id || '');
-    const pname = (p.provider_name || '').toLowerCase();
-    const bname = (p.brand_name || '').toLowerCase();
-    return pid.includes(ql) || vid.includes(ql) || pname.includes(ql) || bname.includes(ql);
-  });
-
   const container = document.getElementById('searchResults');
   container.style.display = 'block';
 
-  if(matches.length === 0){
-    container.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><h3>No providers found</h3><p>No match for "${esc(q)}" in traits ${DATA.meta.trait_ids.join(', ')}</p></div>`;
+  const providerIdMatches = new Set();
+  const vendorIdExpand = new Set();
+  const vendorNameExpand = new Set();
+  const brandExpand = new Set();
+  const groupExpand = new Set();
+  const providerNameMatches = new Set();
+
+  DATA.providers.forEach((p, idx) => {
+    const pid = String(p.provider_id || '');
+    const vid = String(p.vendor_id || '');
+
+    if(isNumeric){
+      if(pid === q) providerIdMatches.add(idx);
+      if(vid === q) vendorIdExpand.add(p.vendor_id);
+      if(pid.includes(q) && pid !== q) providerIdMatches.add(idx);
+      if(vid.includes(q) && vid !== q) vendorIdExpand.add(p.vendor_id);
+    } else {
+      const pname = (p.provider_name || '').toLowerCase();
+      const vname = (p.vendor_name || '').toLowerCase();
+      const bname = (p.brand_name || '').toLowerCase();
+      const gname = (p.group_name || '').toLowerCase();
+
+      if(pname.includes(ql)) providerNameMatches.add(idx);
+      if(vname.includes(ql)) vendorNameExpand.add(p.vendor_id);
+      if(bname.includes(ql)) brandExpand.add(p.brand_name);
+      if(gname.includes(ql)) groupExpand.add(p.group_name);
+    }
+  });
+
+  const hasVendorExpand = vendorIdExpand.size > 0 || vendorNameExpand.size > 0;
+  const hasBrandExpand = brandExpand.size > 0;
+  const hasGroupExpand = groupExpand.size > 0;
+  const hasExpand = hasVendorExpand || hasBrandExpand || hasGroupExpand;
+
+  const allVendorIds = new Set([...vendorIdExpand, ...vendorNameExpand]);
+
+  let html = '';
+  let totalShown = 0;
+
+  if(hasExpand){
+    if(allVendorIds.size > 0){
+      allVendorIds.forEach(vid => {
+        const group = DATA.providers.filter(p => p.vendor_id === vid);
+        if(group.length === 0) return;
+        const vname = group[0].vendor_name || 'Unknown Vendor';
+        const inTrait = group.filter(p => (p.trait_ids || []).length > 0).length;
+        html += `<div class="search-results-group">`;
+        html += `<div class="group-header"><div><span class="group-type">Vendor</span><h3>${esc(vname)}</h3></div><div class="group-meta">VID: ${vid} &middot; ${group.length} provider${group.length !== 1 ? 's' : ''}${inTrait ? ' &middot; ' + inTrait + ' in SP traits' : ''}</div></div>`;
+        group.forEach(p => { html += renderProviderCard(p); });
+        html += '</div>';
+        totalShown += group.length;
+      });
+    }
+
+    if(brandExpand.size > 0){
+      brandExpand.forEach(bname => {
+        const group = DATA.providers.filter(p => p.brand_name === bname);
+        if(group.length === 0) return;
+        const alreadyShown = group.every(p => allVendorIds.has(p.vendor_id));
+        if(alreadyShown) return;
+        const inTrait = group.filter(p => (p.trait_ids || []).length > 0).length;
+        html += `<div class="search-results-group">`;
+        html += `<div class="group-header"><div><span class="group-type">Brand</span><h3>${esc(bname)}</h3></div><div class="group-meta">${group.length} provider${group.length !== 1 ? 's' : ''}${inTrait ? ' &middot; ' + inTrait + ' in SP traits' : ''}</div></div>`;
+        group.forEach(p => { if(!allVendorIds.has(p.vendor_id)) { html += renderProviderCard(p); totalShown++; }});
+        html += '</div>';
+      });
+    }
+
+    if(groupExpand.size > 0){
+      groupExpand.forEach(gname => {
+        const group = DATA.providers.filter(p => p.group_name === gname);
+        if(group.length === 0) return;
+        const shownPids = new Set();
+        const alreadyShown = group.every(p => allVendorIds.has(p.vendor_id) || brandExpand.has(p.brand_name));
+        if(alreadyShown) return;
+        const inTrait = group.filter(p => (p.trait_ids || []).length > 0).length;
+        html += `<div class="search-results-group">`;
+        html += `<div class="group-header"><div><span class="group-type">Group</span><h3>${esc(gname)}</h3></div><div class="group-meta">${group.length} provider${group.length !== 1 ? 's' : ''}${inTrait ? ' &middot; ' + inTrait + ' in SP traits' : ''}</div></div>`;
+        group.forEach(p => { if(!allVendorIds.has(p.vendor_id) && !brandExpand.has(p.brand_name)) { html += renderProviderCard(p); totalShown++; }});
+        html += '</div>';
+      });
+    }
+  }
+
+  const directMatches = [...providerIdMatches, ...providerNameMatches].map(i => DATA.providers[i]);
+  const alreadyShownPids = new Set();
+  if(hasExpand){
+    allVendorIds.forEach(vid => {
+      DATA.providers.filter(p => p.vendor_id === vid).forEach(p => alreadyShownPids.add(p.provider_id));
+    });
+    brandExpand.forEach(bn => {
+      DATA.providers.filter(p => p.brand_name === bn).forEach(p => alreadyShownPids.add(p.provider_id));
+    });
+    groupExpand.forEach(gn => {
+      DATA.providers.filter(p => p.group_name === gn).forEach(p => alreadyShownPids.add(p.provider_id));
+    });
+  }
+
+  const filteredDirect = directMatches.filter(p => !alreadyShownPids.has(p.provider_id));
+  const uniqueDirect = [...new Map(filteredDirect.map(p => [p.provider_id, p])).values()];
+
+  if(uniqueDirect.length > 0){
+    if(hasExpand) html += `<div class="search-results-group"><div class="group-header"><div><span class="group-type">Direct Match</span><h3>Individual Providers</h3></div><div class="group-meta">${uniqueDirect.length} provider${uniqueDirect.length !== 1 ? 's' : ''}</div></div>`;
+    uniqueDirect.slice(0, 50).forEach(p => { html += renderProviderCard(p); });
+    if(hasExpand) html += '</div>';
+    totalShown += Math.min(uniqueDirect.length, 50);
+  }
+
+  if(totalShown === 0){
+    container.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><h3>No providers found</h3><p>No match for "${esc(q)}" across all Ukrainian providers</p></div>`;
     return;
   }
 
-  const limited = matches.slice(0, 30);
-  let html = `<div class="search-results-count">${matches.length} provider${matches.length !== 1 ? 's' : ''} found${matches.length > 30 ? ' (showing first 30)' : ''}</div>`;
-  limited.forEach(p => { html += renderProviderCard(p); });
-  container.innerHTML = html;
+  const countLine = `<div class="search-results-count">${totalShown} provider${totalShown !== 1 ? 's' : ''} shown</div>`;
+  container.innerHTML = countLine + html;
 }
 
 function renderProviderCard(p){
   const pid = p.provider_id;
+  const hasTrait = (p.trait_ids || []).length > 0;
   const traits = (p.trait_ids || []).map(tid => `<span class="trait-badge ${TRAIT_COLORS[tid] || ''}">${TRAIT_NAMES[tid] || tid} (${tid})</span>`).join('');
 
-  const enrollments = (DATA.enrollments || []).filter(e => e.provider_id === pid);
-  const orders = (DATA.dd_orders || []).filter(o => o.provider_id === pid);
+  const enrollments = enrollmentsByPid[pid] || [];
+  const orders = ordersByPid[pid] || [];
 
   let enrollHtml = '';
   if(enrollments.length > 0){
@@ -380,21 +508,25 @@ function renderProviderCard(p){
       enrollHtml += `<tr><td class="mono">${e.smart_promo_offer_id || '-'}</td><td><span class="badge ${e.smart_promo_offer_type === 'double_deal' ? 'badge-purple' : 'badge-blue'}">${e.smart_promo_offer_type || '-'}</span></td><td>${e.smart_promo_offer_mode || '-'}</td><td>${e.campaign_spend_objective || '-'}</td><td><span class="badge badge-green">${e.smart_promo_enrollment_state || '-'}</span></td></tr>`;
     });
     enrollHtml += '</tbody></table>';
-  } else {
+  } else if(hasTrait){
     enrollHtml = `<h4>Enrollments</h4><div style="font-size:12px;color:var(--text2);padding:8px 0">No active SP enrollments</div>`;
   }
 
   let ordersHtml = '';
   if(orders.length > 0){
     ordersHtml = `<h4>DD Orders (${orders.length})</h4><table class="mini-table"><thead><tr><th>Order ID</th><th>Date</th><th>Spend Obj.</th><th>Discount</th><th>Provider Spend</th><th>Bolt Spend</th></tr></thead><tbody>`;
-    orders.slice(0, 20).forEach(o => {
+    orders.slice(0, 10).forEach(o => {
       ordersHtml += `<tr><td class="mono">${o.order_id || '-'}</td><td>${o.order_created_date || '-'}</td><td>${o.spend_objective || '-'}</td><td>${fmt(o.discount_uah)}</td><td>${fmt(o.provider_uah)}</td><td>${fmt(o.bolt_uah)}</td></tr>`;
     });
     ordersHtml += '</tbody></table>';
-    if(orders.length > 20) ordersHtml += `<div style="font-size:11px;color:var(--text2);padding:4px 0">+ ${orders.length - 20} more orders</div>`;
+    if(orders.length > 10) ordersHtml += `<div style="font-size:11px;color:var(--text2);padding:4px 0">+ ${orders.length - 10} more orders</div>`;
   }
 
-  return `<div class="provider-result">
+  const traitSection = hasTrait
+    ? `<h4>SP Topup Traits</h4><div class="trait-badges">${traits}</div>`
+    : `<h4>SP Topup Traits</h4><span class="no-trait-label">Not in SP Topup traits</span>`;
+
+  return `<div class="provider-result ${hasTrait ? 'in-trait' : 'no-trait'}">
     <div class="provider-result-header">
       <h3>${esc(p.provider_name || 'Unknown')}</h3>
       <div class="provider-meta">
@@ -405,10 +537,11 @@ function renderProviderCard(p){
       </div>
     </div>
     <div class="provider-result-body">
-      <h4>Brand</h4>
-      <div style="font-size:14px;font-weight:600;margin-bottom:4px">${esc(p.brand_name || '-')}</div>
-      <h4>Traits</h4>
-      <div class="trait-badges">${traits || '<span style="font-size:12px;color:var(--text2)">None</span>'}</div>
+      <h4>Vendor</h4>
+      <div style="font-size:13px;margin-bottom:4px">${esc(p.vendor_name || '-')}</div>
+      <h4>Brand / Group</h4>
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px">${esc(p.brand_name || '-')}${p.group_name ? ' <span style="font-weight:400;color:var(--text2);font-size:12px">(' + esc(p.group_name) + ')</span>' : ''}</div>
+      ${traitSection}
       ${enrollHtml}
       ${ordersHtml}
     </div>
@@ -419,17 +552,19 @@ function renderOverview(){
   const traits = DATA.traits || [];
   const providers = DATA.providers || [];
   const enrollments = DATA.enrollments || [];
+  const traitProviders = providers.filter(p => (p.trait_ids || []).length > 0);
 
-  const totalProviders = providers.length;
-  const uniqueBrands = new Set(providers.map(p => p.brand_name).filter(Boolean)).size;
+  const totalInTraits = traitProviders.length;
+  const totalAll = providers.length;
+  const uniqueBrands = new Set(traitProviders.map(p => p.brand_name).filter(Boolean)).size;
   const totalEnrollments = enrollments.length;
   const enrolledProviders = new Set(enrollments.map(e => e.provider_id)).size;
   const totalOrders = (DATA.dd_orders || []).length;
 
   let kpiHtml = `
     <div class="kpi-card"><div class="kpi-label">Traits</div><div class="kpi-value accent">${traits.length}</div><div class="kpi-sub">Low / Med / High</div></div>
-    <div class="kpi-card"><div class="kpi-label">Total Providers</div><div class="kpi-value">${totalProviders}</div><div class="kpi-sub">across all traits</div></div>
-    <div class="kpi-card"><div class="kpi-label">Unique Brands</div><div class="kpi-value">${uniqueBrands}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Providers in Traits</div><div class="kpi-value">${totalInTraits}</div><div class="kpi-sub">of ${totalAll.toLocaleString()} total UA</div></div>
+    <div class="kpi-card"><div class="kpi-label">Unique Brands</div><div class="kpi-value">${uniqueBrands}</div><div class="kpi-sub">in SP traits</div></div>
     <div class="kpi-card"><div class="kpi-label">Active Enrollments</div><div class="kpi-value">${totalEnrollments}</div><div class="kpi-sub">${enrolledProviders} providers</div></div>
     <div class="kpi-card"><div class="kpi-label">DD Orders (28d)</div><div class="kpi-value">${totalOrders}</div></div>`;
 
@@ -544,9 +679,9 @@ function renderEnrollments(){
   const summary = document.getElementById('enrollmentsSummary');
 
   const enrolledPids = new Set(enrollments.map(e => e.provider_id));
-  const totalInTraits = providers.length;
+  const traitProviders = providers.filter(p => (p.trait_ids || []).length > 0);
 
-  summary.innerHTML = `<div class="insight-box">Out of <b>${totalInTraits}</b> providers in traits, <b>${enrolledPids.size}</b> have active SP enrollments.</div>`;
+  summary.innerHTML = `<div class="insight-box">Out of <b>${traitProviders.length}</b> providers in SP traits, <b>${enrolledPids.size}</b> have active SP enrollments.</div>`;
 
   if(enrollments.length === 0){
     container.innerHTML = `<div class="empty-state"><div class="icon">👥</div><h3>No active enrollments</h3><p>No providers have activated SP offers yet</p></div>`;
@@ -680,6 +815,7 @@ async function loadData(){
       document.getElementById('lastUpdate').textContent = 'Updated: ' + DATA.meta.last_updated;
     }
 
+    buildSearchIndex();
     renderOverview();
     renderOffers();
     renderEnrollments();

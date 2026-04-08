@@ -94,31 +94,43 @@ def fetch_traits(conn):
     return df
 
 
-def fetch_providers(conn):
-    print("  [2/5] Fetching providers in traits...")
+def fetch_trait_providers(conn):
+    print("  [2/6] Fetching providers in SP traits...")
     df = query(conn, f"""
         SELECT
             pt.trait_id,
-            pt.provider_id,
-            p.vendor_id,
-            p.provider_name,
-            p.brand_name,
-            p.city_name,
-            p.country_code,
-            p.provider_status
+            pt.provider_id
         FROM ng_delivery_spark.delivery_provider_provider_trait pt
-        LEFT JOIN ng_delivery_spark.dim_provider_v2 p
-            ON pt.provider_id = p.provider_id
         WHERE pt.trait_id IN ({TRAIT_IDS_STR})
           AND pt.deleted = false
           AND pt.created_date >= '2026-01-01'
-        ORDER BY pt.trait_id, p.brand_name, pt.provider_id
+    """)
+    return df
+
+
+def fetch_all_providers(conn):
+    print("  [3/6] Fetching all Ukrainian providers (active/hidden)...")
+    df = query(conn, """
+        SELECT
+            p.provider_id,
+            p.vendor_id,
+            p.provider_name,
+            p.vendor_name,
+            p.brand_name,
+            p.group_name,
+            p.city_name,
+            p.country_code,
+            p.provider_status
+        FROM ng_delivery_spark.dim_provider_v2 p
+        WHERE p.country_code = 'ua'
+          AND p.provider_status IN ('active', 'hidden')
+        ORDER BY p.brand_name, p.provider_id
     """)
     return df
 
 
 def fetch_enrollments(conn):
-    print("  [3/5] Fetching SP enrollments...")
+    print("  [4/6] Fetching SP enrollments...")
     df = query(conn, f"""
         SELECT
             sp.provider_id,
@@ -149,7 +161,7 @@ def fetch_enrollments(conn):
 
 
 def fetch_offers(conn, enrollment_df):
-    print("  [4/5] Fetching campaign/offer details...")
+    print("  [5/6] Fetching campaign/offer details...")
     if enrollment_df.empty:
         return pd.DataFrame()
 
@@ -180,7 +192,7 @@ def fetch_offers(conn, enrollment_df):
 
 
 def fetch_dd_orders(conn):
-    print("  [5/5] Fetching DD orders (last 28 days)...")
+    print("  [6/6] Fetching DD orders (last 28 days)...")
     enrollment_campaigns = query(conn, f"""
         SELECT DISTINCT sp.campaign_id
         FROM core_models_spark.fact_provider_smart_promo_offer_campaign_enrollment sp
@@ -234,21 +246,20 @@ def fetch_dd_orders(conn):
 # Assembly
 # ---------------------------------------------------------------------------
 
-def build_provider_list(providers_df):
-    """Group by provider, collect trait_ids as list of ints."""
-    grouped = (
-        providers_df.groupby(
-            ["provider_id", "vendor_id", "provider_name", "brand_name",
-             "city_name", "country_code", "provider_status"]
-        )["trait_id"]
-        .apply(lambda x: sorted(set(int(v) for v in x if pd.notna(v))))
-        .reset_index()
-        .rename(columns={"trait_id": "trait_ids"})
-    )
+def build_provider_list(all_providers_df, trait_providers_df):
+    """Merge all providers with their trait assignments."""
+    trait_map = {}
+    for _, row in trait_providers_df.iterrows():
+        pid = int(row["provider_id"]) if pd.notna(row["provider_id"]) else None
+        tid = int(row["trait_id"]) if pd.notna(row["trait_id"]) else None
+        if pid is not None and tid is not None:
+            trait_map.setdefault(pid, set()).add(tid)
+
     records = []
-    for _, row in grouped.iterrows():
-        rec = {k: to_native(v, key=k) for k, v in row.items() if k != "trait_ids"}
-        rec["trait_ids"] = row["trait_ids"]
+    for _, row in all_providers_df.iterrows():
+        rec = {k: to_native(v, key=k) for k, v in row.items()}
+        pid = rec.get("provider_id")
+        rec["trait_ids"] = sorted(trait_map.get(pid, set()))
         records.append(rec)
     return records
 
@@ -295,7 +306,8 @@ def main():
 
     try:
         traits_df = fetch_traits(conn)
-        providers_df = fetch_providers(conn)
+        trait_providers_df = fetch_trait_providers(conn)
+        all_providers_df = fetch_all_providers(conn)
         enrollment_df = fetch_enrollments(conn)
         offers_df = fetch_offers(conn, enrollment_df)
         dd_orders_df = fetch_dd_orders(conn)
@@ -303,7 +315,7 @@ def main():
         conn.close()
 
     trait_provider_counts = (
-        providers_df.groupby("trait_id")["provider_id"]
+        trait_providers_df.groupby("trait_id")["provider_id"]
         .nunique()
         .to_dict()
     )
@@ -312,13 +324,16 @@ def main():
         tid = t.get("trait_id")
         t["provider_count"] = trait_provider_counts.get(tid, 0)
 
+    providers_list = build_provider_list(all_providers_df, trait_providers_df)
+    in_trait = sum(1 for p in providers_list if p.get("trait_ids"))
+
     data = {
         "meta": {
             "last_updated": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
             "trait_ids": TRAIT_IDS,
         },
         "traits": traits_list,
-        "providers": build_provider_list(providers_df),
+        "providers": providers_list,
         "offers": build_offers(enrollment_df, offers_df),
         "enrollments": build_enrollments(enrollment_df),
         "dd_orders": df_to_records(dd_orders_df) if not dd_orders_df.empty else [],
@@ -330,7 +345,7 @@ def main():
 
     size_kb = OUTPUT_FILE.stat().st_size / 1024
     print(f"  Written {OUTPUT_FILE} ({size_kb:.1f} KB)")
-    print(f"  Providers: {len(data['providers'])}")
+    print(f"  All providers (UA): {len(data['providers'])}  (in SP traits: {in_trait})")
     print(f"  Offers: {len(data['offers'])}")
     print(f"  Enrollments: {len(data['enrollments'])}")
     print(f"  DD Orders: {len(data['dd_orders'])}")
