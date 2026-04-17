@@ -141,7 +141,8 @@ def fetch_ops_metrics(conn):
     date,
     ROUND(availability_rate_last_7d * 100, 1) AS availability,
     ROUND(acceptance_rate_last_7d * 100, 1) AS acceptance,
-    ROUND(image_coverage_rate * 100, 1) AS photo_coverage
+    ROUND(image_coverage_rate * 100, 1) AS photo_coverage,
+    ROUND(avg_rating_last_7d, 2) AS avg_rating
     FROM ng_public_spark.etl_incentives_provider_targeting_features
     WHERE provider_id IN ({PROVIDER_IDS})
     AND date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
@@ -441,6 +442,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
                 "availability": to_native(r["availability"]),
                 "acceptance": to_native(r["acceptance"]),
                 "photo_coverage": to_native(r["photo_coverage"]),
+                "avg_rating": to_native(r.get("avg_rating")),
             }
 
     latest_ops = {}
@@ -452,6 +454,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
                 "availability": to_native(r["availability"]),
                 "acceptance": to_native(r["acceptance"]),
                 "photo_coverage": to_native(r["photo_coverage"]),
+                "avg_rating": to_native(r.get("avg_rating")),
             }
     data["ops_weekly"] = ops_weekly
     data["latest_ops"] = latest_ops
@@ -1136,16 +1139,18 @@ function renderKPIs() {{
  const prevBadRate = prevOrders > 0 ? (prevBad / prevOrders * 100) : 0;
  const storeCount = ids.filter(id => wd[id]).length;
 
- let avgAvail = 0, avgAccept = 0, aCnt = 0;
+ let avgAvail = 0, avgAccept = 0, avgRating = 0, aCnt = 0, rCnt = 0;
  ids.forEach(id => {{
  const lo = D.latest_ops[id];
- if (lo) {{ avgAvail += lo.availability; avgAccept += lo.acceptance; aCnt++; }}
+ if (lo) {{ avgAvail += lo.availability; avgAccept += lo.acceptance; aCnt++; if (lo.avg_rating != null) {{ avgRating += lo.avg_rating; rCnt++; }} }}
  }});
  if (aCnt > 0) {{ avgAvail /= aCnt; avgAccept /= aCnt; }}
+ if (rCnt > 0) {{ avgRating /= rCnt; }}
 
  const kpis = [
  {{ label: 'Замовлення', value: curOrders.toLocaleString('uk-UA'), ...wow(curOrders, prevOrders, 'up') }},
  {{ label: 'Середній чек', value: '₴' + avgChk.toFixed(0), ...wow(avgChk, prevAvgChk, 'up') }},
+ {{ label: 'Рейтинг', value: rCnt > 0 ? avgRating.toFixed(1) : '—', cls: avgRating >= 4.5 ? 'up' : avgRating >= 4.0 ? 'neutral' : 'down', text: rCnt > 0 ? 'середнє за 7 днів' : 'немає даних' }},
  {{ label: 'Час приготування', value: avgCook.toFixed(1) + ' хв', ...wow(avgCook, prevAvgCook, 'down') }},
  {{ label: 'Доступність', value: avgAvail.toFixed(1) + '%', cls: avgAvail >= 90 ? 'up' : 'down', text: 'середнє по закладах' }},
  {{ label: 'Прийняття', value: avgAccept.toFixed(1) + '%', cls: avgAccept >= 90 ? 'up' : 'down', text: 'середнє по закладах' }},
@@ -1300,7 +1305,7 @@ function renderStoresTable() {{
  return ' <span style="font-size:10px;padding:1px 5px;border-radius:8px;background:' + bg + ';color:' + color + '">' + arrow + Math.abs(chg).toFixed(0) + '%</span>';
  }}
 
- let t = '<div class="table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Заклад</th><th>Місто</th><th class="text-right">Замовлення</th><th class="text-right">Сер. чек</th><th class="text-right">Час приг.</th><th class="text-right">Доступність</th><th class="text-right">Прийняття</th><th class="text-right">Фото</th><th class="text-right">Погані зам.</th></tr></thead><tbody>';
+ let t = '<div class="table-wrap"><table class="data-table"><thead><tr><th>#</th><th>Заклад</th><th>Місто</th><th class="text-right">Замовлення</th><th class="text-right">Сер. чек</th><th class="text-right">Рейтинг</th><th class="text-right">Час приг.</th><th class="text-right">Доступність</th><th class="text-right">Прийняття</th><th class="text-right">Фото</th><th class="text-right">Погані зам.</th></tr></thead><tbody>';
  let totOrd = 0, totBad = 0;
  rows.forEach((d, i) => {{
  const badRate = d.orders > 0 ? (d.bad_orders / d.orders * 100) : 0;
@@ -1308,6 +1313,9 @@ function renderStoresTable() {{
  t += '<tr><td>' + (i + 1) + '</td><td>' + d.short + '</td><td>' + d.city + '</td>';
  t += '<td class="text-right">' + d.orders + (d.prev ? wBadge(d.orders, d.prev.orders, 'up') : '') + '</td>';
  t += '<td class="text-right">₴' + d.avg_check + '</td>';
+ const rat = d.ops.avg_rating;
+ const ratColor = rat == null ? '' : rat >= 4.5 ? 'color:var(--pos)' : rat >= 4.0 ? '' : 'color:var(--neg)';
+ t += '<td class="text-right" style="' + ratColor + '">' + (rat != null ? rat.toFixed(1) : '—') + '</td>';
  t += '<td class="text-right">' + d.avg_cooking + ' хв</td>';
  t += '<td class="text-right">' + (d.ops.availability != null ? d.ops.availability.toFixed(1) + '%' : '—') + '</td>';
  t += '<td class="text-right">' + (d.ops.acceptance != null ? d.ops.acceptance.toFixed(1) + '%' : '—') + '</td>';
@@ -1315,7 +1323,7 @@ function renderStoresTable() {{
  t += '<td class="text-right">' + badRate.toFixed(1) + '%</td>';
  }});
  const totalBadRate = totOrd > 0 ? (totBad / totOrd * 100) : 0;
- t += '<tr class="total-row"><td colspan="3">Всього</td><td class="text-right">' + totOrd + '</td><td colspan="5"></td><td class="text-right">' + totalBadRate.toFixed(1) + '%</td></tr>';
+ t += '<tr class="total-row"><td colspan="3">Всього</td><td class="text-right">' + totOrd + '</td><td colspan="6"></td><td class="text-right">' + totalBadRate.toFixed(1) + '%</td></tr>';
  t += '</tbody></table></div>';
  document.getElementById('stores-table-wrap').innerHTML = t;
 }}
