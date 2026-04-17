@@ -142,7 +142,7 @@ def fetch_ops_metrics(conn):
     ROUND(availability_rate_last_7d * 100, 1) AS availability,
     ROUND(acceptance_rate_last_7d * 100, 1) AS acceptance,
     ROUND(image_coverage_rate * 100, 1) AS photo_coverage,
-    ROUND(avg_rating_last_7d, 2) AS avg_rating
+    ROUND(COALESCE(avg_rating_last_7d, avg_rating_last_14d, avg_rating_last_30d), 2) AS avg_rating
     FROM ng_public_spark.etl_incentives_provider_targeting_features
     WHERE provider_id IN ({PROVIDER_IDS})
     AND date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
@@ -442,7 +442,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
                 "availability": to_native(r["availability"]),
                 "acceptance": to_native(r["acceptance"]),
                 "photo_coverage": to_native(r["photo_coverage"]),
-                "avg_rating": to_native(r.get("avg_rating")),
+                "avg_rating": to_native(r.get("avg_rating"), default=None),
             }
 
     latest_ops = {}
@@ -454,7 +454,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
                 "availability": to_native(r["availability"]),
                 "acceptance": to_native(r["acceptance"]),
                 "photo_coverage": to_native(r["photo_coverage"]),
-                "avg_rating": to_native(r.get("avg_rating")),
+                "avg_rating": to_native(r.get("avg_rating"), default=None),
             }
     data["ops_weekly"] = ops_weekly
     data["latest_ops"] = latest_ops
@@ -1140,9 +1140,15 @@ function renderKPIs() {{
  const storeCount = ids.filter(id => wd[id]).length;
 
  let avgAvail = 0, avgAccept = 0, avgRating = 0, aCnt = 0, rCnt = 0;
+ const opsW = D.ops_weekly[selW] || {{}};
  ids.forEach(id => {{
- const lo = D.latest_ops[id];
- if (lo) {{ avgAvail += lo.availability; avgAccept += lo.acceptance; aCnt++; if (lo.avg_rating != null) {{ avgRating += lo.avg_rating; rCnt++; }} }}
+ const lo = opsW[id] || D.latest_ops[id];
+ if (lo) {{
+  if (lo.availability != null) {{ avgAvail += lo.availability; }}
+  if (lo.acceptance != null) {{ avgAccept += lo.acceptance; }}
+  aCnt++;
+  if (lo.avg_rating != null && lo.avg_rating > 0) {{ avgRating += lo.avg_rating; rCnt++; }}
+ }}
  }});
  if (aCnt > 0) {{ avgAvail /= aCnt; avgAccept /= aCnt; }}
  if (rCnt > 0) {{ avgRating /= rCnt; }}
@@ -1289,9 +1295,10 @@ function renderStoresTable() {{
  const wd = D.weekly[selW] || {{}};
  const pd = prevW ? (D.weekly[prevW] || {{}}) : {{}};
 
+ const opsWeek = D.ops_weekly[selW] || {{}};
  const rows = ids.filter(id => wd[id]).map(id => ({{
  id, ...D.stores[id], ...wd[id],
- ops: D.latest_ops[id] || {{}},
+ ops: opsWeek[id] || D.latest_ops[id] || {{}},
  prev: pd[id] || null
  }})).sort((a, b) => b.orders - a.orders);
 
