@@ -1962,30 +1962,47 @@ document.getElementById('orders-export-pdf').addEventListener('click', function(
    ? (ordersDateFrom || '...') + ' — ' + (ordersDateTo || '...')
    : selW;
  const filename = 'Kulinichi_orders_' + subtitle.replace(/[^a-zA-Z0-9-]/g, '_') + '.pdf';
+ const restoreBtn = function() {{
+  btnEl.disabled = false;
+  btnEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg> PDF';
+ }};
 
  const container = document.createElement('div');
- container.style.cssText = 'position:absolute;left:-9999px;top:0;width:1400px;background:#fff;padding:20px;font-family:Inter,-apple-system,sans-serif;color:#111827;font-size:11px';
+ container.style.cssText = 'position:fixed;left:0;top:0;width:1400px;background:#fff;padding:20px;font-family:Inter,-apple-system,sans-serif;color:#111827;font-size:11px;z-index:99999;overflow:visible';
  container.innerHTML = '<h2 style="margin:0 0 2px;font-size:15px">Кулиничі — Дохідність по замовленнях</h2>'
   + '<p style="color:#6B7280;font-size:11px;margin:0 0 12px">Період: ' + subtitle + '</p>'
   + document.getElementById('orders-detail-wrap').innerHTML;
 
  const scrollEl = container.querySelector('.scroll-table');
  if (scrollEl) {{ scrollEl.style.maxHeight = 'none'; scrollEl.style.overflow = 'visible'; }}
+ container.querySelectorAll('.data-table th, .data-table td').forEach(function(el) {{
+  el.style.padding = '4px 6px';
+  el.style.fontSize = '9px';
+  el.style.border = '1px solid #E5E7EB';
+ }});
+ container.querySelectorAll('.data-table th').forEach(function(el) {{
+  el.style.background = '#F3F4F6';
+  el.style.fontWeight = '600';
+ }});
 
  document.body.appendChild(container);
 
- html2pdf().set({{
-  margin: [8, 6, 8, 6],
-  filename: filename,
-  image: {{ type: 'jpeg', quality: 0.95 }},
-  html2canvas: {{ scale: 2, useCORS: true, width: 1400 }},
-  jsPDF: {{ unit: 'mm', format: 'a3', orientation: 'landscape' }},
-  pagebreak: {{ mode: ['avoid-all', 'css', 'legacy'] }}
- }}).from(container).save().then(function() {{
-  document.body.removeChild(container);
-  btnEl.disabled = false;
-  btnEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg> PDF';
- }});
+ setTimeout(function() {{
+  html2pdf().set({{
+   margin: [6, 4, 6, 4],
+   filename: filename,
+   image: {{ type: 'jpeg', quality: 0.98 }},
+   html2canvas: {{ scale: 1.5, useCORS: true, scrollX: 0, scrollY: 0, windowWidth: 1400 }},
+   jsPDF: {{ unit: 'mm', format: 'a3', orientation: 'landscape' }},
+   pagebreak: {{ mode: ['avoid-all', 'css', 'legacy'] }}
+  }}).from(container).save().then(function() {{
+   document.body.removeChild(container);
+   restoreBtn();
+  }}).catch(function() {{
+   document.body.removeChild(container);
+   restoreBtn();
+  }});
+ }}, 300);
 }});
 
 document.getElementById('avail-store-filter').addEventListener('change', function() {{
