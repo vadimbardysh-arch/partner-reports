@@ -1952,6 +1952,23 @@ document.getElementById('orders-reset-dates').addEventListener('click', function
  renderOrdersDetail();
 }});
 
+function loadCyrFont(doc) {{
+ return fetch('https://fonts.gstatic.com/s/roboto/v51/KFOMCnqEu92Fr1ME7kSn66aGLdTylUAMQXC89YmC2DPNWubEbWmT.ttf')
+  .then(function(r) {{ return r.arrayBuffer(); }})
+  .then(function(buf) {{
+   var bytes = new Uint8Array(buf);
+   var binary = '';
+   for (var i = 0; i < bytes.length; i += 1024) {{
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 1024, bytes.length)));
+   }}
+   var b64 = btoa(binary);
+   doc.addFileToVFS('Roboto-Regular.ttf', b64);
+   doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+   doc.setFont('Roboto');
+   return doc;
+  }});
+}}
+
 document.getElementById('orders-export-pdf').addEventListener('click', function() {{
  const btnEl = this;
  btnEl.disabled = true;
@@ -1981,7 +1998,7 @@ document.getElementById('orders-export-pdf').addEventListener('click', function(
 
  const n = (v) => v != null ? Number(v).toFixed(2) : '0.00';
 
- const head = [['Date', 'Ref', 'Store', 'Price', 'Discount', 'Revenue', 'Fee net', 'Fee gross', 'Bolt comp.', 'Total fee', 'Refund', 'Net income', 'Promo', 'Promo disc.', 'Bolt paid', 'Partner paid']];
+ const head = [['\u0414\u0430\u0442\u0430', 'Ref', '\u0417\u0430\u043a\u043b\u0430\u0434', '\u0426\u0456\u043d\u0430', '\u0417\u043d\u0438\u0436\u043a\u0430', '\u0414\u043e\u0445\u0456\u0434', '\u041a\u043e\u043c. \u043d\u0435\u0442\u0442\u043e', '\u041a\u043e\u043c. \u0431\u0440\u0443\u0442\u0442\u043e', '\u041a\u043e\u043c\u043f. Bolt', '\u0412\u0441\u044c\u043e\u0433\u043e \u043a\u043e\u043c.', '\u041f\u043e\u0432\u0435\u0440\u043d.', '\u0427\u0438\u0441\u0442\u0438\u0439 \u0434\u043e\u0445.', '\u041f\u0440\u043e\u043c\u043e', '\u0417\u043d. \u043f\u0440\u043e\u043c\u043e', 'Bolt', '\u0417\u0430\u043a\u043b\u0430\u0434']];
  const body = rows.map(r => {{
   const feeNet = r.fee_net || 0;
   const feeGross = r.fee_gross || 0;
@@ -2009,31 +2026,31 @@ document.getElementById('orders-export-pdf').addEventListener('click', function(
 
  let totFood = 0, totRev = 0, totFee = 0, totBolt = 0, totRef = 0, totNet = 0;
  rows.forEach(r => {{ totFood += r.food_before_discount || 0; totRev += r.food_revenue || 0; totFee += r.total_fee_gross || 0; totBolt += r.bolt_discount || 0; totRef += r.refund || 0; totNet += r.net_income || 0; }});
- body.push(['TOTAL (' + rows.length + ')', '', '', n(totFood), '', n(totRev), '', '', '+' + n(totBolt), n(totFee), n(totRef), n(totNet), '', '', '', '']);
+ body.push(['\u0412\u0441\u044c\u043e\u0433\u043e (' + rows.length + ')', '', '', n(totFood), '', n(totRev), '', '', '+' + n(totBolt), n(totFee), n(totRef), n(totNet), '', '', '', '']);
 
- try {{
-  const {{ jsPDF }} = window.jspdf;
-  const doc = new jsPDF({{ orientation: 'landscape', unit: 'mm', format: 'a3' }});
+ const {{ jsPDF }} = window.jspdf;
+ const doc = new jsPDF({{ orientation: 'landscape', unit: 'mm', format: 'a3' }});
 
+ function buildPdf(doc) {{
   doc.setFontSize(13);
-  doc.text('Kulinichi \u2014 Orders', 12, 12);
+  doc.text('\u041a\u0443\u043b\u0438\u043d\u0438\u0447\u0456 \u2014 \u0414\u043e\u0445\u0456\u0434\u043d\u0456\u0441\u0442\u044c \u043f\u043e \u0437\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f\u0445', 12, 12);
   doc.setFontSize(9);
   doc.setTextColor(107, 114, 128);
-  doc.text('Period: ' + subtitle + '  |  Orders: ' + rows.length, 12, 18);
+  doc.text('\u041f\u0435\u0440\u0456\u043e\u0434: ' + subtitle + '  |  \u0417\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u044c: ' + rows.length, 12, 18);
   doc.setTextColor(0, 0, 0);
 
   doc.autoTable({{
    head: head,
    body: body,
    startY: 22,
-   styles: {{ fontSize: 6.5, cellPadding: 1.5, overflow: 'linebreak', halign: 'right' }},
+   styles: {{ fontSize: 6.5, cellPadding: 1.5, overflow: 'linebreak', halign: 'right', font: 'Roboto' }},
    headStyles: {{ fillColor: [249, 115, 22], textColor: 255, fontStyle: 'bold', fontSize: 6.5, halign: 'center' }},
    columnStyles: {{
     0: {{ halign: 'left', cellWidth: 18 }},
     1: {{ halign: 'left', cellWidth: 14 }},
-    2: {{ halign: 'left', cellWidth: 22 }},
+    2: {{ halign: 'left', cellWidth: 24 }},
     4: {{ halign: 'left', cellWidth: 30, fontSize: 5.5 }},
-    12: {{ halign: 'left', cellWidth: 28, fontSize: 5.5 }}
+    12: {{ halign: 'left', cellWidth: 30, fontSize: 5.5 }}
    }},
    alternateRowStyles: {{ fillColor: [248, 250, 252] }},
    margin: {{ left: 6, right: 6 }},
@@ -2055,17 +2072,19 @@ document.getElementById('orders-export-pdf').addEventListener('click', function(
    doc.setPage(i);
    doc.setFontSize(7);
    doc.setTextColor(156, 163, 175);
-   doc.text('Page ' + i + ' / ' + pageCount, doc.internal.pageSize.getWidth() - 25, doc.internal.pageSize.getHeight() - 5);
+   doc.text(i + ' / ' + pageCount, doc.internal.pageSize.getWidth() - 20, doc.internal.pageSize.getHeight() - 5);
   }}
-
   doc.save(filename);
- }} catch(e) {{
-  console.error('PDF error:', e);
-  alert('PDF error: ' + e.message);
+  btnEl.disabled = false;
+  btnEl.innerHTML = origHTML;
  }}
 
- btnEl.disabled = false;
- btnEl.innerHTML = origHTML;
+ loadCyrFont(doc).then(function(doc) {{
+  buildPdf(doc);
+ }}).catch(function(err) {{
+  console.warn('Font load failed, using fallback', err);
+  buildPdf(doc);
+ }});
 }});
 
 document.getElementById('avail-store-filter').addEventListener('change', function() {{
