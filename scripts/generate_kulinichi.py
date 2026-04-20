@@ -607,6 +607,7 @@ def generate_html(data, generated_at):
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Кулиничі | тижневий звіт</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -694,6 +695,16 @@ a{{text-decoration:none;color:inherit}}
 .btn-export{{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;background:var(--card);cursor:pointer;color:var(--text);font-weight:600;transition:all .15s}}
 .btn-export:hover{{background:var(--orange);color:#fff;border-color:var(--orange)}}
 .btn-export svg{{width:14px;height:14px}}
+.multi-select{{position:relative;display:inline-block;min-width:180px}}
+.multi-select-btn{{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;background:var(--card);cursor:pointer;color:var(--text);min-width:180px;white-space:nowrap}}
+.multi-select-btn::after{{content:'▾';font-size:10px;color:var(--text2)}}
+.multi-select-btn .ms-count{{background:var(--orange);color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;margin-left:4px}}
+.multi-select-dd{{display:none;position:absolute;top:100%;left:0;z-index:100;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:220px;max-height:260px;overflow-y:auto;margin-top:4px;padding:4px 0}}
+.multi-select-dd.open{{display:block}}
+.multi-select-dd label{{display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12px;cursor:pointer;white-space:nowrap}}
+.multi-select-dd label:hover{{background:rgba(249,115,22,.06)}}
+.multi-select-dd input[type="checkbox"]{{accent-color:var(--orange)}}
+.multi-select-dd .ms-sep{{border-top:1px solid var(--border);margin:4px 0}}
 
 .items-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}}
 .items-card{{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);border:1px solid var(--border);padding:16px;overflow:hidden}}
@@ -737,6 +748,9 @@ body.dark .items-card{{background:var(--card)}}
 body.dark .store-filter-wrap select{{background:var(--card);color:var(--text);border-color:var(--border)}}
 body.dark .store-filter-wrap input[type="date"]{{background:var(--card);color:var(--text);border-color:var(--border)}}
 body.dark .btn-export{{background:var(--card);color:var(--text);border-color:var(--border)}}
+body.dark .multi-select-btn{{background:var(--card);color:var(--text);border-color:var(--border)}}
+body.dark .multi-select-dd{{background:var(--card);border-color:var(--border);box-shadow:0 8px 24px rgba(0,0,0,.4)}}
+body.dark .multi-select-dd label:hover{{background:rgba(249,115,22,.12)}}
 body.dark .revenue-summary-table th{{background:#111827}}
 
 @media(max-width:900px){{
@@ -845,7 +859,10 @@ body.dark .revenue-summary-table th{{background:#111827}}
  <label>Заклад:</label>
  <select id="orders-store-filter"><option value="__all__">Всі заклади</option></select>
  <label>Промо:</label>
- <select id="orders-promo-filter"><option value="__all__">Всі</option><option value="with_promo">З промо</option><option value="no_promo">Без промо</option></select>
+ <div class="multi-select" id="promo-multi-wrap">
+  <div class="multi-select-btn" id="promo-multi-btn">Всі</div>
+  <div class="multi-select-dd" id="promo-multi-dd"></div>
+ </div>
  <span class="filter-sep">|</span>
  <label>Дата:</label>
  <input type="date" id="orders-date-from" title="Від">
@@ -1020,7 +1037,8 @@ let allWeeks = Object.keys(D.weekly).sort((a,b) => {{
 let selectedWeekIdx = allWeeks.length - 1;
 let selectedCity = '__all__';
 let selectedOrdersStore = '__all__';
-let selectedOrdersPromo = '__all__';
+let selectedPromoMode = '__all__';
+let selectedPromoNames = [];
 let ordersDateFrom = '';
 let ordersDateTo = '';
 let selectedAvailStore = '__all__';
@@ -1552,13 +1570,15 @@ function renderOrdersDetail() {{
  if (selectedOrdersStore !== '__all__') {{
  rows = rows.filter(r => r.provider_id === Number(selectedOrdersStore));
  }}
- if (selectedOrdersPromo === 'with_promo') {{
+ if (selectedPromoMode === 'with_promo') {{
  rows = rows.filter(r => r.promo_names && r.promo_names.length > 0);
- }} else if (selectedOrdersPromo === 'no_promo') {{
+ }} else if (selectedPromoMode === 'no_promo') {{
  rows = rows.filter(r => !r.promo_names || r.promo_names.length === 0);
- }} else if (selectedOrdersPromo.startsWith('name:')) {{
- const pn = selectedOrdersPromo.substring(5);
- rows = rows.filter(r => r.promo_names && r.promo_names.indexOf(pn) !== -1);
+ }} else if (selectedPromoMode === 'specific' && selectedPromoNames.length > 0) {{
+ rows = rows.filter(r => {{
+  if (!r.promo_names) return false;
+  return selectedPromoNames.some(pn => r.promo_names.indexOf(pn) !== -1);
+ }});
  }}
 
  let t = '<div class="scroll-table"><table class="data-table"><thead><tr>';
@@ -1814,28 +1834,100 @@ document.getElementById('orders-store-filter').addEventListener('change', functi
  renderOrdersDetail();
 }});
 
-document.getElementById('orders-promo-filter').addEventListener('change', function() {{
- selectedOrdersPromo = this.value;
- renderOrdersDetail();
-}});
+(function initPromoMultiSelect() {{
+ const btn = document.getElementById('promo-multi-btn');
+ const dd = document.getElementById('promo-multi-dd');
 
-(function populatePromoFilter() {{
- const sel = document.getElementById('orders-promo-filter');
- const promoSet = new Set();
+ const promoMap = new Map();
  (D.orders || []).forEach(r => {{
   if (r.promo_names) {{
    r.promo_names.split('; ').forEach(p => {{
     const t = p.trim();
-    if (t && !/Provider Targeting/i.test(t) && (/Discount/i.test(t) || /Free Delivery/i.test(t))) promoSet.add(t);
+    if (t && !/Provider Targeting/i.test(t) && (/Discount/i.test(t) || /Free Delivery/i.test(t))) {{
+     const short = shortenPromo(t);
+     if (!promoMap.has(short)) promoMap.set(short, []);
+     if (!promoMap.get(short).includes(t)) promoMap.get(short).push(t);
+    }}
    }});
   }}
  }});
- [...promoSet].sort().forEach(p => {{
-  const o = document.createElement('option');
-  o.value = 'name:' + p;
-  o.textContent = shortenPromo(p);
-  o.title = p;
-  sel.appendChild(o);
+
+ let html = '';
+ html += '<label><input type="checkbox" value="__all__" checked> Всі замовлення</label>';
+ html += '<label><input type="checkbox" value="__with__"> З промо</label>';
+ html += '<label><input type="checkbox" value="__without__"> Без промо</label>';
+ if (promoMap.size > 0) {{
+  html += '<div class="ms-sep"></div>';
+  [...promoMap.keys()].sort().forEach(short => {{
+   const fullNames = promoMap.get(short);
+   html += '<label title="' + fullNames.join('\\n').replace(/"/g, '&quot;') + '"><input type="checkbox" value="name" data-names=\'' + JSON.stringify(fullNames).replace(/'/g, '&#39;') + '\'> ' + short + '</label>';
+  }});
+ }}
+ dd.innerHTML = html;
+
+ btn.addEventListener('click', function(e) {{
+  e.stopPropagation();
+  dd.classList.toggle('open');
+ }});
+
+ document.addEventListener('click', function(e) {{
+  if (!document.getElementById('promo-multi-wrap').contains(e.target)) dd.classList.remove('open');
+ }});
+
+ dd.addEventListener('change', function(e) {{
+  const cb = e.target;
+  const allCbs = dd.querySelectorAll('input[type="checkbox"]');
+  const allCb = dd.querySelector('input[value="__all__"]');
+  const withCb = dd.querySelector('input[value="__with__"]');
+  const withoutCb = dd.querySelector('input[value="__without__"]');
+  const nameCbs = dd.querySelectorAll('input[value="name"]');
+
+  if (cb.value === '__all__') {{
+   allCbs.forEach(c => {{ if (c !== allCb) c.checked = false; }});
+   allCb.checked = true;
+  }} else if (cb.value === '__with__' && cb.checked) {{
+   allCb.checked = false;
+   withoutCb.checked = false;
+   nameCbs.forEach(c => c.checked = false);
+  }} else if (cb.value === '__without__' && cb.checked) {{
+   allCb.checked = false;
+   withCb.checked = false;
+   nameCbs.forEach(c => c.checked = false);
+  }} else if (cb.value === 'name') {{
+   allCb.checked = false;
+   withCb.checked = false;
+   withoutCb.checked = false;
+  }}
+
+  const anyChecked = [...allCbs].some(c => c.checked);
+  if (!anyChecked) {{ allCb.checked = true; }}
+
+  if (allCb.checked) {{
+   selectedPromoMode = '__all__';
+   selectedPromoNames = [];
+   btn.innerHTML = 'Всі';
+  }} else if (withCb.checked) {{
+   selectedPromoMode = 'with_promo';
+   selectedPromoNames = [];
+   btn.innerHTML = 'З промо';
+  }} else if (withoutCb.checked) {{
+   selectedPromoMode = 'no_promo';
+   selectedPromoNames = [];
+   btn.innerHTML = 'Без промо';
+  }} else {{
+   selectedPromoMode = 'specific';
+   selectedPromoNames = [];
+   let cnt = 0;
+   nameCbs.forEach(c => {{
+    if (c.checked) {{
+     cnt++;
+     const names = JSON.parse(c.getAttribute('data-names'));
+     names.forEach(n => selectedPromoNames.push(n));
+    }}
+   }});
+   btn.innerHTML = cnt + ' промо' + '<span class="ms-count">' + cnt + '</span>';
+  }}
+  renderOrdersDetail();
  }});
 }})();
 
@@ -1858,28 +1950,40 @@ document.getElementById('orders-reset-dates').addEventListener('click', function
 }});
 
 document.getElementById('orders-export-pdf').addEventListener('click', function() {{
- const el = document.getElementById('sec-orders-detail');
- const title = 'Кулиничі — Дохідність по замовленнях';
+ const btnEl = this;
+ btnEl.disabled = true;
+ btnEl.innerHTML = '<span style="font-size:11px">⏳ Генерація…</span>';
+
  const selW = getSelectedWeek();
  const hasDateFilter = ordersDateFrom || ordersDateTo;
  const subtitle = hasDateFilter
-   ? (ordersDateFrom || '...') + ' → ' + (ordersDateTo || '...')
+   ? (ordersDateFrom || '...') + ' — ' + (ordersDateTo || '...')
    : selW;
+ const filename = 'Kulinichi_orders_' + subtitle.replace(/[^a-zA-Z0-9-]/g, '_') + '.pdf';
 
- const printWin = window.open('', '_blank');
- const styles = document.querySelectorAll('style, link[rel="stylesheet"]');
- let styleHTML = '';
- styles.forEach(s => {{ styleHTML += s.outerHTML; }});
+ const container = document.createElement('div');
+ container.style.cssText = 'position:absolute;left:-9999px;top:0;width:1400px;background:#fff;padding:20px;font-family:Inter,-apple-system,sans-serif;color:#111827;font-size:11px';
+ container.innerHTML = '<h2 style="margin:0 0 2px;font-size:15px">Кулиничі — Дохідність по замовленнях</h2>'
+  + '<p style="color:#6B7280;font-size:11px;margin:0 0 12px">Період: ' + subtitle + '</p>'
+  + document.getElementById('orders-detail-wrap').innerHTML;
 
- const tableHTML = document.getElementById('orders-detail-wrap').innerHTML;
+ const scrollEl = container.querySelector('.scroll-table');
+ if (scrollEl) {{ scrollEl.style.maxHeight = 'none'; scrollEl.style.overflow = 'visible'; }}
 
- printWin.document.write('<html><head><title>' + title + '</title>' + styleHTML + '<style>body{{background:#fff;padding:24px;font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;color:#111827}}@media print{{@page{{size:landscape;margin:10mm}}body{{padding:0}}.scroll-table{{max-height:none!important;overflow:visible!important}}}}</style></head><body>');
- printWin.document.write('<h2 style="margin:0 0 4px">' + title + '</h2>');
- printWin.document.write('<p style="color:#6B7280;font-size:13px;margin:0 0 16px">Період: ' + subtitle + '</p>');
- printWin.document.write(tableHTML);
- printWin.document.write('</body></html>');
- printWin.document.close();
- setTimeout(function() {{ printWin.print(); }}, 400);
+ document.body.appendChild(container);
+
+ html2pdf().set({{
+  margin: [8, 6, 8, 6],
+  filename: filename,
+  image: {{ type: 'jpeg', quality: 0.95 }},
+  html2canvas: {{ scale: 2, useCORS: true, width: 1400 }},
+  jsPDF: {{ unit: 'mm', format: 'a3', orientation: 'landscape' }},
+  pagebreak: {{ mode: ['avoid-all', 'css', 'legacy'] }}
+ }}).from(container).save().then(function() {{
+  document.body.removeChild(container);
+  btnEl.disabled = false;
+  btnEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg> PDF';
+ }});
 }});
 
 document.getElementById('avail-store-filter').addEventListener('change', function() {{
