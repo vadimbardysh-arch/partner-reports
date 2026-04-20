@@ -607,7 +607,8 @@ def generate_html(data, generated_at):
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Кулиничі | тижневий звіт</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -1954,7 +1955,8 @@ document.getElementById('orders-reset-dates').addEventListener('click', function
 document.getElementById('orders-export-pdf').addEventListener('click', function() {{
  const btnEl = this;
  btnEl.disabled = true;
- btnEl.innerHTML = '<span style="font-size:11px">⏳ Генерація…</span>';
+ const origHTML = btnEl.innerHTML;
+ btnEl.innerHTML = '<span style="font-size:11px">⏳…</span>';
 
  const selW = getSelectedWeek();
  const hasDateFilter = ordersDateFrom || ordersDateTo;
@@ -1962,47 +1964,46 @@ document.getElementById('orders-export-pdf').addEventListener('click', function(
    ? (ordersDateFrom || '...') + ' — ' + (ordersDateTo || '...')
    : selW;
  const filename = 'Kulinichi_orders_' + subtitle.replace(/[^a-zA-Z0-9-]/g, '_') + '.pdf';
- const restoreBtn = function() {{
-  btnEl.disabled = false;
-  btnEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg> PDF';
- }};
 
- const container = document.createElement('div');
- container.style.cssText = 'position:fixed;left:0;top:0;width:1400px;background:#fff;padding:20px;font-family:Inter,-apple-system,sans-serif;color:#111827;font-size:11px;z-index:99999;overflow:visible';
- container.innerHTML = '<h2 style="margin:0 0 2px;font-size:15px">Кулиничі — Дохідність по замовленнях</h2>'
-  + '<p style="color:#6B7280;font-size:11px;margin:0 0 12px">Період: ' + subtitle + '</p>'
-  + document.getElementById('orders-detail-wrap').innerHTML;
+ try {{
+  const {{ jsPDF }} = window.jspdf;
+  const doc = new jsPDF({{ orientation: 'landscape', unit: 'mm', format: 'a3' }});
 
- const scrollEl = container.querySelector('.scroll-table');
- if (scrollEl) {{ scrollEl.style.maxHeight = 'none'; scrollEl.style.overflow = 'visible'; }}
- container.querySelectorAll('.data-table th, .data-table td').forEach(function(el) {{
-  el.style.padding = '4px 6px';
-  el.style.fontSize = '9px';
-  el.style.border = '1px solid #E5E7EB';
- }});
- container.querySelectorAll('.data-table th').forEach(function(el) {{
-  el.style.background = '#F3F4F6';
-  el.style.fontWeight = '600';
- }});
+  doc.setFontSize(14);
+  doc.text('Kulinichi — Orders', 14, 14);
+  doc.setFontSize(9);
+  doc.setTextColor(107, 114, 128);
+  doc.text('Period: ' + subtitle, 14, 20);
+  doc.setTextColor(0, 0, 0);
 
- document.body.appendChild(container);
+  const tbl = document.querySelector('#orders-detail-wrap table');
+  if (tbl) {{
+   doc.autoTable({{
+    html: tbl,
+    startY: 24,
+    styles: {{ fontSize: 7, cellPadding: 2, overflow: 'linebreak', minCellWidth: 12 }},
+    headStyles: {{ fillColor: [249, 115, 22], textColor: 255, fontStyle: 'bold', fontSize: 7 }},
+    alternateRowStyles: {{ fillColor: [248, 250, 252] }},
+    margin: {{ left: 8, right: 8 }},
+    tableWidth: 'auto',
+    didParseCell: function(data) {{
+     if (data.section === 'body') {{
+      const text = data.cell.raw ? data.cell.raw.textContent || data.cell.raw.innerText || '' : '';
+      if (text.startsWith('+')) data.cell.styles.textColor = [16, 185, 129];
+      if (text.startsWith('-') && parseFloat(text) < 0) data.cell.styles.textColor = [239, 68, 68];
+     }}
+    }}
+   }});
+  }}
 
- setTimeout(function() {{
-  html2pdf().set({{
-   margin: [6, 4, 6, 4],
-   filename: filename,
-   image: {{ type: 'jpeg', quality: 0.98 }},
-   html2canvas: {{ scale: 1.5, useCORS: true, scrollX: 0, scrollY: 0, windowWidth: 1400 }},
-   jsPDF: {{ unit: 'mm', format: 'a3', orientation: 'landscape' }},
-   pagebreak: {{ mode: ['avoid-all', 'css', 'legacy'] }}
-  }}).from(container).save().then(function() {{
-   document.body.removeChild(container);
-   restoreBtn();
-  }}).catch(function() {{
-   document.body.removeChild(container);
-   restoreBtn();
-  }});
- }}, 300);
+  doc.save(filename);
+ }} catch(e) {{
+  console.error('PDF error:', e);
+  alert('PDF error: ' + e.message);
+ }}
+
+ btnEl.disabled = false;
+ btnEl.innerHTML = origHTML;
 }});
 
 document.getElementById('avail-store-filter').addEventListener('change', function() {{
