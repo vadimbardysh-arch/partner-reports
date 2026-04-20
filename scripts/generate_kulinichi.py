@@ -608,6 +608,7 @@ def generate_html(data, generated_at):
 <title>Кулиничі | тижневий звіт</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -872,6 +873,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
  <button class="btn-export" id="orders-reset-dates" title="Скинути дати" style="padding:4px 8px;font-size:11px">✕</button>
  <span class="filter-sep">|</span>
  <button class="btn-export" id="orders-export-pdf" title="Вивантажити PDF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg> PDF</button>
+ <button class="btn-export" id="orders-export-xlsx" title="Вивантажити Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><path d="M8 13l3 3 3-3M8 17l3-3 3 3" stroke-width="1.5"/></svg> Excel</button>
  </div>
  <div id="orders-detail-wrap" class="table-wrap"><div class="scroll-table"></div></div>
  </div>
@@ -2085,6 +2087,79 @@ document.getElementById('orders-export-pdf').addEventListener('click', function(
   console.warn('Font load failed, using fallback', err);
   buildPdf(doc);
  }});
+}});
+
+document.getElementById('orders-export-xlsx').addEventListener('click', function() {{
+ const selW = getSelectedWeek();
+ const hasDateFilter = ordersDateFrom || ordersDateTo;
+ const subtitle = hasDateFilter
+   ? (ordersDateFrom || '...') + ' \u2014 ' + (ordersDateTo || '...')
+   : selW;
+ const filename = 'Kulinichi_orders_' + subtitle.replace(/[^a-zA-Z0-9-]/g, '_') + '.xlsx';
+
+ const ids = getFilteredStoreIds();
+ let rows;
+ if (hasDateFilter) {{
+  rows = (D.orders || []).filter(r => ids.includes(r.provider_id));
+  if (ordersDateFrom) rows = rows.filter(r => String(r.order_created_date).substring(0,10) >= ordersDateFrom);
+  if (ordersDateTo) rows = rows.filter(r => String(r.order_created_date).substring(0,10) <= ordersDateTo);
+ }} else {{
+  rows = (D.orders || []).filter(r => r.order_week === selW && ids.includes(r.provider_id));
+ }}
+ if (selectedOrdersStore !== '__all__') rows = rows.filter(r => r.provider_id === Number(selectedOrdersStore));
+ if (selectedPromoMode === 'with_promo') rows = rows.filter(r => r.promo_names && r.promo_names.length > 0);
+ else if (selectedPromoMode === 'no_promo') rows = rows.filter(r => !r.promo_names || r.promo_names.length === 0);
+ else if (selectedPromoMode === 'specific' && selectedPromoNames.length > 0) rows = rows.filter(r => r.promo_names && selectedPromoNames.some(pn => r.promo_names.indexOf(pn) !== -1));
+
+ const header = ['\u0414\u0430\u0442\u0430', 'Order Ref', '\u0417\u0430\u043a\u043b\u0430\u0434', 'Bolt+',
+  '\u0426\u0456\u043d\u0430 \u0434\u043e \u0437\u043d\u0438\u0436\u043a\u0438', '\u0417\u043d\u0438\u0436\u043a\u0430 Bolt', '\u0417\u043d\u0438\u0436\u043a\u0430 \u0437\u0430\u043a\u043b\u0430\u0434',
+  '\u0414\u043e\u0445\u0456\u0434 \u0432\u0456\u0434 \u0457\u0436\u0456', '\u041a\u043e\u043c\u0456\u0441\u0456\u044f \u043d\u0435\u0442\u0442\u043e', '\u041a\u043e\u043c\u0456\u0441\u0456\u044f \u0431\u0440\u0443\u0442\u0442\u043e',
+  '\u041a\u043e\u043c\u043f\u0435\u043d\u0441\u0430\u0446\u0456\u044f Bolt', '\u0412\u0441\u044c\u043e\u0433\u043e \u043a\u043e\u043c\u0456\u0441\u0456\u044f',
+  '\u041f\u043e\u0432\u0435\u0440\u043d\u0435\u043d\u043d\u044f', '\u0427\u0438\u0441\u0442\u0438\u0439 \u0434\u043e\u0445\u0456\u0434',
+  '\u041f\u0440\u043e\u043c\u043e', '\u0417\u043d\u0438\u0436\u043a\u0430 \u043f\u0440\u043e\u043c\u043e', 'Bolt \u043e\u043f\u043b\u0430\u0442\u0438\u0432', '\u0417\u0430\u043a\u043b\u0430\u0434 \u043e\u043f\u043b\u0430\u0442\u0438\u0432'];
+
+ const data = rows.map(r => [
+  String(r.order_created_date || '').substring(0,10),
+  r.order_reference_id || '',
+  r.provider_short || '',
+  '\u041d\u0456',
+  r.food_before_discount || 0,
+  r.bolt_discount || 0,
+  r.provider_discount || 0,
+  r.food_revenue || 0,
+  r.fee_net || 0,
+  r.fee_gross || 0,
+  r.bolt_discount || 0,
+  r.total_fee_gross || 0,
+  r.refund || 0,
+  r.net_income || 0,
+  shortenPromo(r.promo_names || ''),
+  r.promo_total_discount || 0,
+  r.promo_bolt_spend || 0,
+  r.promo_provider_spend || 0
+ ]);
+
+ const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
+
+ const numFmt = '#,##0.00';
+ const numCols = [4,5,6,7,8,9,10,11,12,13,15,16,17];
+ for (let ri = 1; ri <= data.length; ri++) {{
+  numCols.forEach(ci => {{
+   const addr = XLSX.utils.encode_cell({{r: ri, c: ci}});
+   if (ws[addr]) ws[addr].z = numFmt;
+  }});
+ }}
+
+ ws['!cols'] = [
+  {{wch:11}},{{wch:8}},{{wch:20}},{{wch:5}},
+  {{wch:12}},{{wch:10}},{{wch:10}},{{wch:12}},{{wch:11}},{{wch:11}},
+  {{wch:12}},{{wch:12}},{{wch:10}},{{wch:12}},
+  {{wch:24}},{{wch:11}},{{wch:10}},{{wch:10}}
+ ];
+
+ const wb = XLSX.utils.book_new();
+ XLSX.utils.book_append_sheet(wb, ws, '\u0417\u0430\u043c\u043e\u0432\u043b\u0435\u043d\u043d\u044f');
+ XLSX.writeFile(wb, filename);
 }});
 
 document.getElementById('avail-store-filter').addEventListener('change', function() {{
