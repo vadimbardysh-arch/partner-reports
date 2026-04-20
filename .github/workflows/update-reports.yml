@@ -4,6 +4,8 @@ on:
   schedule:
     # Daily 08:00 UTC (11:00 Kyiv) — Smart Promo dashboard + weekly reports on Mondays
     - cron: '0 8 * * *'
+    # Monday 10:00 UTC (13:00 Kyiv EEST) — Sponsored Listings dashboard
+    - cron: '0 10 * * 1'
     # Backup Monday: 13:00 UTC (16:00 Kyiv) — runs if primary was skipped
     - cron: '0 13 * * 1'
   workflow_dispatch:
@@ -71,6 +73,12 @@ jobs:
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_kulinichi.py
+
+      - name: Generate Sponsored Listings dashboard (Monday / manual only)
+        if: steps.check.outputs.skip != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
+        env:
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: python scripts/generate_sponsored_listings.py
 
       - name: Commit and push
         if: steps.check.outputs.skip != 'true'
