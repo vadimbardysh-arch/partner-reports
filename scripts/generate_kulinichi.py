@@ -689,6 +689,11 @@ a{{text-decoration:none;color:inherit}}
 .store-filter-wrap{{margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
 .store-filter-wrap label{{font-size:12px;font-weight:600;color:var(--text2)}}
 .store-filter-wrap select{{padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;background:var(--card);cursor:pointer;min-width:200px}}
+.store-filter-wrap input[type="date"]{{padding:5px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;background:var(--card);cursor:pointer;color:var(--text)}}
+.store-filter-wrap .filter-sep{{color:var(--text2);font-size:12px}}
+.btn-export{{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;background:var(--card);cursor:pointer;color:var(--text);font-weight:600;transition:all .15s}}
+.btn-export:hover{{background:var(--orange);color:#fff;border-color:var(--orange)}}
+.btn-export svg{{width:14px;height:14px}}
 
 .items-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}}
 .items-card{{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);border:1px solid var(--border);padding:16px;overflow:hidden}}
@@ -730,6 +735,8 @@ body.dark .chart-card{{background:var(--card)}}
 body.dark .kpi-card{{background:var(--card)}}
 body.dark .items-card{{background:var(--card)}}
 body.dark .store-filter-wrap select{{background:var(--card);color:var(--text);border-color:var(--border)}}
+body.dark .store-filter-wrap input[type="date"]{{background:var(--card);color:var(--text);border-color:var(--border)}}
+body.dark .btn-export{{background:var(--card);color:var(--text);border-color:var(--border)}}
 body.dark .revenue-summary-table th{{background:#111827}}
 
 @media(max-width:900px){{
@@ -837,6 +844,16 @@ body.dark .revenue-summary-table th{{background:#111827}}
  <div class="store-filter-wrap">
  <label>Заклад:</label>
  <select id="orders-store-filter"><option value="__all__">Всі заклади</option></select>
+ <label>Промо:</label>
+ <select id="orders-promo-filter"><option value="__all__">Всі</option><option value="with_promo">З промо</option><option value="no_promo">Без промо</option></select>
+ <span class="filter-sep">|</span>
+ <label>Дата:</label>
+ <input type="date" id="orders-date-from" title="Від">
+ <span class="filter-sep">—</span>
+ <input type="date" id="orders-date-to" title="До">
+ <button class="btn-export" id="orders-reset-dates" title="Скинути дати" style="padding:4px 8px;font-size:11px">✕</button>
+ <span class="filter-sep">|</span>
+ <button class="btn-export" id="orders-export-pdf" title="Вивантажити PDF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg> PDF</button>
  </div>
  <div id="orders-detail-wrap" class="table-wrap"><div class="scroll-table"></div></div>
  </div>
@@ -1003,6 +1020,9 @@ let allWeeks = Object.keys(D.weekly).sort((a,b) => {{
 let selectedWeekIdx = allWeeks.length - 1;
 let selectedCity = '__all__';
 let selectedOrdersStore = '__all__';
+let selectedOrdersPromo = '__all__';
+let ordersDateFrom = '';
+let ordersDateTo = '';
 let selectedAvailStore = '__all__';
 let chartInstances = {{}};
 
@@ -1513,11 +1533,32 @@ function shortenPromo(raw) {{
 function renderOrdersDetail() {{
  const ids = getFilteredStoreIds();
  const selW = getSelectedWeek();
- document.getElementById('orders-detail-week-label').textContent = '— ' + selW;
 
- let rows = (D.orders || []).filter(r => r.order_week === selW && ids.includes(r.provider_id));
+ const hasDateFilter = ordersDateFrom || ordersDateTo;
+ if (hasDateFilter) {{
+  document.getElementById('orders-detail-week-label').textContent = '— ' + (ordersDateFrom || '...') + ' → ' + (ordersDateTo || '...');
+ }} else {{
+  document.getElementById('orders-detail-week-label').textContent = '— ' + selW;
+ }}
+
+ let rows;
+ if (hasDateFilter) {{
+  rows = (D.orders || []).filter(r => ids.includes(r.provider_id));
+  if (ordersDateFrom) rows = rows.filter(r => String(r.order_created_date).substring(0,10) >= ordersDateFrom);
+  if (ordersDateTo) rows = rows.filter(r => String(r.order_created_date).substring(0,10) <= ordersDateTo);
+ }} else {{
+  rows = (D.orders || []).filter(r => r.order_week === selW && ids.includes(r.provider_id));
+ }}
  if (selectedOrdersStore !== '__all__') {{
  rows = rows.filter(r => r.provider_id === Number(selectedOrdersStore));
+ }}
+ if (selectedOrdersPromo === 'with_promo') {{
+ rows = rows.filter(r => r.promo_names && r.promo_names.length > 0);
+ }} else if (selectedOrdersPromo === 'no_promo') {{
+ rows = rows.filter(r => !r.promo_names || r.promo_names.length === 0);
+ }} else if (selectedOrdersPromo.startsWith('name:')) {{
+ const pn = selectedOrdersPromo.substring(5);
+ rows = rows.filter(r => r.promo_names && r.promo_names.indexOf(pn) !== -1);
  }}
 
  let t = '<div class="scroll-table"><table class="data-table"><thead><tr>';
@@ -1773,6 +1814,71 @@ document.getElementById('orders-store-filter').addEventListener('change', functi
  renderOrdersDetail();
 }});
 
+document.getElementById('orders-promo-filter').addEventListener('change', function() {{
+ selectedOrdersPromo = this.value;
+ renderOrdersDetail();
+}});
+
+(function populatePromoFilter() {{
+ const sel = document.getElementById('orders-promo-filter');
+ const promoSet = new Set();
+ (D.orders || []).forEach(r => {{
+  if (r.promo_names) {{
+   r.promo_names.split('; ').forEach(p => {{ if (p.trim()) promoSet.add(p.trim()); }});
+  }}
+ }});
+ [...promoSet].sort().forEach(p => {{
+  const o = document.createElement('option');
+  o.value = 'name:' + p;
+  o.textContent = shortenPromo(p);
+  o.title = p;
+  sel.appendChild(o);
+ }});
+}})();
+
+document.getElementById('orders-date-from').addEventListener('change', function() {{
+ ordersDateFrom = this.value;
+ renderOrdersDetail();
+}});
+
+document.getElementById('orders-date-to').addEventListener('change', function() {{
+ ordersDateTo = this.value;
+ renderOrdersDetail();
+}});
+
+document.getElementById('orders-reset-dates').addEventListener('click', function() {{
+ ordersDateFrom = '';
+ ordersDateTo = '';
+ document.getElementById('orders-date-from').value = '';
+ document.getElementById('orders-date-to').value = '';
+ renderOrdersDetail();
+}});
+
+document.getElementById('orders-export-pdf').addEventListener('click', function() {{
+ const el = document.getElementById('sec-orders-detail');
+ const title = 'Кулиничі — Дохідність по замовленнях';
+ const selW = getSelectedWeek();
+ const hasDateFilter = ordersDateFrom || ordersDateTo;
+ const subtitle = hasDateFilter
+   ? (ordersDateFrom || '...') + ' → ' + (ordersDateTo || '...')
+   : selW;
+
+ const printWin = window.open('', '_blank');
+ const styles = document.querySelectorAll('style, link[rel="stylesheet"]');
+ let styleHTML = '';
+ styles.forEach(s => {{ styleHTML += s.outerHTML; }});
+
+ const tableHTML = document.getElementById('orders-detail-wrap').innerHTML;
+
+ printWin.document.write('<html><head><title>' + title + '</title>' + styleHTML + '<style>body{{background:#fff;padding:24px;font-family:Inter,-apple-system,BlinkMacSystemFont,sans-serif;color:#111827}}@media print{{@page{{size:landscape;margin:10mm}}body{{padding:0}}.scroll-table{{max-height:none!important;overflow:visible!important}}}}</style></head><body>');
+ printWin.document.write('<h2 style="margin:0 0 4px">' + title + '</h2>');
+ printWin.document.write('<p style="color:#6B7280;font-size:13px;margin:0 0 16px">Період: ' + subtitle + '</p>');
+ printWin.document.write(tableHTML);
+ printWin.document.write('</body></html>');
+ printWin.document.close();
+ setTimeout(function() {{ printWin.print(); }}, 400);
+}});
+
 document.getElementById('avail-store-filter').addEventListener('change', function() {{
  selectedAvailStore = this.value;
  renderAvailLog();
@@ -1793,6 +1899,17 @@ populateOrdersStoreFilter();
 populateAvailStoreFilter();
 populateWeekBar();
 setupNav();
+
+(function initDateBounds() {{
+ const dates = (D.orders || []).map(r => String(r.order_created_date).substring(0,10)).filter(d => d.length === 10).sort();
+ if (dates.length) {{
+  document.getElementById('orders-date-from').min = dates[0];
+  document.getElementById('orders-date-from').max = dates[dates.length - 1];
+  document.getElementById('orders-date-to').min = dates[0];
+  document.getElementById('orders-date-to').max = dates[dates.length - 1];
+ }}
+}})();
+
 renderAll();
 </script>
 </body>
