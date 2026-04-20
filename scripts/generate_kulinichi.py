@@ -1824,7 +1824,10 @@ document.getElementById('orders-promo-filter').addEventListener('change', functi
  const promoSet = new Set();
  (D.orders || []).forEach(r => {{
   if (r.promo_names) {{
-   r.promo_names.split('; ').forEach(p => {{ if (p.trim()) promoSet.add(p.trim()); }});
+   r.promo_names.split('; ').forEach(p => {{
+    const t = p.trim();
+    if (t && !/Provider Targeting/i.test(t) && (/Discount/i.test(t) || /Free Delivery/i.test(t))) promoSet.add(t);
+   }});
   }}
  }});
  [...promoSet].sort().forEach(p => {{
