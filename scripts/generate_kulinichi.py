@@ -1961,39 +1961,101 @@ document.getElementById('orders-export-pdf').addEventListener('click', function(
  const selW = getSelectedWeek();
  const hasDateFilter = ordersDateFrom || ordersDateTo;
  const subtitle = hasDateFilter
-   ? (ordersDateFrom || '...') + ' — ' + (ordersDateTo || '...')
+   ? (ordersDateFrom || '...') + ' \u2014 ' + (ordersDateTo || '...')
    : selW;
  const filename = 'Kulinichi_orders_' + subtitle.replace(/[^a-zA-Z0-9-]/g, '_') + '.pdf';
+
+ const ids = getFilteredStoreIds();
+ let rows;
+ if (hasDateFilter) {{
+  rows = (D.orders || []).filter(r => ids.includes(r.provider_id));
+  if (ordersDateFrom) rows = rows.filter(r => String(r.order_created_date).substring(0,10) >= ordersDateFrom);
+  if (ordersDateTo) rows = rows.filter(r => String(r.order_created_date).substring(0,10) <= ordersDateTo);
+ }} else {{
+  rows = (D.orders || []).filter(r => r.order_week === selW && ids.includes(r.provider_id));
+ }}
+ if (selectedOrdersStore !== '__all__') rows = rows.filter(r => r.provider_id === Number(selectedOrdersStore));
+ if (selectedPromoMode === 'with_promo') rows = rows.filter(r => r.promo_names && r.promo_names.length > 0);
+ else if (selectedPromoMode === 'no_promo') rows = rows.filter(r => !r.promo_names || r.promo_names.length === 0);
+ else if (selectedPromoMode === 'specific' && selectedPromoNames.length > 0) rows = rows.filter(r => r.promo_names && selectedPromoNames.some(pn => r.promo_names.indexOf(pn) !== -1));
+
+ const n = (v) => v != null ? Number(v).toFixed(2) : '0.00';
+
+ const head = [['Date', 'Ref', 'Store', 'Price', 'Discount', 'Revenue', 'Fee net', 'Fee gross', 'Bolt comp.', 'Total fee', 'Refund', 'Net income', 'Promo', 'Promo disc.', 'Bolt paid', 'Partner paid']];
+ const body = rows.map(r => {{
+  const feeNet = r.fee_net || 0;
+  const feeGross = r.fee_gross || 0;
+  const boltComp = r.bolt_discount || 0;
+  const disc = (r.total_discount || 0) > 0.5 ? 'Bolt: ' + n(r.bolt_discount) + ' / Partner: ' + n(r.provider_discount) : '';
+  return [
+   String(r.order_created_date || '').substring(0,10),
+   r.order_reference_id || '',
+   r.provider_short || '',
+   n(r.food_before_discount),
+   disc,
+   n(r.food_revenue),
+   n(feeNet),
+   n(feeGross),
+   boltComp > 0.5 ? '+' + n(boltComp) : '',
+   n(r.total_fee_gross),
+   n(r.refund),
+   n(r.net_income),
+   shortenPromo(r.promo_names || ''),
+   (r.promo_total_discount || 0) > 0 ? n(r.promo_total_discount) : '',
+   (r.promo_bolt_spend || 0) > 0 ? n(r.promo_bolt_spend) : '',
+   (r.promo_provider_spend || 0) > 0 ? n(r.promo_provider_spend) : ''
+  ];
+ }});
+
+ let totFood = 0, totRev = 0, totFee = 0, totBolt = 0, totRef = 0, totNet = 0;
+ rows.forEach(r => {{ totFood += r.food_before_discount || 0; totRev += r.food_revenue || 0; totFee += r.total_fee_gross || 0; totBolt += r.bolt_discount || 0; totRef += r.refund || 0; totNet += r.net_income || 0; }});
+ body.push(['TOTAL (' + rows.length + ')', '', '', n(totFood), '', n(totRev), '', '', '+' + n(totBolt), n(totFee), n(totRef), n(totNet), '', '', '', '']);
 
  try {{
   const {{ jsPDF }} = window.jspdf;
   const doc = new jsPDF({{ orientation: 'landscape', unit: 'mm', format: 'a3' }});
 
-  doc.setFontSize(14);
-  doc.text('Kulinichi — Orders', 14, 14);
+  doc.setFontSize(13);
+  doc.text('Kulinichi \u2014 Orders', 12, 12);
   doc.setFontSize(9);
   doc.setTextColor(107, 114, 128);
-  doc.text('Period: ' + subtitle, 14, 20);
+  doc.text('Period: ' + subtitle + '  |  Orders: ' + rows.length, 12, 18);
   doc.setTextColor(0, 0, 0);
 
-  const tbl = document.querySelector('#orders-detail-wrap table');
-  if (tbl) {{
-   doc.autoTable({{
-    html: tbl,
-    startY: 24,
-    styles: {{ fontSize: 7, cellPadding: 2, overflow: 'linebreak', minCellWidth: 12 }},
-    headStyles: {{ fillColor: [249, 115, 22], textColor: 255, fontStyle: 'bold', fontSize: 7 }},
-    alternateRowStyles: {{ fillColor: [248, 250, 252] }},
-    margin: {{ left: 8, right: 8 }},
-    tableWidth: 'auto',
-    didParseCell: function(data) {{
-     if (data.section === 'body') {{
-      const text = data.cell.raw ? data.cell.raw.textContent || data.cell.raw.innerText || '' : '';
-      if (text.startsWith('+')) data.cell.styles.textColor = [16, 185, 129];
-      if (text.startsWith('-') && parseFloat(text) < 0) data.cell.styles.textColor = [239, 68, 68];
+  doc.autoTable({{
+   head: head,
+   body: body,
+   startY: 22,
+   styles: {{ fontSize: 6.5, cellPadding: 1.5, overflow: 'linebreak', halign: 'right' }},
+   headStyles: {{ fillColor: [249, 115, 22], textColor: 255, fontStyle: 'bold', fontSize: 6.5, halign: 'center' }},
+   columnStyles: {{
+    0: {{ halign: 'left', cellWidth: 18 }},
+    1: {{ halign: 'left', cellWidth: 14 }},
+    2: {{ halign: 'left', cellWidth: 22 }},
+    4: {{ halign: 'left', cellWidth: 30, fontSize: 5.5 }},
+    12: {{ halign: 'left', cellWidth: 28, fontSize: 5.5 }}
+   }},
+   alternateRowStyles: {{ fillColor: [248, 250, 252] }},
+   margin: {{ left: 6, right: 6 }},
+   tableWidth: 'auto',
+   didParseCell: function(data) {{
+    if (data.section === 'body') {{
+     const t = String(data.cell.raw || '');
+     if (t.startsWith('+')) data.cell.styles.textColor = [16, 185, 129];
+     if (data.row.index === body.length - 1) {{
+      data.cell.styles.fontStyle = 'bold';
+      data.cell.styles.fillColor = [243, 244, 246];
      }}
     }}
-   }});
+   }}
+  }});
+
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {{
+   doc.setPage(i);
+   doc.setFontSize(7);
+   doc.setTextColor(156, 163, 175);
+   doc.text('Page ' + i + ' / ' + pageCount, doc.internal.pageSize.getWidth() - 25, doc.internal.pageSize.getHeight() - 5);
   }}
 
   doc.save(filename);
