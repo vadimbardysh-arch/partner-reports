@@ -1860,7 +1860,9 @@ document.getElementById('orders-store-filter').addEventListener('change', functi
   html += '<div class="ms-sep"></div>';
   [...promoMap.keys()].sort().forEach(short => {{
    const fullNames = promoMap.get(short);
-   html += '<label title="' + fullNames.join('\\n').replace(/"/g, '&quot;') + '"><input type="checkbox" value="name" data-names=\'' + JSON.stringify(fullNames).replace(/'/g, '&#39;') + '\'> ' + short + '</label>';
+   const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(fullNames))));
+   const tip = fullNames.join(", ").replace(/"/g, '&quot;');
+   html += '<label title="' + tip + '"><input type="checkbox" value="name" data-enc="' + encoded + '"> ' + short + '</label>';
   }});
  }}
  dd.innerHTML = html;
@@ -1921,7 +1923,7 @@ document.getElementById('orders-store-filter').addEventListener('change', functi
    nameCbs.forEach(c => {{
     if (c.checked) {{
      cnt++;
-     const names = JSON.parse(c.getAttribute('data-names'));
+     const names = JSON.parse(decodeURIComponent(escape(atob(c.getAttribute('data-enc')))));
      names.forEach(n => selectedPromoNames.push(n));
     }}
    }});
