@@ -1112,18 +1112,48 @@ function exportExcel(providerId) {{
   XLSX.writeFile(wb, `Sponsored_Listings_${{name}}_${{providerId}}.xlsx`);
 }}
 
-function exportPDF(providerId) {{
+let _cyrFontLoaded = false;
+let _cyrFontData = null;
+
+async function loadCyrillicFont() {{
+  if (_cyrFontLoaded) return _cyrFontData;
+  const url = 'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.12/fonts/Roboto/Roboto-Regular.ttf';
+  try {{
+    const resp = await fetch(url);
+    const buf = await resp.arrayBuffer();
+    let binary = '';
+    const bytes = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    _cyrFontData = btoa(binary);
+    _cyrFontLoaded = true;
+    return _cyrFontData;
+  }} catch(e) {{
+    console.warn('Failed to load Cyrillic font, PDF may have encoding issues:', e);
+    return null;
+  }}
+}}
+
+async function exportPDF(providerId) {{
   const p = providers.find(x => x.id === providerId);
   const {{ jsPDF }} = window.jspdf;
   const doc = new jsPDF({{ orientation: 'landscape', unit: 'mm', format: 'a4' }});
+
+  const fontBase64 = await loadCyrillicFont();
+  if (fontBase64) {{
+    doc.addFileToVFS('Roboto-Regular.ttf', fontBase64);
+    doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+    doc.setFont('Roboto');
+  }}
 
   const title = `${{p ? p.name : ''}} (ID: ${{providerId}})`;
   doc.setFontSize(14);
   doc.text(title, 14, 15);
   doc.setFontSize(10);
-  doc.text(`Місто: ${{p?.city || ''}} | Зона: ${{p?.zone || ''}} | AM: ${{p?.am || ''}}`, 14, 22);
+  doc.text(`Місто: ${{p?.city || ''}} | Зона: ${{p?.zone || ''}} | AM: ${{p?.am || ''}} | Сегмент: ${{p?.segment || ''}}`, 14, 22);
 
   let yPos = 28;
+
+  const fontOpts = fontBase64 ? {{ font: 'Roboto' }} : {{}};
 
   const sections = [
     {{ title: 'Кампанії', id: 'campaignsTableWrap' }},
@@ -1149,8 +1179,8 @@ function exportPDF(providerId) {{
       body: data.rows,
       startY: yPos,
       theme: 'grid',
-      styles: {{ fontSize: 7, cellPadding: 1.5 }},
-      headStyles: {{ fillColor: [30, 41, 59], textColor: [148, 163, 184], fontSize: 7 }},
+      styles: {{ fontSize: 7, cellPadding: 1.5, ...fontOpts }},
+      headStyles: {{ fillColor: [30, 41, 59], textColor: [148, 163, 184], fontSize: 7, ...fontOpts }},
       margin: {{ left: 14, right: 14 }},
     }});
 
