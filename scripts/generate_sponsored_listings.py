@@ -395,9 +395,10 @@ tr:nth-child(even) {{ background:var(--bg2); }}
 tr:nth-child(odd) {{ background:rgba(22,32,50,0.5); }}
 
 .state-badge {{ display:inline-block; font-size:11px; padding:2px 8px; border-radius:6px; font-weight:600; }}
-.state-badge.active,.state-badge.approved {{ background:var(--green-bg); color:var(--green); }}
-.state-badge.ended,.state-badge.completed {{ background:var(--bg3); color:var(--text3); }}
+.state-badge.active {{ background:var(--green-bg); color:var(--green); }}
+.state-badge.finished {{ background:var(--bg3); color:var(--text2); }}
 .state-badge.aborted {{ background:var(--red-bg); color:var(--red); }}
+.state-badge.disabled {{ background:#78350f; color:var(--orange); }}
 
 .empty-state {{ text-align:center; color:var(--text3); padding:40px; }}
 
@@ -488,6 +489,29 @@ billing.forEach(b => {{
 
 const campaignMap = {{}};
 campaigns.forEach(c => {{ campaignMap[c.campaignId] = c; }});
+
+const signupByCampaign = {{}};
+signups.forEach(s => {{ signupByCampaign[s.campaignId] = s; }});
+
+function resolveStatus(campaign) {{
+  const su = signupByCampaign[campaign.campaignId];
+  if (su) {{
+    if (su.state === 'active') return 'active';
+    if (su.state === 'disabled') return 'disabled';
+    if (su.state === 'cost_exceeding_revenue_aborted') return 'aborted';
+  }}
+  if (campaign.state === 'aborted') return 'aborted';
+  if (campaign.end && new Date(campaign.end) < new Date()) return 'finished';
+  if (campaign.state === 'approved') return 'active';
+  return campaign.state;
+}}
+
+const STATUS_LABEL = {{
+  active: 'Active', finished: 'Finished', aborted: 'Aborted', disabled: 'Disabled'
+}};
+const STATUS_CLASS = {{
+  active: 'active', finished: 'finished', aborted: 'aborted', disabled: 'disabled'
+}};
 
 // Populate filter dropdowns
 const citySelect = document.getElementById('cityFilter');
@@ -637,19 +661,19 @@ function render() {{
 
         const isActive = p.activeListings > 0;
         const pCampaigns = campaignsByProvider[p.id] || [];
-        const activeCampaigns = pCampaigns.filter(c => c.state === 'approved');
         
         let badges = '';
-        const placements = new Set();
-        activeCampaigns.forEach(c => placements.add(c.placement));
-        if (placements.has('Home Screen')) badges += '<span class="listing-badge home">Home Screen</span>';
-        if (placements.has('Search')) badges += '<span class="listing-badge search">Search</span>';
-        if (!isActive) {{
-          const hadPlacements = new Set();
-          pCampaigns.forEach(c => hadPlacements.add(c.placement));
-          if (hadPlacements.has('Home Screen')) badges += '<span class="listing-badge ended">Home Screen (завершено)</span>';
-          if (hadPlacements.has('Search')) badges += '<span class="listing-badge ended">Search (завершено)</span>';
-        }}
+        const activePlacements = new Set();
+        const allPlacements = new Set();
+        pCampaigns.forEach(c => {{
+          const st = resolveStatus(c);
+          allPlacements.add(c.placement);
+          if (st === 'active') activePlacements.add(c.placement);
+        }});
+        if (activePlacements.has('Home Screen')) badges += '<span class="listing-badge home">Home Screen</span>';
+        if (activePlacements.has('Search')) badges += '<span class="listing-badge search">Search</span>';
+        if (!activePlacements.has('Home Screen') && allPlacements.has('Home Screen')) badges += '<span class="listing-badge ended">Home Screen (завершено)</span>';
+        if (!activePlacements.has('Search') && allPlacements.has('Search')) badges += '<span class="listing-badge ended">Search (завершено)</span>';
 
         card.innerHTML = `
           <div class="name"><span class="status-dot ${{isActive ? 'active' : 'inactive'}}"></span> ${{escHtml(p.name)}}</div>
@@ -725,7 +749,7 @@ function openProviderDetail(providerId) {{
 
     <div class="kpi-bar" style="margin-bottom:20px;">
       <div class="kpi"><div class="val">${{pCampaigns.length}}</div><div class="lbl">Кампаній</div></div>
-      <div class="kpi green"><div class="val">${{pCampaigns.filter(c=>c.state==='approved').length}}</div><div class="lbl">Активних</div></div>
+      <div class="kpi green"><div class="val">${{pCampaigns.filter(c=>resolveStatus(c)==='active').length}}</div><div class="lbl">Активних</div></div>
       <div class="kpi orange"><div class="val">${{formatCurrency(totalSpend)}}</div><div class="lbl">Загальні витрати</div></div>
       <div class="kpi blue"><div class="val">${{totalFreeDays.toFixed(1)}}</div><div class="lbl">Безкоштовних днів</div></div>
     </div>
@@ -778,7 +802,9 @@ function buildCampaignsTable(camps) {{
   if (!camps.length) return '<div class="empty-state">Немає кампаній</div>';
   let rows = '';
   camps.forEach(c => {{
-    const stateClass = c.state === 'approved' ? 'active' : c.state === 'aborted' ? 'aborted' : 'ended';
+    const st = resolveStatus(c);
+    const stClass = STATUS_CLASS[st] || 'finished';
+    const stLabel = STATUS_LABEL[st] || st;
     const price = c.pricePerDay ? `${{c.pricePerDay}} ${{c.currency || ''}}/день` : '—';
     const start = c.start ? new Date(c.start).toLocaleDateString('uk-UA') : '—';
     const end = c.end ? new Date(c.end).toLocaleDateString('uk-UA') : '—';
@@ -786,7 +812,7 @@ function buildCampaignsTable(camps) {{
       <td>${{c.campaignId}}</td>
       <td>${{escHtml(c.placement)}}</td>
       <td>${{price}}</td>
-      <td><span class="state-badge ${{stateClass}}">${{c.state}}</span></td>
+      <td><span class="state-badge ${{stClass}}">${{stLabel}}</span></td>
       <td>${{start}}</td>
       <td>${{end}}</td>
     </tr>`;
