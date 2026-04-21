@@ -78,7 +78,8 @@ def fetch_providers(conn):
             p.account_manager_name,
             p.provider_status,
             p.brand_name,
-            p.business_segment
+            p.business_segment_v2,
+            p.business_subsegment_v2
         FROM ng_delivery_spark.dim_provider_v2 p
         WHERE p.country_code = 'ua'
           AND p.provider_id IN (
@@ -189,6 +190,22 @@ def placement_label(content_type):
     return mapping.get(content_type, content_type)
 
 
+def segment_label(seg_v2, subseg_v2):
+    if not seg_v2 or "Missing" in str(seg_v2):
+        return "—"
+    s = str(seg_v2)
+    sub = str(subseg_v2) if subseg_v2 else ""
+    if "International Chain" in sub:
+        return "IC"
+    if "Enterprise" in s:
+        return "ENT"
+    if "Mid-market" in s:
+        return "MM"
+    if "SMB" in s:
+        return "SMB"
+    return "—"
+
+
 def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df):
     """Process raw DataFrames into structured JSON-ready dicts."""
 
@@ -200,6 +217,7 @@ def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df):
     providers = []
     for _, row in providers_df.iterrows():
         pid = int(row["provider_id"])
+        brand = str(row["brand_name"] or "") if row.get("brand_name") and str(row["brand_name"]) not in ("None", "nan", "") else ""
         providers.append({
             "id": pid,
             "name": str(row["provider_name"] or ""),
@@ -209,8 +227,8 @@ def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df):
             "zoneSegment": str(row["zone_segment"] or ""),
             "am": str(row["account_manager_name"] or "—"),
             "status": str(row["provider_status"] or ""),
-            "brand": str(row["brand_name"] or ""),
-            "segment": str(row["business_segment"] or ""),
+            "brand": brand,
+            "segment": segment_label(row.get("business_segment_v2"), row.get("business_subsegment_v2")),
             "activeListings": active_map.get(pid, 0),
         })
 
@@ -256,6 +274,8 @@ def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df):
 
     cities = sorted(set(p["city"] for p in providers if p["city"]))
     ams = sorted(set(p["am"] for p in providers if p["am"] and p["am"] != "—"))
+    segments = sorted(set(p["segment"] for p in providers if p["segment"] and p["segment"] != "—"))
+    brands = sorted(set(p["brand"] for p in providers if p["brand"]))
     zones_by_city = {}
     for p in providers:
         c = p["city"]
@@ -273,6 +293,8 @@ def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df):
         "filters": {
             "cities": cities,
             "ams": ams,
+            "segments": segments,
+            "brands": brands,
             "zonesByCity": zones_by_city,
         },
         "generatedAt": datetime.now(tz=__import__('datetime').timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
@@ -315,16 +337,34 @@ body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 
 .layout {{ display:flex; min-height:calc(100vh - 60px); }}
 
-.sidebar {{ width:280px; background:var(--bg2); border-right:1px solid var(--bg3); padding:16px; flex-shrink:0; position:sticky; top:60px; height:calc(100vh - 60px); overflow-y:auto; }}
-.sidebar h3 {{ font-size:12px; text-transform:uppercase; color:var(--text3); margin:16px 0 8px; letter-spacing:0.5px; }}
+.sidebar {{ width:300px; background:var(--bg2); border-right:1px solid var(--bg3); padding:16px; flex-shrink:0; position:sticky; top:60px; height:calc(100vh - 60px); overflow-y:auto; }}
+.sidebar h3 {{ font-size:11px; text-transform:uppercase; color:var(--text3); margin:14px 0 6px; letter-spacing:0.5px; }}
 .sidebar h3:first-child {{ margin-top:0; }}
-.filter-select {{ width:100%; background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px 10px; font-size:13px; cursor:pointer; appearance:none; -webkit-appearance:none; }}
-.filter-select option {{ background:var(--bg2); }}
-.search-input {{ width:100%; background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px 10px; font-size:13px; margin-bottom:8px; }}
+.search-input {{ width:100%; background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px 10px; font-size:13px; }}
 .search-input::placeholder {{ color:var(--text3); }}
 
-.sidebar-stats {{ margin-top:16px; padding-top:16px; border-top:1px solid var(--bg3); }}
-.stat-row {{ display:flex; justify-content:space-between; padding:4px 0; font-size:13px; }}
+.ms-wrap {{ position:relative; margin-bottom:4px; }}
+.ms-toggle {{ width:100%; background:var(--bg3); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:7px 28px 7px 10px; font-size:13px; cursor:pointer; text-align:left; min-height:34px; display:flex; flex-wrap:wrap; gap:4px; align-items:center; position:relative; }}
+.ms-toggle::after {{ content:'\\25BE'; position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--text3); pointer-events:none; }}
+.ms-toggle .chip {{ background:var(--blue-bg); color:var(--blue); font-size:11px; padding:1px 6px; border-radius:4px; display:inline-flex; align-items:center; gap:3px; }}
+.ms-toggle .chip .x {{ cursor:pointer; font-weight:700; opacity:0.7; }}
+.ms-toggle .chip .x:hover {{ opacity:1; }}
+.ms-toggle .placeholder {{ color:var(--text3); }}
+.ms-dd {{ display:none; position:absolute; top:100%; left:0; right:0; background:var(--bg2); border:1px solid var(--border); border-radius:6px; margin-top:2px; z-index:50; max-height:220px; overflow-y:auto; }}
+.ms-dd.open {{ display:block; }}
+.ms-dd-search {{ width:100%; background:var(--bg3); color:var(--text); border:none; border-bottom:1px solid var(--border); padding:8px 10px; font-size:12px; }}
+.ms-dd-search::placeholder {{ color:var(--text3); }}
+.ms-option {{ padding:6px 10px; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:6px; }}
+.ms-option:hover {{ background:var(--bg3); }}
+.ms-option.selected {{ color:var(--blue); }}
+.ms-option .check {{ width:14px; height:14px; border:1px solid var(--border); border-radius:3px; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:10px; }}
+.ms-option.selected .check {{ background:var(--blue); border-color:var(--blue); color:#fff; }}
+
+.reset-btn {{ width:100%; background:transparent; color:var(--red); border:1px solid var(--red-bg); border-radius:6px; padding:8px; font-size:12px; cursor:pointer; margin-top:12px; font-weight:600; transition:all 0.15s; }}
+.reset-btn:hover {{ background:var(--red-bg); }}
+
+.sidebar-stats {{ margin-top:12px; padding-top:12px; border-top:1px solid var(--bg3); }}
+.stat-row {{ display:flex; justify-content:space-between; padding:3px 0; font-size:13px; }}
 .stat-row .label {{ color:var(--text2); }}
 .stat-row .value {{ font-weight:600; }}
 
@@ -406,9 +446,10 @@ tr:nth-child(odd) {{ background:rgba(22,32,50,0.5); }}
 
 @media(max-width:900px) {{
   .layout {{ flex-direction:column; }}
-  .sidebar {{ width:100%; height:auto; position:static; border-right:none; border-bottom:1px solid var(--bg3); }}
+  .sidebar {{ width:100%; height:auto; position:static; border-right:none; border-bottom:1px solid var(--bg3); max-height:none; }}
   .provider-grid {{ grid-template-columns:1fr; }}
   .kpi-bar {{ grid-template-columns:repeat(2,1fr); }}
+  .ms-dd {{ max-height:180px; }}
 }}
 </style>
 </head>
@@ -424,21 +465,25 @@ tr:nth-child(odd) {{ background:rgba(22,32,50,0.5); }}
     <h3>Пошук провайдера</h3>
     <input type="text" class="search-input" id="providerSearch" placeholder="Назва або ID...">
 
+    <h3>Бренд</h3>
+    <div class="ms-wrap" id="brandFilter"></div>
+
     <h3>Місто</h3>
-    <select class="filter-select" id="cityFilter"><option value="">Всі міста</option></select>
+    <div class="ms-wrap" id="cityFilter"></div>
 
     <h3>Аккаунт менеджер</h3>
-    <select class="filter-select" id="amFilter"><option value="">Всі AM</option></select>
+    <div class="ms-wrap" id="amFilter"></div>
 
     <h3>Зона</h3>
-    <select class="filter-select" id="zoneFilter"><option value="">Всі зони</option></select>
+    <div class="ms-wrap" id="zoneFilter"></div>
+
+    <h3>Сегмент</h3>
+    <div class="ms-wrap" id="segmentFilter"></div>
 
     <h3>Статус лістингу</h3>
-    <select class="filter-select" id="statusFilter">
-      <option value="">Всі</option>
-      <option value="active">Активний лістинг</option>
-      <option value="inactive">Неактивний</option>
-    </select>
+    <div class="ms-wrap" id="statusFilter"></div>
+
+    <button class="reset-btn" id="resetBtn">Скинути всі фільтри</button>
 
     <div class="sidebar-stats" id="sidebarStats"></div>
   </div>
@@ -523,57 +568,148 @@ providers.forEach(p => {{
   p.activeListings = pCamps.filter(c => resolveStatus(c) === 'active').length;
 }});
 
-// Populate filter dropdowns
-const citySelect = document.getElementById('cityFilter');
-const amSelect = document.getElementById('amFilter');
-const zoneSelect = document.getElementById('zoneFilter');
+// ── Multi-select component ─────────────────────────────────────────────
+function createMultiSelect(containerId, options, placeholder, onChange) {{
+  const wrap = document.getElementById(containerId);
+  const toggle = document.createElement('div');
+  toggle.className = 'ms-toggle';
+  toggle.innerHTML = `<span class="placeholder">${{placeholder}}</span>`;
 
-filters.cities.forEach(c => {{
-  const o = document.createElement('option');
-  o.value = c; o.textContent = c;
-  citySelect.appendChild(o);
-}});
-filters.ams.forEach(a => {{
-  const o = document.createElement('option');
-  o.value = a; o.textContent = a;
-  amSelect.appendChild(o);
-}});
+  const dd = document.createElement('div');
+  dd.className = 'ms-dd';
 
-function updateZoneOptions(city) {{
-  zoneSelect.innerHTML = '<option value="">Всі зони</option>';
-  const zones = city ? (filters.zonesByCity[city] || []) : Object.values(filters.zonesByCity).flat();
-  const unique = [...new Set(zones)].sort();
-  unique.forEach(z => {{
-    const o = document.createElement('option');
-    o.value = z; o.textContent = z;
-    zoneSelect.appendChild(o);
+  const searchInput = document.createElement('input');
+  searchInput.className = 'ms-dd-search';
+  searchInput.placeholder = 'Пошук...';
+  dd.appendChild(searchInput);
+
+  const listEl = document.createElement('div');
+  dd.appendChild(listEl);
+
+  let selected = new Set();
+  let allOptions = options.slice();
+
+  function renderOptions(filter) {{
+    listEl.innerHTML = '';
+    const q = (filter || '').toLowerCase();
+    allOptions.filter(o => !q || o.toLowerCase().includes(q)).forEach(opt => {{
+      const el = document.createElement('div');
+      el.className = 'ms-option' + (selected.has(opt) ? ' selected' : '');
+      el.innerHTML = `<span class="check">${{selected.has(opt) ? '✓' : ''}}</span>${{escHtml(opt)}}`;
+      el.addEventListener('click', (e) => {{
+        e.stopPropagation();
+        if (selected.has(opt)) selected.delete(opt); else selected.add(opt);
+        renderToggle();
+        renderOptions(searchInput.value);
+        onChange();
+      }});
+      listEl.appendChild(el);
+    }});
+  }}
+
+  function renderToggle() {{
+    if (selected.size === 0) {{
+      toggle.innerHTML = `<span class="placeholder">${{placeholder}}</span>`;
+    }} else {{
+      toggle.innerHTML = [...selected].map(v =>
+        `<span class="chip">${{escHtml(v)}}<span class="x" data-val="${{escHtml(v)}}">&times;</span></span>`
+      ).join('');
+    }}
+  }}
+
+  toggle.addEventListener('click', (e) => {{
+    if (e.target.classList.contains('x')) {{
+      selected.delete(e.target.dataset.val);
+      renderToggle();
+      renderOptions(searchInput.value);
+      onChange();
+      return;
+    }}
+    const isOpen = dd.classList.contains('open');
+    document.querySelectorAll('.ms-dd.open').forEach(d => d.classList.remove('open'));
+    if (!isOpen) {{
+      dd.classList.add('open');
+      searchInput.value = '';
+      searchInput.focus();
+      renderOptions('');
+    }}
   }});
-}}
-updateZoneOptions('');
 
-citySelect.addEventListener('change', () => {{
-  updateZoneOptions(citySelect.value);
-  render();
+  searchInput.addEventListener('input', () => renderOptions(searchInput.value));
+  searchInput.addEventListener('click', e => e.stopPropagation());
+
+  wrap.appendChild(toggle);
+  wrap.appendChild(dd);
+  renderOptions('');
+
+  return {{
+    getSelected: () => [...selected],
+    clear: () => {{ selected.clear(); renderToggle(); renderOptions(''); }},
+    setOptions: (newOpts) => {{ allOptions = newOpts; renderOptions(searchInput.value); }},
+  }};
+}}
+
+document.addEventListener('click', () => {{
+  document.querySelectorAll('.ms-dd.open').forEach(d => d.classList.remove('open'));
 }});
-amSelect.addEventListener('change', render);
-zoneSelect.addEventListener('change', render);
-document.getElementById('statusFilter').addEventListener('change', render);
+document.querySelectorAll('.ms-wrap').forEach(w => {{
+  w.addEventListener('click', e => e.stopPropagation());
+}});
+
+// ── Initialize filters ─────────────────────────────────────────────────
+const allZones = [...new Set(Object.values(filters.zonesByCity).flat())].sort();
+
+const msBrand = createMultiSelect('brandFilter', filters.brands || [], 'Всі бренди', render);
+const msCity = createMultiSelect('cityFilter', filters.cities, 'Всі міста', () => {{ updateZoneOptions(); render(); }});
+const msAm = createMultiSelect('amFilter', filters.ams, 'Всі AM', render);
+const msZone = createMultiSelect('zoneFilter', allZones, 'Всі зони', render);
+const msSegment = createMultiSelect('segmentFilter', filters.segments || [], 'Всі сегменти', render);
+const msStatus = createMultiSelect('statusFilter', ['Активний лістинг', 'Неактивний'], 'Всі', render);
+
+function updateZoneOptions() {{
+  const selCities = msCity.getSelected();
+  let zones;
+  if (selCities.length === 0) {{
+    zones = allZones;
+  }} else {{
+    zones = [...new Set(selCities.flatMap(c => filters.zonesByCity[c] || []))].sort();
+  }}
+  msZone.setOptions(zones);
+}}
+
 document.getElementById('providerSearch').addEventListener('input', render);
 
+document.getElementById('resetBtn').addEventListener('click', () => {{
+  msBrand.clear(); msCity.clear(); msAm.clear(); msZone.clear(); msSegment.clear(); msStatus.clear();
+  document.getElementById('providerSearch').value = '';
+  render();
+}});
+
 function getFilteredProviders() {{
-  const city = citySelect.value;
-  const am = amSelect.value;
-  const zone = zoneSelect.value;
-  const status = document.getElementById('statusFilter').value;
+  const selCities = msCity.getSelected();
+  const selAms = msAm.getSelected();
+  const selZones = msZone.getSelected();
+  const selSegments = msSegment.getSelected();
+  const selBrands = msBrand.getSelected();
+  const selStatus = msStatus.getSelected();
   const search = document.getElementById('providerSearch').value.toLowerCase().trim();
 
+  const brandProviderIds = new Set();
+  if (selBrands.length > 0) {{
+    providers.forEach(p => {{
+      if (selBrands.includes(p.brand)) brandProviderIds.add(p.id);
+    }});
+  }}
+
   return providers.filter(p => {{
-    if (city && p.city !== city) return false;
-    if (am && p.am !== am) return false;
-    if (zone && p.zone !== zone) return false;
-    if (status === 'active' && p.activeListings === 0) return false;
-    if (status === 'inactive' && p.activeListings > 0) return false;
-    if (search && !p.name.toLowerCase().includes(search) && !String(p.id).includes(search)) return false;
+    if (selCities.length && !selCities.includes(p.city)) return false;
+    if (selAms.length && !selAms.includes(p.am)) return false;
+    if (selZones.length && !selZones.includes(p.zone)) return false;
+    if (selSegments.length && !selSegments.includes(p.segment)) return false;
+    if (selBrands.length && !brandProviderIds.has(p.id)) return false;
+    if (selStatus.includes('Активний лістинг') && !selStatus.includes('Неактивний') && p.activeListings === 0) return false;
+    if (selStatus.includes('Неактивний') && !selStatus.includes('Активний лістинг') && p.activeListings > 0) return false;
+    if (search && !p.name.toLowerCase().includes(search) && !String(p.id).includes(search) && !p.brand.toLowerCase().includes(search)) return false;
     return true;
   }});
 }}
@@ -685,10 +821,13 @@ function render() {{
         if (!activePlacements.has('Home Screen') && allPlacements.has('Home Screen')) badges += '<span class="listing-badge ended">Home Screen (завершено)</span>';
         if (!activePlacements.has('Search') && allPlacements.has('Search')) badges += '<span class="listing-badge ended">Search (завершено)</span>';
 
+        const segBadge = p.segment && p.segment !== '—' ? `<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:var(--bg3);color:var(--text2);font-weight:600">${{p.segment}}</span>` : '';
+
         card.innerHTML = `
-          <div class="name"><span class="status-dot ${{isActive ? 'active' : 'inactive'}}"></span> ${{escHtml(p.name)}}</div>
+          <div class="name"><span class="status-dot ${{isActive ? 'active' : 'inactive'}}"></span> ${{escHtml(p.name)}} ${{segBadge}}</div>
           <div class="meta-row">
             <span>ID: ${{p.id}}</span>
+            ${{p.brand ? `<span>Бренд: ${{escHtml(p.brand)}}</span>` : ''}}
             <span>AM: ${{escHtml(p.am)}}</span>
           </div>
           <div class="listing-badges">${{badges}}</div>
@@ -755,6 +894,7 @@ function openProviderDetail(providerId) {{
       <span class="tag">AM: ${{escHtml(p.am)}}</span>
       <span class="tag">Статус: ${{escHtml(p.status)}}</span>
       <span class="tag">Сегмент: ${{escHtml(p.segment)}}</span>
+      ${{p.brand ? `<span class="tag">Бренд: ${{escHtml(p.brand)}}</span>` : ''}}
     </div>
 
     <div class="kpi-bar" style="margin-bottom:20px;">
