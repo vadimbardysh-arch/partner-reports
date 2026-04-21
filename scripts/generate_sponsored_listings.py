@@ -1088,7 +1088,8 @@ function buildSponsoredTable(sponsoredRows, bills) {{
     totSGmv += r.sponsoredGmv || 0;
     totSpend += spend;
 
-    rows += `<tr>
+    const weekDates = weekToDateRange(r.week);
+    rows += `<tr data-start="${{weekDates.start}}" data-end="${{weekDates.end}}">
       <td>${{r.week}}</td>
       <td class="num">${{r.totalOrders}}</td>
       <td class="num" style="font-weight:600">${{r.sponsoredOrders}}</td>
@@ -1104,16 +1105,16 @@ function buildSponsoredTable(sponsoredRows, bills) {{
   const totalRoas = totSpend > 0 ? (totSGmv / totSpend).toFixed(1) : '—';
   const trColor = typeof totalRoas === 'string' ? 'var(--text3)' : totalRoas >= 5 ? 'var(--green)' : totalRoas >= 2 ? 'var(--orange)' : 'var(--red)';
 
-  rows += `<tr style="background:var(--bg3);font-weight:700;">
+  rows += `<tr class="sponsored-totals-row" style="background:var(--bg3);font-weight:700;">
     <td>Разом</td>
-    <td class="num">${{totOrders}}</td>
-    <td class="num">${{totSponsored}}</td>
-    <td class="num">${{totHome}}</td>
-    <td class="num">${{totSearch}}</td>
-    <td class="num">${{formatCurrency(totGmv)}}</td>
-    <td class="num" style="color:var(--green)">${{formatCurrency(totSGmv)}}</td>
-    <td class="num" style="color:var(--orange)">${{formatCurrency(totSpend)}}</td>
-    <td class="num" style="font-size:14px;color:${{trColor}}">${{totalRoas}}x</td>
+    <td class="num st-orders">${{totOrders}}</td>
+    <td class="num st-sponsored">${{totSponsored}}</td>
+    <td class="num st-home">${{totHome}}</td>
+    <td class="num st-search">${{totSearch}}</td>
+    <td class="num st-gmv">${{formatCurrency(totGmv)}}</td>
+    <td class="num st-sgmv" style="color:var(--green)">${{formatCurrency(totSGmv)}}</td>
+    <td class="num st-spend" style="color:var(--orange)">${{formatCurrency(totSpend)}}</td>
+    <td class="num st-roas" style="font-size:14px;color:${{trColor}}">${{totalRoas}}x</td>
   </tr>`;
 
   return `<table><thead><tr>
@@ -1129,6 +1130,20 @@ function getISOWeek(d) {{
   date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
   const week1 = new Date(date.getFullYear(), 0, 4);
   return 1 + Math.round(((date - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+}}
+
+function weekToDateRange(weekStr) {{
+  const [y, w] = weekStr.split('-W').map(Number);
+  const jan4 = new Date(y, 0, 4);
+  const dayOfWeek = (jan4.getDay() + 6) % 7;
+  const monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - dayOfWeek + (w - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return {{
+    start: monday.toISOString().slice(0, 10),
+    end: sunday.toISOString().slice(0, 10)
+  }};
 }}
 
 function buildDailyBreakdown(bills, camps, sups) {{
@@ -1238,6 +1253,7 @@ function filterDetailByDate(from, to, providerId) {{
   tables.forEach(tid => {{
     const trs = document.querySelectorAll(`#${{tid}} tbody tr`);
     trs.forEach(tr => {{
+      if (tr.classList.contains('sponsored-totals-row')) return;
       const s = tr.dataset.start;
       const e = tr.dataset.end;
       if (!s && !e) {{ tr.style.display = ''; return; }}
@@ -1247,6 +1263,44 @@ function filterDetailByDate(from, to, providerId) {{
       tr.style.display = show ? '' : 'none';
     }});
   }});
+  recalcSponsoredTotals();
+}}
+
+function recalcSponsoredTotals() {{
+  const wrap = document.getElementById('sponsoredTableWrap');
+  if (!wrap) return;
+  const rows = wrap.querySelectorAll('tbody tr:not(.sponsored-totals-row)');
+  const totalsRow = wrap.querySelector('.sponsored-totals-row');
+  if (!totalsRow) return;
+  let orders = 0, sponsored = 0, home = 0, search = 0, gmv = 0, sgmv = 0, spend = 0;
+  rows.forEach(tr => {{
+    if (tr.style.display === 'none') return;
+    const cells = tr.querySelectorAll('td');
+    if (cells.length < 9) return;
+    orders += parseInt(cells[1].textContent.replace(/\\s/g, '')) || 0;
+    sponsored += parseInt(cells[2].textContent.replace(/\\s/g, '')) || 0;
+    home += parseInt(cells[3].textContent.replace(/\\s/g, '')) || 0;
+    search += parseInt(cells[4].textContent.replace(/\\s/g, '')) || 0;
+    gmv += parseCurrency(cells[5].textContent);
+    sgmv += parseCurrency(cells[6].textContent);
+    spend += parseCurrency(cells[7].textContent);
+  }});
+  const roas = spend > 0 ? (sgmv / spend).toFixed(1) : '—';
+  const roasColor = typeof roas === 'string' || roas === '—' ? 'var(--text3)' : roas >= 5 ? 'var(--green)' : roas >= 2 ? 'var(--orange)' : 'var(--red)';
+  totalsRow.querySelector('.st-orders').textContent = orders;
+  totalsRow.querySelector('.st-sponsored').textContent = sponsored;
+  totalsRow.querySelector('.st-home').textContent = home;
+  totalsRow.querySelector('.st-search').textContent = search;
+  totalsRow.querySelector('.st-gmv').textContent = formatCurrency(gmv);
+  totalsRow.querySelector('.st-sgmv').textContent = formatCurrency(sgmv);
+  totalsRow.querySelector('.st-spend').textContent = formatCurrency(spend);
+  const roasEl = totalsRow.querySelector('.st-roas');
+  roasEl.textContent = roas + 'x';
+  roasEl.style.color = roasColor;
+}}
+
+function parseCurrency(str) {{
+  return parseFloat(str.replace(/[^\\d.,-]/g, '').replace(',', '.').replace(/\\s/g, '')) || 0;
 }}
 
 function resetDateFilter() {{
@@ -1255,6 +1309,7 @@ function resetDateFilter() {{
   tables.forEach(tid => {{
     document.querySelectorAll(`#${{tid}} tbody tr`).forEach(tr => tr.style.display = '');
   }});
+  recalcSponsoredTotals();
 }}
 
 // ── Export ──────────────────────────────────────────────────────────────
