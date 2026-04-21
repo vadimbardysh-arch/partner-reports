@@ -1316,14 +1316,21 @@ function resetDateFilter() {{
 
 function getVisibleTableData(wrapperId) {{
   const rows = [];
+  const rowMeta = [];
   const table = document.querySelector(`#${{wrapperId}} table`);
-  if (!table) return {{ headers: [], rows: [] }};
+  if (!table) return {{ headers: [], rows: [], rowMeta: [] }};
   const headers = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim());
   table.querySelectorAll('tbody tr').forEach(tr => {{
     if (tr.style.display === 'none') return;
-    rows.push([...tr.querySelectorAll('td')].map(td => td.textContent.trim()));
+    const cells = [...tr.querySelectorAll('td')].map(td => td.textContent.trim());
+    rows.push(cells);
+    const isBold = tr.style.fontWeight === '700' || tr.style.fontWeight === 'bold';
+    const bg = tr.style.background || '';
+    const isSubtotal = bg.includes('bg3') && isBold;
+    const isGrandTotal = bg.includes('green-bg') && isBold;
+    rowMeta.push({{ isSubtotal, isGrandTotal }});
   }});
-  return {{ headers, rows }};
+  return {{ headers, rows, rowMeta }};
 }}
 
 function exportExcel(providerId) {{
@@ -1421,6 +1428,7 @@ async function exportPDF(providerId) {{
     doc.text(section.title, 14, yPos);
     yPos += 4;
 
+    const meta = data.rowMeta || [];
     doc.autoTable({{
       head: [data.headers],
       body: data.rows,
@@ -1429,6 +1437,23 @@ async function exportPDF(providerId) {{
       styles: {{ fontSize: 7, cellPadding: 1.5, ...fontOpts }},
       headStyles: {{ fillColor: [30, 41, 59], textColor: [148, 163, 184], fontSize: 7, ...fontOpts }},
       margin: {{ left: 14, right: 14 }},
+      didParseCell: function(hookData) {{
+        if (hookData.section !== 'body') return;
+        const rm = meta[hookData.row.index];
+        if (!rm) return;
+        if (rm.isSubtotal) {{
+          hookData.cell.styles.fillColor = [226, 232, 240];
+          hookData.cell.styles.fontStyle = 'bold';
+          hookData.cell.styles.halign = 'center';
+          hookData.cell.styles.fontSize = 8;
+        }}
+        if (rm.isGrandTotal) {{
+          hookData.cell.styles.fillColor = [187, 247, 208];
+          hookData.cell.styles.fontStyle = 'bold';
+          hookData.cell.styles.halign = 'center';
+          hookData.cell.styles.fontSize = 8;
+        }}
+      }}
     }});
 
     yPos = doc.lastAutoTable.finalY + 10;
