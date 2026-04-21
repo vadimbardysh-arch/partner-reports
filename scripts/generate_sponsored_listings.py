@@ -1228,7 +1228,8 @@ function buildDailyBreakdown(bills, camps, sups) {{
       const ps = new Date(periodLabel[0]).toLocaleDateString('uk-UA');
       const pe = new Date(periodLabel[1]).toLocaleDateString('uk-UA');
       rows += `<tr data-start="${{periodLabel[0]}}" data-end="${{periodLabel[1]}}" class="subtotal-row" style="background:var(--bg3);font-weight:700;">
-        <td colspan="2" style="text-align:left;color:var(--text);padding-left:8px;">Разом за тиждень ${{ps}} — ${{pe}}</td>
+        <td style="text-align:left;color:var(--text);padding-left:8px;white-space:nowrap;">Разом за тиждень ${{ps}} — ${{pe}}</td>
+        <td></td>
         <td></td>
         <td></td>
         <td></td>
@@ -1244,7 +1245,8 @@ function buildDailyBreakdown(bills, camps, sups) {{
   if (!rows) return '<div class="empty-state">Немає даних</div>';
 
   rows += `<tr class="grandtotal-row" style="background:var(--green-bg);font-weight:700;font-size:14px;">
-    <td colspan="2" style="text-align:left;color:var(--green);padding-left:8px;">Загальна сума</td>
+    <td style="text-align:left;color:var(--green);padding-left:8px;">Загальна сума</td>
+    <td></td>
     <td></td>
     <td></td>
     <td></td>
