@@ -517,6 +517,12 @@ const STATUS_CLASS = {{
   active: 'active', finished: 'finished', aborted: 'aborted', disabled: 'disabled'
 }};
 
+// Recompute activeListings client-side using resolveStatus (accounts for end date)
+providers.forEach(p => {{
+  const pCamps = campaignsByProvider[p.id] || [];
+  p.activeListings = pCamps.filter(c => resolveStatus(c) === 'active').length;
+}});
+
 // Populate filter dropdowns
 const citySelect = document.getElementById('cityFilter');
 const amSelect = document.getElementById('amFilter');
