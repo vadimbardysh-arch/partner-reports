@@ -78,6 +78,7 @@ def fetch_providers(conn):
             p.account_manager_name,
             p.provider_status,
             p.brand_name,
+            p.group_name,
             p.business_segment_v2,
             p.business_subsegment_v2
         FROM ng_delivery_spark.dim_provider_v2 p
@@ -246,6 +247,7 @@ def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df, 
     for _, row in providers_df.iterrows():
         pid = int(row["provider_id"])
         brand = str(row["brand_name"] or "") if row.get("brand_name") and str(row["brand_name"]) not in ("None", "nan", "") else ""
+        group = str(row["group_name"] or "") if row.get("group_name") and str(row["group_name"]) not in ("None", "nan", "") else ""
         providers.append({
             "id": pid,
             "name": str(row["provider_name"] or ""),
@@ -256,6 +258,7 @@ def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df, 
             "am": str(row["account_manager_name"] or "—"),
             "status": str(row["provider_status"] or ""),
             "brand": brand,
+            "group": group,
             "segment": segment_label(row.get("business_segment_v2"), row.get("business_subsegment_v2")),
             "activeListings": active_map.get(pid, 0),
         })
@@ -304,6 +307,7 @@ def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df, 
     ams = sorted(set(p["am"] for p in providers if p["am"] and p["am"] != "—"))
     segments = sorted(set(p["segment"] for p in providers if p["segment"] and p["segment"] != "—"))
     brands = sorted(set(p["brand"] for p in providers if p["brand"]))
+    groups = sorted(set(p["group"] for p in providers if p["group"]))
     zones_by_city = {}
     for p in providers:
         c = p["city"]
@@ -338,6 +342,7 @@ def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df, 
             "ams": ams,
             "segments": segments,
             "brands": brands,
+            "groups": groups,
             "zonesByCity": zones_by_city,
         },
         "generatedAt": datetime.now(tz=__import__('datetime').timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
@@ -510,6 +515,9 @@ tr:nth-child(odd) {{ background:rgba(22,32,50,0.5); }}
 
     <h3>Бренд</h3>
     <div class="ms-wrap" id="brandFilter"></div>
+
+    <h3>Група</h3>
+    <div class="ms-wrap" id="groupFilter"></div>
 
     <h3>Місто</h3>
     <div class="ms-wrap" id="cityFilter"></div>
@@ -710,6 +718,7 @@ document.querySelectorAll('.ms-wrap').forEach(w => {{
 const allZones = [...new Set(Object.values(filters.zonesByCity).flat())].sort();
 
 const msBrand = createMultiSelect('brandFilter', filters.brands || [], 'Всі бренди', render);
+const msGroup = createMultiSelect('groupFilter', filters.groups || [], 'Всі групи', render);
 const msCity = createMultiSelect('cityFilter', filters.cities, 'Всі міста', () => {{ updateZoneOptions(); render(); }});
 const msAm = createMultiSelect('amFilter', filters.ams, 'Всі AM', render);
 const msZone = createMultiSelect('zoneFilter', allZones, 'Всі зони', render);
@@ -730,7 +739,7 @@ function updateZoneOptions() {{
 document.getElementById('providerSearch').addEventListener('input', render);
 
 document.getElementById('resetBtn').addEventListener('click', () => {{
-  msBrand.clear(); msCity.clear(); msAm.clear(); msZone.clear(); msSegment.clear(); msStatus.clear();
+  msBrand.clear(); msGroup.clear(); msCity.clear(); msAm.clear(); msZone.clear(); msSegment.clear(); msStatus.clear();
   document.getElementById('providerSearch').value = '';
   render();
 }});
@@ -741,6 +750,7 @@ function getFilteredProviders() {{
   const selZones = msZone.getSelected();
   const selSegments = msSegment.getSelected();
   const selBrands = msBrand.getSelected();
+  const selGroups = msGroup.getSelected();
   const selStatus = msStatus.getSelected();
   const search = document.getElementById('providerSearch').value.toLowerCase().trim();
 
@@ -751,15 +761,23 @@ function getFilteredProviders() {{
     }});
   }}
 
+  const groupProviderIds = new Set();
+  if (selGroups.length > 0) {{
+    providers.forEach(p => {{
+      if (selGroups.includes(p.group)) groupProviderIds.add(p.id);
+    }});
+  }}
+
   return providers.filter(p => {{
     if (selCities.length && !selCities.includes(p.city)) return false;
     if (selAms.length && !selAms.includes(p.am)) return false;
     if (selZones.length && !selZones.includes(p.zone)) return false;
     if (selSegments.length && !selSegments.includes(p.segment)) return false;
     if (selBrands.length && !brandProviderIds.has(p.id)) return false;
+    if (selGroups.length && !groupProviderIds.has(p.id)) return false;
     if (selStatus.includes('Активний лістинг') && !selStatus.includes('Неактивний') && p.activeListings === 0) return false;
     if (selStatus.includes('Неактивний') && !selStatus.includes('Активний лістинг') && p.activeListings > 0) return false;
-    if (search && !p.name.toLowerCase().includes(search) && !String(p.id).includes(search) && !p.brand.toLowerCase().includes(search)) return false;
+    if (search && !p.name.toLowerCase().includes(search) && !String(p.id).includes(search) && !p.brand.toLowerCase().includes(search) && !p.group.toLowerCase().includes(search)) return false;
     return true;
   }});
 }}
@@ -878,6 +896,7 @@ function render() {{
           <div class="meta-row">
             <span>ID: ${{p.id}}</span>
             ${{p.brand ? `<span>Бренд: ${{escHtml(p.brand)}}</span>` : ''}}
+            ${{p.group ? `<span>Група: ${{escHtml(p.group)}}</span>` : ''}}
             <span>AM: ${{escHtml(p.am)}}</span>
           </div>
           <div class="listing-badges">${{badges}}</div>
@@ -949,6 +968,7 @@ function openProviderDetail(providerId) {{
       <span class="tag">Статус: ${{escHtml(p.status)}}</span>
       <span class="tag">Сегмент: ${{escHtml(p.segment)}}</span>
       ${{p.brand ? `<span class="tag">Бренд: ${{escHtml(p.brand)}}</span>` : ''}}
+      ${{p.group ? `<span class="tag">Група: ${{escHtml(p.group)}}</span>` : ''}}
     </div>
 
     <div class="kpi-bar" style="margin-bottom:20px;">
