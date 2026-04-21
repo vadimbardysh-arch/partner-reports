@@ -494,14 +494,18 @@ const signupByCampaign = {{}};
 signups.forEach(s => {{ signupByCampaign[s.campaignId] = s; }});
 
 function resolveStatus(campaign) {{
+  const now = new Date();
+  const ended = campaign.end && new Date(campaign.end) < now;
   const su = signupByCampaign[campaign.campaignId];
+
   if (su) {{
-    if (su.state === 'active') return 'active';
     if (su.state === 'disabled') return 'disabled';
     if (su.state === 'cost_exceeding_revenue_aborted') return 'aborted';
+    if (su.state === 'active' && ended) return 'finished';
+    if (su.state === 'active') return 'active';
   }}
   if (campaign.state === 'aborted') return 'aborted';
-  if (campaign.end && new Date(campaign.end) < new Date()) return 'finished';
+  if (ended) return 'finished';
   if (campaign.state === 'approved') return 'active';
   return campaign.state;
 }}
