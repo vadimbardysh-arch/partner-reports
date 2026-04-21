@@ -996,51 +996,95 @@ function buildDailyBreakdown(bills, camps, sups) {{
   const signupMap = {{}};
   sups.forEach(s => {{ signupMap[s.campaignId] = s; }});
 
-  let rows = '';
+  // Group by period key, preserving order
+  const periodGroups = {{}};
+  const periodOrder = [];
   bills.forEach(b => {{
-    const camp = campaignMap[b.campaignId];
-    if (!camp) return;
-    const su = signupMap[b.campaignId];
-    
-    const periodStart = new Date(b.periodStart);
-    const periodEnd = new Date(b.periodEnd);
-    const campStart = camp.start ? new Date(camp.start) : null;
-    const campEnd = camp.end ? new Date(camp.end) : null;
-    const enrollStart = su && su.start ? new Date(su.start) : campStart;
-    const enrollEnd = su && su.end ? new Date(su.end) : campEnd;
+    const key = b.periodStart + '|' + b.periodEnd;
+    if (!periodGroups[key]) {{
+      periodGroups[key] = [];
+      periodOrder.push(key);
+    }}
+    periodGroups[key].push(b);
+  }});
 
-    if (!enrollStart || !enrollEnd) return;
+  let rows = '';
+  let grandTotal = 0;
 
-    const activeStart = new Date(Math.max(enrollStart, periodStart));
-    const activeEnd = new Date(Math.min(enrollEnd, periodEnd));
+  periodOrder.forEach(key => {{
+    const group = periodGroups[key];
+    let weekTotal = 0;
+    let weekExpected = 0;
+    let weekRows = '';
+    const periodLabel = key.split('|');
 
-    if (activeEnd <= activeStart) return;
+    group.forEach(b => {{
+      const camp = campaignMap[b.campaignId];
+      if (!camp) return;
+      const su = signupMap[b.campaignId];
 
-    const activeHours = (activeEnd - activeStart) / 3600000;
-    const active24h = activeHours / 24;
-    const rate = camp.pricePerDay || 0;
-    const expectedCharge = active24h * rate;
+      const periodStart = new Date(b.periodStart);
+      const periodEnd = new Date(b.periodEnd);
+      const campStart = camp.start ? new Date(camp.start) : null;
+      const campEnd = camp.end ? new Date(camp.end) : null;
+      const enrollStart = su && su.start ? new Date(su.start) : campStart;
+      const enrollEnd = su && su.end ? new Date(su.end) : campEnd;
 
-    const ps = periodStart.toLocaleDateString('uk-UA');
-    const pe = periodEnd.toLocaleDateString('uk-UA');
-    const asStr = activeStart.toLocaleDateString('uk-UA') + ' ' + activeStart.toLocaleTimeString('uk-UA', {{hour:'2-digit',minute:'2-digit'}});
-    const aeStr = activeEnd.toLocaleDateString('uk-UA') + ' ' + activeEnd.toLocaleTimeString('uk-UA', {{hour:'2-digit',minute:'2-digit'}});
+      if (!enrollStart || !enrollEnd) return;
 
-    rows += `<tr data-start="${{b.periodStart || ''}}" data-end="${{b.periodEnd || ''}}">
-      <td>${{ps}} — ${{pe}}</td>
-      <td>${{escHtml(camp.placement)}}</td>
-      <td>${{rate}} ₴/день</td>
-      <td>${{asStr}}</td>
-      <td>${{aeStr}}</td>
-      <td class="num">${{activeHours.toFixed(1)}} год</td>
-      <td class="num">${{active24h.toFixed(2)}}</td>
-      <td class="num">${{formatCurrency(expectedCharge)}}</td>
-      <td class="num">${{formatNum(b.freeDays)}}</td>
-      <td class="num" style="font-weight:600;color:var(--orange)">${{formatCurrency(b.weeklyCharge)}}</td>
-    </tr>`;
+      const activeStart = new Date(Math.max(enrollStart, periodStart));
+      const activeEnd = new Date(Math.min(enrollEnd, periodEnd));
+
+      if (activeEnd <= activeStart) return;
+
+      const activeHours = (activeEnd - activeStart) / 3600000;
+      const active24h = activeHours / 24;
+      const rate = camp.pricePerDay || 0;
+      const expectedCharge = active24h * rate;
+
+      weekTotal += b.weeklyCharge || 0;
+      weekExpected += expectedCharge;
+
+      const ps = periodStart.toLocaleDateString('uk-UA');
+      const pe = periodEnd.toLocaleDateString('uk-UA');
+      const asStr = activeStart.toLocaleDateString('uk-UA') + ' ' + activeStart.toLocaleTimeString('uk-UA', {{hour:'2-digit',minute:'2-digit'}});
+      const aeStr = activeEnd.toLocaleDateString('uk-UA') + ' ' + activeEnd.toLocaleTimeString('uk-UA', {{hour:'2-digit',minute:'2-digit'}});
+
+      weekRows += `<tr data-start="${{b.periodStart || ''}}" data-end="${{b.periodEnd || ''}}">
+        <td>${{ps}} — ${{pe}}</td>
+        <td>${{escHtml(camp.placement)}}</td>
+        <td>${{rate}} ₴/день</td>
+        <td>${{asStr}}</td>
+        <td>${{aeStr}}</td>
+        <td class="num">${{activeHours.toFixed(1)}} год</td>
+        <td class="num">${{active24h.toFixed(2)}}</td>
+        <td class="num">${{formatCurrency(expectedCharge)}}</td>
+        <td class="num">${{formatNum(b.freeDays)}}</td>
+        <td class="num" style="font-weight:600;color:var(--orange)">${{formatCurrency(b.weeklyCharge)}}</td>
+      </tr>`;
+    }});
+
+    if (weekRows) {{
+      rows += weekRows;
+      grandTotal += weekTotal;
+      const ps = new Date(periodLabel[0]).toLocaleDateString('uk-UA');
+      const pe = new Date(periodLabel[1]).toLocaleDateString('uk-UA');
+      rows += `<tr data-start="${{periodLabel[0]}}" data-end="${{periodLabel[1]}}" style="background:var(--bg3);font-weight:700;">
+        <td colspan="7" style="text-align:right;color:var(--text);">Разом за тиждень ${{ps}} — ${{pe}}:</td>
+        <td class="num" style="color:var(--text);">${{formatCurrency(weekExpected)}}</td>
+        <td></td>
+        <td class="num" style="color:var(--orange);font-size:14px;">${{formatCurrency(weekTotal)}}</td>
+      </tr>`;
+    }}
   }});
 
   if (!rows) return '<div class="empty-state">Немає даних</div>';
+
+  rows += `<tr style="background:var(--green-bg);font-weight:700;font-size:14px;">
+    <td colspan="9" style="text-align:right;color:var(--green);">Загальна сума:</td>
+    <td class="num" style="color:var(--green);">${{formatCurrency(grandTotal)}}</td>
+  </tr>`;
+
   return `<table><thead><tr>
     <th>Період</th><th>Розміщення</th><th>Ціна/день</th>
     <th>Активний з</th><th>Активний до</th><th>Год. активності</th>
