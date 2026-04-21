@@ -163,6 +163,34 @@ def fetch_active_listing_counts(conn):
     """)
 
 
+def fetch_sponsored_orders(conn):
+    """Weekly sponsored order metrics per provider for Ukraine."""
+    return query(conn, """
+        SELECT
+            f.provider_id,
+            f.order_week,
+            COUNT(*) AS total_orders,
+            SUM(CASE WHEN d.is_sponsor_listed_order = true THEN 1 ELSE 0 END) AS sponsored_orders,
+            SUM(CASE WHEN d.is_sponsor_listing_placed_on_home_screen = true THEN 1 ELSE 0 END) AS home_orders,
+            SUM(CASE WHEN d.is_sponsor_listing_placed_on_search_result = true THEN 1 ELSE 0 END) AS search_orders,
+            ROUND(SUM(f.order_gmv), 0) AS total_gmv,
+            ROUND(SUM(CASE WHEN d.is_sponsor_listed_order = true THEN f.order_gmv ELSE 0 END), 0) AS sponsored_gmv
+        FROM ng_delivery_spark.fact_order_delivery f
+        JOIN ng_delivery_spark.dim_order_delivery d ON f.order_id = d.order_id
+        WHERE f.order_state = 'delivered'
+          AND f.city_country_code = 'ua'
+          AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), 180)
+          AND f.provider_id IN (
+              SELECT DISTINCT provider_id
+              FROM ng_delivery_spark.delivery_paid_visibility_signup s
+              JOIN ng_delivery_spark.dim_delivery_city c ON s.city_id = c.city_id
+              WHERE c.country_code = 'ua'
+          )
+        GROUP BY f.provider_id, f.order_week
+        ORDER BY f.provider_id, f.order_week
+    """)
+
+
 # ── Processing ─────────────────────────────────────────────────────────────
 
 def parse_pricing(pricing_json):
@@ -206,7 +234,7 @@ def segment_label(seg_v2, subseg_v2):
     return "—"
 
 
-def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df):
+def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df, sponsored_df=None):
     """Process raw DataFrames into structured JSON-ready dicts."""
 
     active_map = {}
@@ -285,11 +313,26 @@ def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df):
         zones_by_city[c].add(z)
     zones_by_city = {c: sorted(zs) for c, zs in zones_by_city.items()}
 
+    sponsored = []
+    if sponsored_df is not None and len(sponsored_df):
+        for _, row in sponsored_df.iterrows():
+            sponsored.append({
+                "providerId": int(row["provider_id"]),
+                "week": str(row["order_week"]),
+                "totalOrders": to_native(row["total_orders"], 0),
+                "sponsoredOrders": to_native(row["sponsored_orders"], 0),
+                "homeOrders": to_native(row["home_orders"], 0),
+                "searchOrders": to_native(row["search_orders"], 0),
+                "totalGmv": to_native(row["total_gmv"], 0),
+                "sponsoredGmv": to_native(row["sponsored_gmv"], 0),
+            })
+
     return {
         "providers": providers,
         "campaigns": campaigns,
         "signups": signups,
         "billing": billing,
+        "sponsored": sponsored,
         "filters": {
             "cities": cities,
             "ams": ams,
@@ -530,6 +573,13 @@ const billingByProvider = {{}};
 billing.forEach(b => {{
   if (!billingByProvider[b.providerId]) billingByProvider[b.providerId] = [];
   billingByProvider[b.providerId].push(b);
+}});
+
+const sponsored = DATA.sponsored || [];
+const sponsoredByProvider = {{}};
+sponsored.forEach(s => {{
+  if (!sponsoredByProvider[s.providerId]) sponsoredByProvider[s.providerId] = [];
+  sponsoredByProvider[s.providerId].push(s);
 }});
 
 const campaignMap = {{}};
@@ -883,9 +933,13 @@ function openProviderDetail(providerId) {{
   }});
   const pBilling = billingByProvider[providerId] || [];
   const pSignups = signupsByProvider[providerId] || [];
+  const pSponsored = sponsoredByProvider[providerId] || [];
 
   const totalSpend = pBilling.reduce((s, b) => s + (b.weeklyCharge || 0), 0);
   const totalFreeDays = pBilling.reduce((s, b) => s + (b.freeDays || 0), 0);
+  const totalSponsoredOrders = pSponsored.reduce((s, r) => s + (r.sponsoredOrders || 0), 0);
+  const totalSponsoredGmv = pSponsored.reduce((s, r) => s + (r.sponsoredGmv || 0), 0);
+  const roas = totalSpend > 0 ? (totalSponsoredGmv / totalSpend).toFixed(1) : '—';
 
   body.innerHTML = `
     <div class="modal-meta">
@@ -901,7 +955,9 @@ function openProviderDetail(providerId) {{
       <div class="kpi"><div class="val">${{pCampaigns.length}}</div><div class="lbl">Кампаній</div></div>
       <div class="kpi green"><div class="val">${{pCampaigns.filter(c=>resolveStatus(c)==='active').length}}</div><div class="lbl">Активних</div></div>
       <div class="kpi orange"><div class="val">${{formatCurrency(totalSpend)}}</div><div class="lbl">Загальні витрати</div></div>
-      <div class="kpi blue"><div class="val">${{totalFreeDays.toFixed(1)}}</div><div class="lbl">Безкоштовних днів</div></div>
+      <div class="kpi blue"><div class="val">${{totalSponsoredOrders}}</div><div class="lbl">Замовлень з реклами</div></div>
+      <div class="kpi green"><div class="val">${{formatCurrency(totalSponsoredGmv)}}</div><div class="lbl">GMV з реклами</div></div>
+      <div class="kpi" style="border-color:${{typeof roas === 'string' ? 'var(--bg3)' : roas >= 5 ? 'var(--green)' : roas >= 2 ? 'var(--orange)' : 'var(--red)'}}"><div class="val" style="color:${{typeof roas === 'string' ? 'var(--text3)' : roas >= 5 ? 'var(--green)' : roas >= 2 ? 'var(--orange)' : 'var(--red)'}}">${{roas}}x</div><div class="lbl">ROAS</div></div>
     </div>
 
     <div class="detail-toolbar">
@@ -916,6 +972,13 @@ function openProviderDetail(providerId) {{
       <h3>Кампанії (категорії)</h3>
       <div class="tbl-wrap" id="campaignsTableWrap">
         ${{buildCampaignsTable(pCampaigns)}}
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h3>Замовлення з реклами та ROAS по тижнях</h3>
+      <div class="tbl-wrap scroll-table" id="sponsoredTableWrap">
+        ${{buildSponsoredTable(pSponsored, pBilling)}}
       </div>
     </div>
 
@@ -988,6 +1051,84 @@ function buildBillingTable(bills, camps) {{
     </tr>`;
   }});
   return `<table><thead><tr><th>Період</th><th>Розміщення</th><th>Ціна/день</th><th>Безкошт. дні</th><th>Списання</th></tr></thead><tbody>${{rows}}</tbody></table>`;
+}}
+
+function buildSponsoredTable(sponsoredRows, bills) {{
+  if (!sponsoredRows.length) return '<div class="empty-state">Немає даних</div>';
+
+  // Aggregate billing spend per week
+  const spendByWeek = {{}};
+  bills.forEach(b => {{
+    // Convert period dates to week key (approximate: use period start date to derive week)
+    const ps = new Date(b.periodStart);
+    const weekNum = getISOWeek(ps);
+    const key = ps.getFullYear() + '-W' + weekNum;
+    spendByWeek[key] = (spendByWeek[key] || 0) + (b.weeklyCharge || 0);
+  }});
+
+  const sorted = sponsoredRows.slice().sort((a, b) => {{
+    const [ay, aw] = a.week.split('-W').map(Number);
+    const [by, bw] = b.week.split('-W').map(Number);
+    return ay !== by ? ay - by : aw - bw;
+  }});
+
+  let rows = '';
+  let totOrders = 0, totSponsored = 0, totHome = 0, totSearch = 0, totGmv = 0, totSGmv = 0, totSpend = 0;
+
+  sorted.forEach(r => {{
+    const spend = spendByWeek[r.week] || 0;
+    const roas = spend > 0 ? (r.sponsoredGmv / spend).toFixed(1) : '—';
+    const roasColor = typeof roas === 'string' ? 'var(--text3)' : roas >= 5 ? 'var(--green)' : roas >= 2 ? 'var(--orange)' : 'var(--red)';
+
+    totOrders += r.totalOrders || 0;
+    totSponsored += r.sponsoredOrders || 0;
+    totHome += r.homeOrders || 0;
+    totSearch += r.searchOrders || 0;
+    totGmv += r.totalGmv || 0;
+    totSGmv += r.sponsoredGmv || 0;
+    totSpend += spend;
+
+    rows += `<tr>
+      <td>${{r.week}}</td>
+      <td class="num">${{r.totalOrders}}</td>
+      <td class="num" style="font-weight:600">${{r.sponsoredOrders}}</td>
+      <td class="num">${{r.homeOrders}}</td>
+      <td class="num">${{r.searchOrders}}</td>
+      <td class="num">${{formatCurrency(r.totalGmv)}}</td>
+      <td class="num" style="font-weight:600;color:var(--green)">${{formatCurrency(r.sponsoredGmv)}}</td>
+      <td class="num" style="color:var(--orange)">${{formatCurrency(spend)}}</td>
+      <td class="num" style="font-weight:700;color:${{roasColor}}">${{roas}}x</td>
+    </tr>`;
+  }});
+
+  const totalRoas = totSpend > 0 ? (totSGmv / totSpend).toFixed(1) : '—';
+  const trColor = typeof totalRoas === 'string' ? 'var(--text3)' : totalRoas >= 5 ? 'var(--green)' : totalRoas >= 2 ? 'var(--orange)' : 'var(--red)';
+
+  rows += `<tr style="background:var(--bg3);font-weight:700;">
+    <td>Разом</td>
+    <td class="num">${{totOrders}}</td>
+    <td class="num">${{totSponsored}}</td>
+    <td class="num">${{totHome}}</td>
+    <td class="num">${{totSearch}}</td>
+    <td class="num">${{formatCurrency(totGmv)}}</td>
+    <td class="num" style="color:var(--green)">${{formatCurrency(totSGmv)}}</td>
+    <td class="num" style="color:var(--orange)">${{formatCurrency(totSpend)}}</td>
+    <td class="num" style="font-size:14px;color:${{trColor}}">${{totalRoas}}x</td>
+  </tr>`;
+
+  return `<table><thead><tr>
+    <th>Тиждень</th><th>Всього замовлень</th><th>З реклами</th>
+    <th>Home Screen</th><th>Search</th><th>Загальний GMV</th>
+    <th>GMV з реклами</th><th>Витрати на рекламу</th><th>ROAS</th>
+  </tr></thead><tbody>${{rows}}</tbody></table>`;
+}}
+
+function getISOWeek(d) {{
+  const date = new Date(d.getTime());
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+  const week1 = new Date(date.getFullYear(), 0, 4);
+  return 1 + Math.round(((date - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
 }}
 
 function buildDailyBreakdown(bills, camps, sups) {{
@@ -1093,7 +1234,7 @@ function buildDailyBreakdown(bills, camps, sups) {{
 }}
 
 function filterDetailByDate(from, to, providerId) {{
-  const tables = ['campaignsTableWrap', 'billingTableWrap', 'dailyTableWrap'];
+  const tables = ['campaignsTableWrap', 'billingTableWrap', 'dailyTableWrap', 'sponsoredTableWrap'];
   tables.forEach(tid => {{
     const trs = document.querySelectorAll(`#${{tid}} tbody tr`);
     trs.forEach(tr => {{
@@ -1110,7 +1251,7 @@ function filterDetailByDate(from, to, providerId) {{
 
 function resetDateFilter() {{
   if (currentDetailPicker) currentDetailPicker.clear();
-  const tables = ['campaignsTableWrap', 'billingTableWrap', 'dailyTableWrap'];
+  const tables = ['campaignsTableWrap', 'billingTableWrap', 'dailyTableWrap', 'sponsoredTableWrap'];
   tables.forEach(tid => {{
     document.querySelectorAll(`#${{tid}} tbody tr`).forEach(tr => tr.style.display = '');
   }});
@@ -1138,6 +1279,12 @@ function exportExcel(providerId) {{
   if (campaignsData.rows.length) {{
     const ws1 = XLSX.utils.aoa_to_sheet([campaignsData.headers, ...campaignsData.rows]);
     XLSX.utils.book_append_sheet(wb, ws1, 'Кампанії');
+  }}
+
+  const sponsoredData = getVisibleTableData('sponsoredTableWrap');
+  if (sponsoredData.rows.length) {{
+    const ws1b = XLSX.utils.aoa_to_sheet([sponsoredData.headers, ...sponsoredData.rows]);
+    XLSX.utils.book_append_sheet(wb, ws1b, 'Замовлення та ROAS');
   }}
 
   const billingData = getVisibleTableData('billingTableWrap');
@@ -1201,6 +1348,7 @@ async function exportPDF(providerId) {{
 
   const sections = [
     {{ title: 'Кампанії', id: 'campaignsTableWrap' }},
+    {{ title: 'Замовлення з реклами та ROAS', id: 'sponsoredTableWrap' }},
     {{ title: 'Біллінг по тижнях', id: 'billingTableWrap' }},
     {{ title: 'Розрахунок по днях', id: 'dailyTableWrap' }},
   ];
@@ -1285,11 +1433,15 @@ def main():
         active_df = fetch_active_listing_counts(conn)
         print(f"    → {len(active_df)} providers with active listings")
 
+        print("  Fetching sponsored order metrics...")
+        sponsored_df = fetch_sponsored_orders(conn)
+        print(f"    → {len(sponsored_df)} weekly rows")
+
     finally:
         conn.close()
 
     print("  Processing data...")
-    data = process_data(providers_df, campaigns_df, signups_df, billing_df, active_df)
+    data = process_data(providers_df, campaigns_df, signups_df, billing_df, active_df, sponsored_df)
 
     print("  Generating HTML...")
     html = generate_html(data)
