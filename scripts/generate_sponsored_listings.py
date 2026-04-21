@@ -1166,6 +1166,7 @@ function buildDailyBreakdown(bills, camps, sups) {{
 
   let rows = '';
   let grandTotal = 0;
+  let grandExpected = 0;
 
   periodOrder.forEach(key => {{
     const group = periodGroups[key];
@@ -1223,21 +1224,34 @@ function buildDailyBreakdown(bills, camps, sups) {{
     if (weekRows) {{
       rows += weekRows;
       grandTotal += weekTotal;
+      grandExpected += weekExpected;
       const ps = new Date(periodLabel[0]).toLocaleDateString('uk-UA');
       const pe = new Date(periodLabel[1]).toLocaleDateString('uk-UA');
-      rows += `<tr data-start="${{periodLabel[0]}}" data-end="${{periodLabel[1]}}" style="background:var(--bg3);font-weight:700;">
-        <td colspan="7" style="text-align:right;color:var(--text);">Разом за тиждень ${{ps}} — ${{pe}}:</td>
-        <td class="num" style="color:var(--text);">${{formatCurrency(weekExpected)}}</td>
+      rows += `<tr data-start="${{periodLabel[0]}}" data-end="${{periodLabel[1]}}" class="subtotal-row" style="background:var(--bg3);font-weight:700;">
+        <td colspan="2" style="text-align:left;color:var(--text);padding-left:8px;">Разом за тиждень ${{ps}} — ${{pe}}</td>
         <td></td>
-        <td class="num" style="color:var(--orange);font-size:14px;">${{formatCurrency(weekTotal)}}</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td class="num" style="color:var(--text);font-size:13px;">${{formatCurrency(weekExpected)}}</td>
+        <td></td>
+        <td class="num" style="color:var(--orange);font-size:13px;">${{formatCurrency(weekTotal)}}</td>
       </tr>`;
     }}
   }});
 
   if (!rows) return '<div class="empty-state">Немає даних</div>';
 
-  rows += `<tr style="background:var(--green-bg);font-weight:700;font-size:14px;">
-    <td colspan="9" style="text-align:right;color:var(--green);">Загальна сума:</td>
+  rows += `<tr class="grandtotal-row" style="background:var(--green-bg);font-weight:700;font-size:14px;">
+    <td colspan="2" style="text-align:left;color:var(--green);padding-left:8px;">Загальна сума</td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td class="num" style="color:var(--green);">${{formatCurrency(grandExpected)}}</td>
+    <td></td>
     <td class="num" style="color:var(--green);">${{formatCurrency(grandTotal)}}</td>
   </tr>`;
 
@@ -1326,9 +1340,10 @@ function getVisibleTableData(wrapperId) {{
     rows.push(cells);
     const isBold = tr.style.fontWeight === '700' || tr.style.fontWeight === 'bold';
     const bg = tr.style.background || '';
-    const isSubtotal = bg.includes('bg3') && isBold;
-    const isGrandTotal = bg.includes('green-bg') && isBold;
-    rowMeta.push({{ isSubtotal, isGrandTotal }});
+    const isSubtotal = tr.classList.contains('subtotal-row') || (bg.includes('bg3') && isBold);
+    const isGrandTotal = tr.classList.contains('grandtotal-row') || (bg.includes('green-bg') && isBold);
+    const isSponsoredTotals = tr.classList.contains('sponsored-totals-row');
+    rowMeta.push({{ isSubtotal: isSubtotal || isSponsoredTotals, isGrandTotal }});
   }});
   return {{ headers, rows, rowMeta }};
 }}
@@ -1444,14 +1459,18 @@ async function exportPDF(providerId) {{
         if (rm.isSubtotal) {{
           hookData.cell.styles.fillColor = [226, 232, 240];
           hookData.cell.styles.fontStyle = 'bold';
-          hookData.cell.styles.halign = 'center';
           hookData.cell.styles.fontSize = 8;
+          const val = (hookData.cell.raw || '').toString().trim();
+          if (val && !val.match(/^[\\d\\s.,₴]+$/)) hookData.cell.styles.halign = 'left';
+          else if (val) hookData.cell.styles.halign = 'right';
         }}
         if (rm.isGrandTotal) {{
           hookData.cell.styles.fillColor = [187, 247, 208];
           hookData.cell.styles.fontStyle = 'bold';
-          hookData.cell.styles.halign = 'center';
           hookData.cell.styles.fontSize = 8;
+          const val = (hookData.cell.raw || '').toString().trim();
+          if (val && !val.match(/^[\\d\\s.,₴]+$/)) hookData.cell.styles.halign = 'left';
+          else if (val) hookData.cell.styles.halign = 'right';
         }}
       }}
     }});
