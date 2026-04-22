@@ -282,7 +282,7 @@ def fetch_campaigns(conn):
       c.name AS campaign_name,
       c.spend_objective,
       c.target,
-      ROUND(c.discount_level * 100, 0) AS discount_pct,
+      ROUND(c.discount_level, 0) AS discount_pct,
       c.cost_share_v2,
       DATE(c.campaign_start) AS start_date,
       DATE(c.campaign_end) AS end_date,
@@ -458,10 +458,17 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         raw_obj = str(r["spend_objective"] or "")
         raw_target = str(r["target"] or "")
         cname = str(r["campaign_name"] or "")
-        short_name = cname[:80] + ("…" if len(cname) > 80 else "")
+        disc_pct = to_native(r["discount_pct"])
+        target_ua = TARGET_UA.get(raw_target, raw_target)
+        obj_ua = SPEND_OBJ_UA.get(raw_obj, raw_obj)
+        if raw_target == "delivery_price":
+            friendly = f"Безк. доставка — {obj_ua}"
+        else:
+            friendly = f"{int(disc_pct)}% на товар — {obj_ua}"
         campaigns.append({
             "campaign_id": to_native(r["campaign_id"]),
-            "name": short_name,
+            "name": friendly,
+            "full_name": cname[:120],
             "objective": SPEND_OBJ_UA.get(raw_obj, raw_obj),
             "target": TARGET_UA.get(raw_target, raw_target),
             "discount_pct": to_native(r["discount_pct"]),
@@ -1116,14 +1123,14 @@ function renderCampaigns() {{
   }}
 
   let t = '<table class="data-table"><thead><tr>'
-    + '<th>Кампанія</th><th>Тип</th><th>Знижка</th><th>Хто платить</th>'
+    + '<th>Кампанія</th><th>Хто платить</th>'
     + '<th>Дати</th><th>Заклади</th>'
     + '<th class="text-right">Зам.</th><th class="text-right">Знижка ₴</th>'
     + '<th class="text-right">Bolt ₴</th><th class="text-right">Заклад ₴</th>'
     + '</tr></thead><tbody>';
 
   if (campList.length === 0) {{
-    t += '<tr><td colspan="10" style="text-align:center;color:var(--text2);padding:24px">Немає кампаній за цей тиждень</td></tr>';
+    t += '<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:24px">Немає кампаній за цей тиждень</td></tr>';
   }} else {{
     campList.forEach(c => {{
       const provArr = [...c.providers];
@@ -1134,23 +1141,18 @@ function renderCampaigns() {{
       const payerCls = payer === 'Bolt' ? 'color:var(--blue);font-weight:600'
         : payer === 'Заклад' ? 'color:var(--neg);font-weight:600'
         : payer === 'Спільно' ? 'color:var(--warn);font-weight:600' : '';
-      const discLabel = c.target === 'Доставка'
-        ? 'Безкоштовна доставка'
-        : c.discount_pct + '% на товар';
       t += '<tr>';
-      t += '<td class="comment-cell" style="max-width:220px;font-size:11px">' + c.name + '</td>';
-      t += '<td style="font-size:11px">' + c.objective + '</td>';
-      t += '<td style="white-space:nowrap">' + discLabel + '</td>';
-      t += '<td style="' + payerCls + '">' + payer + '</td>';
+      t += '<td style="white-space:normal;min-width:180px;max-width:280px" title="' + (c.full_name || '').replace(/"/g,'&quot;') + '">' + c.name + '</td>';
+      t += '<td style="' + payerCls + ';white-space:nowrap">' + payer + '</td>';
       t += '<td style="font-size:11px;white-space:nowrap">' + c.start_date + ' → ' + c.end_date + '</td>';
-      t += '<td style="font-size:11px">' + provText + '</td>';
+      t += '<td style="font-size:12px">' + provText + '</td>';
       t += '<td class="text-right">' + c.orders + '</td>';
       t += '<td class="text-right">₴' + c.total_discount.toLocaleString('uk-UA') + '</td>';
       t += '<td class="text-right" style="color:var(--blue)">₴' + c.bolt_spend.toLocaleString('uk-UA') + '</td>';
       t += '<td class="text-right" style="color:var(--neg)">₴' + c.provider_spend.toLocaleString('uk-UA') + '</td>';
       t += '</tr>';
     }});
-    t += '<tr class="total-row"><td colspan="6">Всього</td>';
+    t += '<tr class="total-row"><td colspan="4">Всього</td>';
     t += '<td class="text-right">' + totOrd + '</td>';
     t += '<td class="text-right">₴' + totDisc.toLocaleString('uk-UA') + '</td>';
     t += '<td class="text-right" style="color:var(--blue)">₴' + totBolt.toLocaleString('uk-UA') + '</td>';
