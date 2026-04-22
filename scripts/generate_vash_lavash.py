@@ -275,9 +275,52 @@ def fetch_revenue_weekly(conn):
     """)
 
 
+def fetch_campaigns(conn):
+    return query(conn, f"""
+    SELECT
+      c.campaign_id,
+      c.name AS campaign_name,
+      c.spend_objective,
+      c.target,
+      ROUND(c.discount_level * 100, 0) AS discount_pct,
+      c.cost_share_v2,
+      DATE(c.campaign_start) AS start_date,
+      DATE(c.campaign_end) AS end_date,
+      c.provider_id,
+      CONCAT(YEAR(c.order_created_date), '-W', WEEKOFYEAR(c.order_created_date)) AS order_week,
+      COUNT(*) AS orders,
+      ROUND(SUM(c.discount_value_local), 0) AS total_discount_uah,
+      ROUND(SUM(c.bolt_spend_local), 0) AS bolt_spend_uah,
+      ROUND(SUM(c.provider_spend_local), 0) AS provider_spend_uah
+    FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+    WHERE c.provider_id IN ({PROVIDER_IDS})
+      AND c.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    GROUP BY c.campaign_id, c.name, c.spend_objective, c.target,
+             c.discount_level, c.cost_share_v2,
+             DATE(c.campaign_start), DATE(c.campaign_end),
+             c.provider_id,
+             CONCAT(YEAR(c.order_created_date), '-W', WEEKOFYEAR(c.order_created_date))
+    ORDER BY order_week DESC, orders DESC
+    """)
+
+
+SPEND_OBJ_UA = {
+    "provider_campaign_obligations_commitments": "Зобов'язання",
+    "provider_campaign_portal": "Портал провайдера",
+    "provider_campaign_marketing": "Маркетинг",
+    "provider_campaign_locations": "Локації",
+    "bolt_plus_campaign": "Bolt Plus",
+    "new_city_launch": "Запуск міста",
+    "activation": "Активація",
+    "marketing_3rd_party_partnership": "Партнерство",
+    "retention": "Утримання",
+}
+TARGET_UA = {"delivery_price": "Доставка", "item_price": "Знижка на товар"}
+
+
 # ── Build data for HTML ──────────────────────────────────────────────────
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df):
     data = {}
 
     stores_map = {}
@@ -408,6 +451,32 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         }
     revenue = dict(sorted(revenue.items(), key=lambda x: week_sort_key(x[0])))
     data["revenue"] = revenue
+
+    campaigns = []
+    for _, r in campaigns_df.iterrows():
+        pid = int(to_native(r["provider_id"]))
+        raw_obj = str(r["spend_objective"] or "")
+        raw_target = str(r["target"] or "")
+        cname = str(r["campaign_name"] or "")
+        short_name = cname[:80] + ("…" if len(cname) > 80 else "")
+        campaigns.append({
+            "campaign_id": to_native(r["campaign_id"]),
+            "name": short_name,
+            "objective": SPEND_OBJ_UA.get(raw_obj, raw_obj),
+            "target": TARGET_UA.get(raw_target, raw_target),
+            "discount_pct": to_native(r["discount_pct"]),
+            "cost_share": to_native(r["cost_share_v2"]),
+            "start_date": str(r["start_date"]),
+            "end_date": str(r["end_date"]),
+            "provider_id": pid,
+            "provider_short": VASH_LAVASH_PROVIDERS.get(pid, {}).get("short", str(pid)),
+            "order_week": str(r["order_week"]),
+            "orders": to_native(r["orders"]),
+            "total_discount": to_native(r["total_discount_uah"]),
+            "bolt_spend": to_native(r["bolt_spend_uah"]),
+            "provider_spend": to_native(r["provider_spend_uah"]),
+        })
+    data["campaigns"] = campaigns
 
     return data
 
@@ -572,6 +641,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
   <a href="#ops-section" class="nav-link">Операції</a>
   <a href="#stores-section" class="nav-link">Деталі закладів</a>
   <a href="#revenue-section" class="nav-link">Дохідність</a>
+  <a href="#campaigns-section" class="nav-link">Кампанії</a>
   <a href="#orders-detail-section" class="nav-link">Деталі замовлень</a>
   <a href="#complaints-section" class="nav-link">Скарги</a>
   <a href="#cancelled-section" class="nav-link">Скасовані</a>
@@ -616,6 +686,12 @@ body.dark .revenue-summary-table th{{background:#111827}}
       <div class="chart-card"><h3>Дохід по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-revenue"></canvas></div></div>
       <div class="chart-card"><h3>Замовлення — деталі по закладах</h3><div class="chart-wrap" style="min-height:auto"><div id="revenue-summary"></div></div></div>
     </div>
+  </section>
+
+  <section id="campaigns-section" class="section">
+    <div class="section-title"><span class="section-icon">🎯</span> Кампанії <span id="campaigns-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="section-insight" id="campaigns-summary"></div>
+    <div class="table-wrap scroll-table" id="campaigns-wrap"></div>
   </section>
 
   <section id="orders-detail-section" class="section">
@@ -1007,6 +1083,84 @@ function renderRevenueChart() {{
   document.getElementById('revenue-summary').innerHTML = sumHtml;
 }}
 
+function renderCampaigns() {{
+  const ids = getFilteredStoreIds();
+  const selW = getSelectedWeek();
+  document.getElementById('campaigns-week-label').textContent = '— ' + selW;
+
+  const rows = (D.campaigns || []).filter(r => r.order_week === selW && ids.includes(r.provider_id));
+
+  const bycamp = {{}};
+  rows.forEach(r => {{
+    const key = r.campaign_id;
+    if (!bycamp[key]) bycamp[key] = {{ ...r, orders: 0, total_discount: 0, bolt_spend: 0, provider_spend: 0, providers: new Set() }};
+    bycamp[key].orders += r.orders;
+    bycamp[key].total_discount += r.total_discount;
+    bycamp[key].bolt_spend += r.bolt_spend;
+    bycamp[key].provider_spend += r.provider_spend;
+    bycamp[key].providers.add(r.provider_short);
+  }});
+  const campList = Object.values(bycamp).sort((a, b) => b.orders - a.orders);
+
+  let totOrd = 0, totDisc = 0, totBolt = 0, totProv = 0;
+  campList.forEach(c => {{ totOrd += c.orders; totDisc += c.total_discount; totBolt += c.bolt_spend; totProv += c.provider_spend; }});
+
+  const summaryEl = document.getElementById('campaigns-summary');
+  if (campList.length === 0) {{
+    summaryEl.innerHTML = '<b>' + selW + '</b>. Немає активних кампаній для обраних закладів.';
+  }} else {{
+    summaryEl.innerHTML = '<b>' + selW + '</b>. Активних кампаній: <b>' + campList.length + '</b>. '
+      + 'Замовлень з кампаніями: <b>' + totOrd + '</b>. '
+      + 'Загальна знижка: <b>₴' + totDisc.toLocaleString('uk-UA') + '</b> '
+      + '(Bolt: ₴' + totBolt.toLocaleString('uk-UA') + ', Заклад: ₴' + totProv.toLocaleString('uk-UA') + ').';
+  }}
+
+  let t = '<table class="data-table"><thead><tr>'
+    + '<th>Кампанія</th><th>Тип</th><th>Знижка</th><th>Хто платить</th>'
+    + '<th>Дати</th><th>Заклади</th>'
+    + '<th class="text-right">Зам.</th><th class="text-right">Знижка ₴</th>'
+    + '<th class="text-right">Bolt ₴</th><th class="text-right">Заклад ₴</th>'
+    + '</tr></thead><tbody>';
+
+  if (campList.length === 0) {{
+    t += '<tr><td colspan="10" style="text-align:center;color:var(--text2);padding:24px">Немає кампаній за цей тиждень</td></tr>';
+  }} else {{
+    campList.forEach(c => {{
+      const provArr = [...c.providers];
+      const provText = provArr.length > 3 ? provArr.slice(0, 3).join(', ') + ' +' + (provArr.length - 3) : provArr.join(', ');
+      const payer = c.provider_spend > 0 && c.bolt_spend > 0 ? 'Спільно'
+        : c.provider_spend > 0 ? 'Заклад'
+        : c.bolt_spend > 0 ? 'Bolt' : '—';
+      const payerCls = payer === 'Bolt' ? 'color:var(--blue);font-weight:600'
+        : payer === 'Заклад' ? 'color:var(--neg);font-weight:600'
+        : payer === 'Спільно' ? 'color:var(--warn);font-weight:600' : '';
+      const discLabel = c.target === 'Доставка'
+        ? 'Безкоштовна доставка'
+        : c.discount_pct + '% на товар';
+      t += '<tr>';
+      t += '<td class="comment-cell" style="max-width:220px;font-size:11px">' + c.name + '</td>';
+      t += '<td style="font-size:11px">' + c.objective + '</td>';
+      t += '<td style="white-space:nowrap">' + discLabel + '</td>';
+      t += '<td style="' + payerCls + '">' + payer + '</td>';
+      t += '<td style="font-size:11px;white-space:nowrap">' + c.start_date + ' → ' + c.end_date + '</td>';
+      t += '<td style="font-size:11px">' + provText + '</td>';
+      t += '<td class="text-right">' + c.orders + '</td>';
+      t += '<td class="text-right">₴' + c.total_discount.toLocaleString('uk-UA') + '</td>';
+      t += '<td class="text-right" style="color:var(--blue)">₴' + c.bolt_spend.toLocaleString('uk-UA') + '</td>';
+      t += '<td class="text-right" style="color:var(--neg)">₴' + c.provider_spend.toLocaleString('uk-UA') + '</td>';
+      t += '</tr>';
+    }});
+    t += '<tr class="total-row"><td colspan="6">Всього</td>';
+    t += '<td class="text-right">' + totOrd + '</td>';
+    t += '<td class="text-right">₴' + totDisc.toLocaleString('uk-UA') + '</td>';
+    t += '<td class="text-right" style="color:var(--blue)">₴' + totBolt.toLocaleString('uk-UA') + '</td>';
+    t += '<td class="text-right" style="color:var(--neg)">₴' + totProv.toLocaleString('uk-UA') + '</td>';
+    t += '</tr>';
+  }}
+  t += '</tbody></table>';
+  document.getElementById('campaigns-wrap').innerHTML = t;
+}}
+
 function fmtDiscount(r) {{
   const bolt = r.bolt_discount || 0;
   const prov = r.provider_discount || 0;
@@ -1173,6 +1327,7 @@ function renderAll() {{
   renderOpsCharts();
   renderStoresTable();
   renderRevenueChart();
+  renderCampaigns();
   renderOrdersDetail();
   renderComplaints();
   renderCancelled();
@@ -1282,10 +1437,14 @@ def main():
         print("  Fetching revenue weekly…")
         revenue_df = fetch_revenue_weekly(conn)
         print(f"  → {len(revenue_df)} rows")
+
+        print("  Fetching campaigns…")
+        campaigns_df = fetch_campaigns(conn)
+        print(f"  → {len(campaigns_df)} rows")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "vash-lavash"
