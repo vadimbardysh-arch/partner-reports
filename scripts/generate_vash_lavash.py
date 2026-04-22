@@ -698,6 +698,10 @@ body.dark .revenue-summary-table th{{background:#111827}}
   <section id="campaigns-section" class="section">
     <div class="section-title"><span class="section-icon">🎯</span> Кампанії <span id="campaigns-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
     <div class="section-insight" id="campaigns-summary"></div>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Витрати закладів на кампанії по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-spend"></canvas></div></div>
+      <div class="chart-card"><h3>Витрати Bolt на кампанії по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-bolt"></canvas></div></div>
+    </div>
     <div class="table-wrap scroll-table" id="campaigns-wrap"></div>
   </section>
 
@@ -1090,6 +1094,68 @@ function renderRevenueChart() {{
   document.getElementById('revenue-summary').innerHTML = sumHtml;
 }}
 
+function renderCampaignsChart() {{
+  const ids = getFilteredStoreIds();
+  const weeks = getFilteredWeeks();
+  const camps = D.campaigns || [];
+
+  destroyChart('chart-campaign-spend');
+  destroyChart('chart-campaign-bolt');
+
+  const provSpend = weeks.map(w =>
+    camps.filter(r => r.order_week === w && ids.includes(r.provider_id))
+         .reduce((s, r) => s + (r.provider_spend || 0), 0)
+  );
+  const boltSpend = weeks.map(w =>
+    camps.filter(r => r.order_week === w && ids.includes(r.provider_id))
+         .reduce((s, r) => s + (r.bolt_spend || 0), 0)
+  );
+  const campOrders = weeks.map(w =>
+    camps.filter(r => r.order_week === w && ids.includes(r.provider_id))
+         .reduce((s, r) => s + (r.orders || 0), 0)
+  );
+
+  chartInstances['chart-campaign-spend'] = new Chart(document.getElementById('chart-campaign-spend'), {{
+    type: 'bar',
+    data: {{
+      labels: weeks,
+      datasets: [
+        {{ label: 'Витрати закладу ₴', data: provSpend, backgroundColor: 'rgba(239,68,68,.7)', borderRadius: 4, barPercentage: .6, yAxisID: 'y' }},
+        {{ label: 'Промо-замовлення', data: campOrders, type: 'line', borderColor: '#F97316', backgroundColor: 'rgba(249,115,22,.08)', pointRadius: 3, pointBackgroundColor: '#F97316', borderWidth: 2, tension: .3, fill: false, yAxisID: 'y1' }}
+      ]
+    }},
+    options: {{
+      responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend: {{ position: 'bottom', labels: {{ usePointStyle: true, padding: 12, font: {{ size: 11 }} }} }} }},
+      scales: {{
+        x: {{ grid: {{ display: false }} }},
+        y: {{ beginAtZero: true, position: 'left', grid: {{ color: 'rgba(0,0,0,.05)' }}, ticks: {{ callback: v => '₴' + v.toLocaleString('uk-UA') }} }},
+        y1: {{ beginAtZero: true, position: 'right', grid: {{ display: false }}, ticks: {{ font: {{ size: 10 }} }} }}
+      }}
+    }}
+  }});
+
+  chartInstances['chart-campaign-bolt'] = new Chart(document.getElementById('chart-campaign-bolt'), {{
+    type: 'bar',
+    data: {{
+      labels: weeks,
+      datasets: [
+        {{ label: 'Витрати Bolt ₴', data: boltSpend, backgroundColor: 'rgba(59,130,246,.7)', borderRadius: 4, barPercentage: .6, yAxisID: 'y' }},
+        {{ label: 'Промо-замовлення', data: campOrders, type: 'line', borderColor: '#F97316', backgroundColor: 'rgba(249,115,22,.08)', pointRadius: 3, pointBackgroundColor: '#F97316', borderWidth: 2, tension: .3, fill: false, yAxisID: 'y1' }}
+      ]
+    }},
+    options: {{
+      responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend: {{ position: 'bottom', labels: {{ usePointStyle: true, padding: 12, font: {{ size: 11 }} }} }} }},
+      scales: {{
+        x: {{ grid: {{ display: false }} }},
+        y: {{ beginAtZero: true, position: 'left', grid: {{ color: 'rgba(0,0,0,.05)' }}, ticks: {{ callback: v => '₴' + v.toLocaleString('uk-UA') }} }},
+        y1: {{ beginAtZero: true, position: 'right', grid: {{ display: false }}, ticks: {{ font: {{ size: 10 }} }} }}
+      }}
+    }}
+  }});
+}}
+
 function renderCampaigns() {{
   const ids = getFilteredStoreIds();
   const selW = getSelectedWeek();
@@ -1329,6 +1395,7 @@ function renderAll() {{
   renderOpsCharts();
   renderStoresTable();
   renderRevenueChart();
+  renderCampaignsChart();
   renderCampaigns();
   renderOrdersDetail();
   renderComplaints();
