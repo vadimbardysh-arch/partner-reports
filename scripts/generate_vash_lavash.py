@@ -529,6 +529,8 @@ a{{text-decoration:none;color:inherit}}
 .ms-item input{{accent-color:var(--orange);width:15px;height:15px;cursor:pointer;flex-shrink:0}}
 .ms-item.all-item{{border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:2px;font-weight:600}}
 .ms-count{{display:inline-block;background:var(--orange);color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;margin-left:4px}}
+.reset-btn{{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 11px;font-size:14px;cursor:pointer;transition:all .15s;line-height:1}}
+.reset-btn:hover{{background:var(--neg);color:#fff;border-color:var(--neg)}}
 .theme-toggle{{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 12px;font-size:16px;cursor:pointer;transition:all .15s;line-height:1}}
 .theme-toggle:hover{{background:var(--bg);color:var(--text)}}
 .last-update{{font-size:12px;color:var(--text2)}}
@@ -648,6 +650,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
   <div class="header-right">
     <div class="ms-wrap" id="city-ms"><button class="ms-btn" id="city-btn">Всі міста</button><div class="ms-panel" id="city-panel"></div></div>
     <div class="ms-wrap" id="store-ms"><button class="ms-btn" id="store-btn">Всі заклади</button><div class="ms-panel" id="store-panel"></div></div>
+    <button class="reset-btn" id="reset-btn" onclick="resetAllFilters()" title="Скинути всі фільтри">✕</button>
     <button class="theme-toggle" id="theme-toggle" onclick="toggleDark()">🌙</button>
     <span class="last-update">Оновлено: {generated_at}</span>
   </div>
@@ -798,20 +801,22 @@ function updateMsLabel(btnEl, selected, allLabel, getLabel) {{
   btnEl.innerHTML = getLabel([...selected][0]) + ' <span class="ms-count">+' + (selected.size - 1) + '</span>';
 }}
 
-function setupMsToggle(btnEl, panelEl) {{
-  btnEl.addEventListener('click', function(e) {{
+function initMsToggle(btnId, panelId) {{
+  const btn = document.getElementById(btnId);
+  const panel = document.getElementById(panelId);
+  btn.addEventListener('click', function(e) {{
     e.stopPropagation();
-    const wasOpen = panelEl.classList.contains('open');
-    document.querySelectorAll('.ms-panel.open').forEach(p => p.classList.remove('open'));
-    document.querySelectorAll('.ms-btn.open').forEach(b => b.classList.remove('open'));
-    if (!wasOpen) {{ panelEl.classList.add('open'); btnEl.classList.add('open'); }}
+    const wasOpen = panel.classList.contains('open');
+    closeAllMs();
+    if (!wasOpen) {{ panel.classList.add('open'); btn.classList.add('open'); }}
   }});
+  panel.addEventListener('click', e => e.stopPropagation());
 }}
-document.addEventListener('click', function() {{
+function closeAllMs() {{
   document.querySelectorAll('.ms-panel.open').forEach(p => p.classList.remove('open'));
   document.querySelectorAll('.ms-btn.open').forEach(b => b.classList.remove('open'));
-}});
-document.querySelectorAll('.ms-panel').forEach(p => p.addEventListener('click', e => e.stopPropagation()));
+}}
+document.addEventListener('click', closeAllMs);
 
 function populateCityFilter() {{
   const panel = document.getElementById('city-panel');
@@ -825,7 +830,7 @@ function populateCityFilter() {{
     populateWeekBar();
     renderAll();
   }});
-  setupMsToggle(btn, panel);
+  updateMsLabel(btn, selectedCities, 'Всі міста', v => cityUA(v));
 }}
 
 function populateStoreFilter() {{
@@ -844,7 +849,16 @@ function populateStoreFilter() {{
     renderAll();
   }});
   updateMsLabel(btn, selectedStores, 'Всі заклади', v => D.stores[v] ? D.stores[v].short : v);
-  setupMsToggle(btn, panel);
+}}
+
+function resetAllFilters() {{
+  selectedCities.clear();
+  selectedStores.clear();
+  populateCityFilter();
+  populateStoreFilter();
+  selectedWeekIdx = allWeeks.length - 1;
+  populateWeekBar();
+  renderAll();
 }}
 
 function getFilteredStoreIds() {{
@@ -1505,6 +1519,8 @@ window.toggleDark = function() {{
 }};
 (function() {{ try {{ if (localStorage.getItem('vash-lavash-dark') === '1') {{ document.body.classList.add('dark'); document.getElementById('theme-toggle').textContent = '☀️'; Chart.defaults.color = '#D1D5DB'; }} }} catch(e) {{}} }})();
 
+initMsToggle('city-btn', 'city-panel');
+initMsToggle('store-btn', 'store-panel');
 populateCityFilter();
 populateStoreFilter();
 populateWeekBar();
