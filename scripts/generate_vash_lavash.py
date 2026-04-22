@@ -188,24 +188,32 @@ def fetch_orders_detail(conn):
       f.provider_id, f.provider_name, f.order_state,
       CASE WHEN f.is_bolt_plus_order THEN 'Bolt Plus' ELSE 'Ні' END AS bolt_plus,
       f.is_bolt_plus_order,
-      ROUND(f.provider_price_before_discount, 2) AS food_before_discount,
-      ROUND(f.total_order_item_discount, 2) AS total_discount,
-      ROUND((COALESCE(m.bolt_delivery_campaign_cost_eur, 0) + COALESCE(m.bolt_menu_campaign_cost_eur, 0)) * m.currency_rate, 2) AS bolt_discount,
-      ROUND((COALESCE(m.provider_delivery_campaign_cost_eur, 0) + COALESCE(m.provider_menu_campaign_cost_eur, 0)) * m.currency_rate, 2) AS provider_discount,
-      ROUND(f.provider_price_after_discount, 2) AS food_revenue,
-      ROUND(m.provider_commission_net_eur * m.currency_rate, 2) AS fee_net,
-      ROUND(m.provider_commission_gross_eur * m.currency_rate, 2) AS fee_gross,
-      ROUND(f.commission_local - m.provider_commission_net_eur * m.currency_rate, 2) AS bp_fee_net,
-      ROUND((f.commission_local - m.provider_commission_net_eur * m.currency_rate) * 1.2, 2) AS bp_fee_gross,
-      ROUND(f.commission_local * 1.2, 2) AS total_fee_gross,
+      ROUND(COALESCE(f.provider_price_before_discount, 0), 2) AS food_before_discount,
+      ROUND(COALESCE(f.total_order_item_discount, 0), 2) AS total_discount,
+      ROUND(COALESCE((COALESCE(m.bolt_delivery_campaign_cost_eur, 0) + COALESCE(m.bolt_menu_campaign_cost_eur, 0)) * m.currency_rate, 0), 2) AS bolt_discount,
+      ROUND(COALESCE((COALESCE(m.provider_delivery_campaign_cost_eur, 0) + COALESCE(m.provider_menu_campaign_cost_eur, 0)) * m.currency_rate, 0), 2) AS provider_discount,
+      ROUND(COALESCE(f.provider_price_after_discount, 0), 2) AS food_revenue,
+      ROUND(COALESCE(m.provider_commission_net_eur * m.currency_rate, 0), 2) AS fee_net,
+      ROUND(COALESCE(m.provider_commission_gross_eur * m.currency_rate, 0), 2) AS fee_gross,
+      ROUND(COALESCE(f.commission_local - COALESCE(m.provider_commission_net_eur * m.currency_rate, 0), 0), 2) AS bp_fee_net,
+      ROUND(COALESCE((f.commission_local - COALESCE(m.provider_commission_net_eur * m.currency_rate, 0)) * 1.2, 0), 2) AS bp_fee_gross,
+      ROUND(COALESCE(f.commission_local * 1.2, 0), 2) AS total_fee_gross,
       ROUND(COALESCE(f.total_refunded_amount, 0), 2) AS refund,
-      ROUND(f.provider_price_after_discount - f.commission_local * 1.2 - COALESCE(f.total_refunded_amount, 0), 2) AS net_income
+      ROUND(COALESCE(f.provider_price_after_discount, 0) - COALESCE(f.commission_local * 1.2, 0) - COALESCE(f.total_refunded_amount, 0), 2) AS net_income,
+      CASE
+        WHEN f.order_state = 'delivered' THEN NULL
+        WHEN f.is_rejected_by_provider = true THEN 'Відхилено закладом'
+        WHEN f.is_not_responded_by_provider = true THEN 'Без відповіді від закладу'
+        WHEN f.order_state = 'failed' THEN 'Помилка системи'
+        WHEN f.order_state = 'cancelled' THEN 'Скасовано клієнтом'
+        ELSE 'Інше'
+      END AS fail_reason
     FROM ng_delivery_spark.fact_order_delivery f
-    JOIN ng_public_spark.etl_delivery_order_monetary_metrics m ON f.order_id = m.order_id
+    LEFT JOIN ng_public_spark.etl_delivery_order_monetary_metrics m
+      ON f.order_id = m.order_id
+      AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
-      AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
-      AND f.order_state = 'delivered'
     ORDER BY f.order_created_date DESC, f.order_id DESC
     """)
 
@@ -351,7 +359,9 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
 
     orders_list = safe_json(orders_df)
     for row in orders_list:
-        row["order_state"] = ORDER_STATE_UA.get(row.get("order_state", ""), row.get("order_state", ""))
+        raw_state = row.get("order_state", "") or ""
+        row["order_state_raw"] = raw_state
+        row["order_state"] = ORDER_STATE_UA.get(raw_state, raw_state)
         pid = row.get("provider_id")
         if pid and int(pid) in VASH_LAVASH_PROVIDERS:
             row["provider_short"] = VASH_LAVASH_PROVIDERS[int(pid)]["short"]
@@ -432,8 +442,8 @@ a{{text-decoration:none;color:inherit}}
 .header-left h1{{font-size:20px;font-weight:800;letter-spacing:-.3px}}
 .brand-dot{{width:10px;height:10px;border-radius:50%;background:var(--orange);display:inline-block}}
 .header-right{{display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
-#city-filter{{padding:8px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card);cursor:pointer;min-width:180px}}
-#city-filter:focus{{outline:none;border-color:var(--orange)}}
+#city-filter,#store-filter{{padding:8px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card);cursor:pointer;min-width:180px}}
+#city-filter:focus,#store-filter:focus{{outline:none;border-color:var(--orange)}}
 .theme-toggle{{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 12px;font-size:16px;cursor:pointer;transition:all .15s;line-height:1}}
 .theme-toggle:hover{{background:var(--bg);color:var(--text)}}
 .last-update{{font-size:12px;color:var(--text2)}}
@@ -518,7 +528,7 @@ body.dark .header{{background:var(--card)}}
 body.dark .main-nav{{background:var(--card)}}
 body.dark .week-bar{{background:var(--card)}}
 body.dark .data-table th{{background:#111827}}
-body.dark #city-filter{{background:var(--card);color:var(--text);border-color:var(--border)}}
+body.dark #city-filter,body.dark #store-filter{{background:var(--card);color:var(--text);border-color:var(--border)}}
 body.dark .section-insight{{background:linear-gradient(135deg,rgba(249,115,22,.08),rgba(59,130,246,.06));border-color:rgba(249,115,22,.2)}}
 body.dark .week-pill{{background:#374151;color:var(--text2)}}
 body.dark .chart-card{{background:var(--card)}}
@@ -550,6 +560,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
   </div>
   <div class="header-right">
     <select id="city-filter"><option value="__all__">Всі міста</option></select>
+    <select id="store-filter"><option value="__all__">Всі заклади</option></select>
     <button class="theme-toggle" id="theme-toggle" onclick="toggleDark()">🌙</button>
     <span class="last-update">Оновлено: {generated_at}</span>
   </div>
@@ -610,8 +621,10 @@ body.dark .revenue-summary-table th{{background:#111827}}
   <section id="orders-detail-section" class="section">
     <div class="section-title"><span class="section-icon">🧾</span> Дохідність по замовленнях <span id="orders-detail-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
     <div class="store-filter-wrap">
-      <label>Заклад:</label>
-      <select id="orders-store-filter"><option value="__all__">Всі заклади</option></select>
+      <label>Bolt Plus:</label>
+      <select id="bp-filter"><option value="__all__">Всі</option><option value="yes">Bolt Plus</option><option value="no">Без Bolt Plus</option></select>
+      <label style="margin-left:12px">Статус:</label>
+      <select id="state-filter"><option value="__all__">Всі</option><option value="delivered">Доставлені</option><option value="failed">Невдалі / Скасовані</option></select>
     </div>
     <div class="table-wrap scroll-table" id="orders-detail-wrap"></div>
   </section>
@@ -644,7 +657,9 @@ let allWeeks = Object.keys(D.weekly).sort((a,b) => {{
 }});
 let selectedWeekIdx = allWeeks.length - 1;
 let selectedCity = '__all__';
-let selectedOrdersStore = '__all__';
+let selectedStore = '__all__';
+let selectedBP = '__all__';
+let selectedState = '__all__';
 let chartInstances = {{}};
 
 function weekSortCmp(a, b) {{
@@ -667,11 +682,14 @@ function populateCityFilter() {{
   }});
 }}
 
-function populateOrdersStoreFilter() {{
-  const sel = document.getElementById('orders-store-filter');
+function populateStoreFilter() {{
+  const sel = document.getElementById('store-filter');
+  const prev = sel.value;
   sel.innerHTML = '<option value="__all__">Всі заклади</option>';
-  const ids = getFilteredStoreIds();
-  ids.forEach(id => {{
+  const cityIds = selectedCity === '__all__'
+    ? Object.keys(D.stores).map(Number)
+    : Object.entries(D.stores).filter(([_, s]) => s.city_en === selectedCity).map(([id]) => Number(id));
+  cityIds.sort((a, b) => (D.stores[a].short || '').localeCompare(D.stores[b].short || '', 'uk')).forEach(id => {{
     const s = D.stores[id];
     if (s) {{
       const o = document.createElement('option');
@@ -679,9 +697,12 @@ function populateOrdersStoreFilter() {{
       sel.appendChild(o);
     }}
   }});
+  if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+  else {{ sel.value = '__all__'; selectedStore = '__all__'; }}
 }}
 
 function getFilteredStoreIds() {{
+  if (selectedStore !== '__all__') return [Number(selectedStore)];
   if (selectedCity === '__all__') return Object.keys(D.stores).map(Number);
   return Object.entries(D.stores).filter(([_, s]) => s.city_en === selectedCity).map(([id]) => Number(id));
 }}
@@ -1009,16 +1030,18 @@ function renderOrdersDetail() {{
   document.getElementById('orders-detail-week-label').textContent = '— ' + selW;
 
   let rows = (D.orders || []).filter(r => r.order_week === selW && ids.includes(r.provider_id));
-  if (selectedOrdersStore !== '__all__') {{
-    rows = rows.filter(r => r.provider_id === Number(selectedOrdersStore));
-  }}
+  if (selectedBP === 'yes') rows = rows.filter(r => r.bolt_plus === 'Bolt Plus');
+  else if (selectedBP === 'no') rows = rows.filter(r => r.bolt_plus !== 'Bolt Plus');
+  if (selectedState === 'delivered') rows = rows.filter(r => r.order_state_raw === 'delivered');
+  else if (selectedState === 'failed') rows = rows.filter(r => r.order_state_raw !== 'delivered');
 
   let t = '<table class="data-table"><thead><tr>';
-  t += '<th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Bolt+</th>';
+  t += '<th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Bolt+</th>';
   t += '<th class="text-right">Ціна до знижки</th><th class="text-right">Знижка (за чий рахунок)</th>';
   t += '<th class="text-right">Дохід від їжі</th><th class="text-right">Комісія (нетто+ПДВ=брутто)</th>';
   t += '<th class="text-right">Bolt Plus комісія</th><th class="text-right">Всього комісія</th>';
   t += '<th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th>';
+  t += '<th>Причина</th>';
   t += '</tr></thead><tbody>';
 
   let totFood = 0, totRev = 0, totFee = 0, totBpFee = 0, totRef = 0, totNet = 0;
@@ -1039,23 +1062,30 @@ function renderOrdersDetail() {{
     const bpFeeNet = r.bp_fee_net || 0;
     const bpFeeGross = r.bp_fee_gross || 0;
     const bpText = (isBp && bpFeeNet > 0.5) ? fmtFee(bpFeeNet, bpFeeGross) : '—';
+    const isFailed = r.order_state_raw !== 'delivered';
+    const stateColor = isFailed ? ' style="color:var(--neg);font-weight:600"' : '';
+    const failReason = r.fail_reason || '';
 
     const nc = (r.net_income || 0) < 0 ? ' style="color:var(--neg)"' : '';
-    t += '<tr><td>' + date + '</td>';
+    t += '<tr' + (isFailed ? ' style="background:rgba(239,68,68,.04)"' : '') + '><td>' + date + '</td>';
     t += '<td>' + (r.order_reference_id || '') + '</td>';
     t += '<td>' + (r.provider_short || '') + '</td>';
+    t += '<td' + stateColor + '>' + (r.order_state || '') + '</td>';
     t += '<td' + bpClass + '>' + bpLabel + '</td>';
     t += '<td class="text-right">' + (r.food_before_discount || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
     t += '<td class="text-right">' + fmtDiscount(r) + '</td>';
     t += '<td class="text-right">' + (r.food_revenue || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
-    t += '<td class="text-right" style="font-size:11px">' + fmtFee(feeNet, feeGross) + '</td>';
-    t += '<td class="text-right" style="font-size:11px">' + bpText + '</td>';
+    t += '<td class="text-right" style="font-size:11px">' + (isFailed ? '—' : fmtFee(feeNet, feeGross)) + '</td>';
+    t += '<td class="text-right" style="font-size:11px">' + (isFailed ? '—' : bpText) + '</td>';
     t += '<td class="text-right" style="color:var(--neg)">' + (r.total_fee_gross || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
     t += '<td class="text-right">' + (r.refund || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
-    t += '<td class="text-right"' + nc + '>' + (r.net_income || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td></tr>';
+    t += '<td class="text-right"' + nc + '>' + (r.net_income || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+    t += '<td class="comment-cell"' + (isFailed ? ' style="color:var(--neg)"' : '') + '>' + failReason + '</td></tr>';
   }});
 
-  t += '<tr class="total-row"><td colspan="4">Всього (' + rows.length + ' зам.)</td>';
+  const failedCount = rows.filter(r => r.order_state_raw !== 'delivered').length;
+  const deliveredCount = rows.length - failedCount;
+  t += '<tr class="total-row"><td colspan="5">Всього (' + rows.length + ' зам., ' + deliveredCount + ' дост., ' + failedCount + ' невдал.)</td>';
   t += '<td class="text-right">' + totFood.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
   t += '<td></td>';
   t += '<td class="text-right">' + totRev.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
@@ -1063,7 +1093,8 @@ function renderOrdersDetail() {{
   t += '<td class="text-right">' + totBpFee.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
   t += '<td class="text-right" style="color:var(--neg)">' + totFee.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
   t += '<td class="text-right">' + totRef.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
-  t += '<td class="text-right">' + totNet.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td></tr>';
+  t += '<td class="text-right">' + totNet.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+  t += '<td></td></tr>';
   t += '</tbody></table>';
   document.getElementById('orders-detail-wrap').innerHTML = t;
 }}
@@ -1173,13 +1204,26 @@ function setupNav() {{
 
 document.getElementById('city-filter').addEventListener('change', function() {{
   selectedCity = this.value;
+  selectedStore = '__all__';
+  document.getElementById('store-filter').value = '__all__';
+  populateStoreFilter();
   populateWeekBar();
-  populateOrdersStoreFilter();
   renderAll();
 }});
 
-document.getElementById('orders-store-filter').addEventListener('change', function() {{
-  selectedOrdersStore = this.value;
+document.getElementById('store-filter').addEventListener('change', function() {{
+  selectedStore = this.value;
+  populateWeekBar();
+  renderAll();
+}});
+
+document.getElementById('bp-filter').addEventListener('change', function() {{
+  selectedBP = this.value;
+  renderOrdersDetail();
+}});
+
+document.getElementById('state-filter').addEventListener('change', function() {{
+  selectedState = this.value;
   renderOrdersDetail();
 }});
 
@@ -1194,7 +1238,7 @@ window.toggleDark = function() {{
 (function() {{ try {{ if (localStorage.getItem('vash-lavash-dark') === '1') {{ document.body.classList.add('dark'); document.getElementById('theme-toggle').textContent = '☀️'; Chart.defaults.color = '#D1D5DB'; }} }} catch(e) {{}} }})();
 
 populateCityFilter();
-populateOrdersStoreFilter();
+populateStoreFilter();
 populateWeekBar();
 setupNav();
 renderAll();
