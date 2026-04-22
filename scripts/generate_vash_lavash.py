@@ -518,8 +518,17 @@ a{{text-decoration:none;color:inherit}}
 .header-left h1{{font-size:20px;font-weight:800;letter-spacing:-.3px}}
 .brand-dot{{width:10px;height:10px;border-radius:50%;background:var(--orange);display:inline-block}}
 .header-right{{display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
-#city-filter,#store-filter{{padding:8px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card);cursor:pointer;min-width:180px}}
-#city-filter:focus,#store-filter:focus{{outline:none;border-color:var(--orange)}}
+.ms-wrap{{position:relative;min-width:180px}}
+.ms-btn{{padding:8px 32px 8px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;display:block;width:100%;text-align:left;color:var(--text);position:relative}}
+.ms-btn::after{{content:'▾';position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text2)}}
+.ms-btn:hover,.ms-btn.open{{border-color:var(--orange)}}
+.ms-panel{{display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:100%;max-height:320px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:1000;padding:4px 0}}
+.ms-panel.open{{display:block}}
+.ms-item{{display:flex;align-items:center;gap:8px;padding:6px 14px;font-size:13px;cursor:pointer;white-space:nowrap}}
+.ms-item:hover{{background:var(--bg)}}
+.ms-item input{{accent-color:var(--orange);width:15px;height:15px;cursor:pointer;flex-shrink:0}}
+.ms-item.all-item{{border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:2px;font-weight:600}}
+.ms-count{{display:inline-block;background:var(--orange);color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;margin-left:4px}}
 .theme-toggle{{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 12px;font-size:16px;cursor:pointer;transition:all .15s;line-height:1}}
 .theme-toggle:hover{{background:var(--bg);color:var(--text)}}
 .last-update{{font-size:12px;color:var(--text2)}}
@@ -604,7 +613,9 @@ body.dark .header{{background:var(--card)}}
 body.dark .main-nav{{background:var(--card)}}
 body.dark .week-bar{{background:var(--card)}}
 body.dark .data-table th{{background:#111827}}
-body.dark #city-filter,body.dark #store-filter{{background:var(--card);color:var(--text);border-color:var(--border)}}
+body.dark .ms-btn{{background:var(--card);color:var(--text);border-color:var(--border)}}
+body.dark .ms-panel{{background:var(--card);border-color:var(--border);box-shadow:0 8px 24px rgba(0,0,0,.4)}}
+body.dark .ms-item:hover{{background:var(--bg)}}
 body.dark .section-insight{{background:linear-gradient(135deg,rgba(249,115,22,.08),rgba(59,130,246,.06));border-color:rgba(249,115,22,.2)}}
 body.dark .week-pill{{background:#374151;color:var(--text2)}}
 body.dark .chart-card{{background:var(--card)}}
@@ -635,8 +646,8 @@ body.dark .revenue-summary-table th{{background:#111827}}
     <h1>ВАШ ЛАВАШ | тижневий звіт</h1>
   </div>
   <div class="header-right">
-    <select id="city-filter"><option value="__all__">Всі міста</option></select>
-    <select id="store-filter"><option value="__all__">Всі заклади</option></select>
+    <div class="ms-wrap" id="city-ms"><button class="ms-btn" id="city-btn">Всі міста</button><div class="ms-panel" id="city-panel"></div></div>
+    <div class="ms-wrap" id="store-ms"><button class="ms-btn" id="store-btn">Всі заклади</button><div class="ms-panel" id="store-panel"></div></div>
     <button class="theme-toggle" id="theme-toggle" onclick="toggleDark()">🌙</button>
     <span class="last-update">Оновлено: {generated_at}</span>
   </div>
@@ -743,8 +754,8 @@ let allWeeks = Object.keys(D.weekly).sort((a,b) => {{
   return ay !== by ? ay - by : aw - bw;
 }});
 let selectedWeekIdx = allWeeks.length - 1;
-let selectedCity = '__all__';
-let selectedStore = '__all__';
+let selectedCities = new Set();
+let selectedStores = new Set();
 let selectedBP = '__all__';
 let selectedState = '__all__';
 let chartInstances = {{}};
@@ -758,40 +769,88 @@ function weekSortCmp(a, b) {{
 function getSelectedWeek() {{ return allWeeks.length ? allWeeks[selectedWeekIdx >= 0 ? selectedWeekIdx : allWeeks.length - 1] : null; }}
 function cityUA(c) {{ return CITY_UA[c] || c; }}
 
-function populateCityFilter() {{
-  const sel = document.getElementById('city-filter');
-  sel.innerHTML = '<option value="__all__">Всі міста</option>';
-  const cities = new Set(Object.values(D.stores).map(s => s.city_en));
-  [...cities].sort().forEach(c => {{
-    const o = document.createElement('option');
-    o.value = c; o.textContent = cityUA(c);
-    sel.appendChild(o);
+function buildMsPanel(panelEl, items, selected, allLabel, onChange) {{
+  let html = '<label class="ms-item all-item"><input type="checkbox" data-val="__all__" ' + (selected.size === 0 ? 'checked' : '') + '> ' + allLabel + '</label>';
+  items.forEach(it => {{
+    html += '<label class="ms-item"><input type="checkbox" data-val="' + it.value + '" ' + (selected.has(it.value) ? 'checked' : '') + '> ' + it.label + '</label>';
   }});
+  panelEl.innerHTML = html;
+  panelEl.querySelectorAll('input[type=checkbox]').forEach(cb => {{
+    cb.addEventListener('change', function() {{
+      const val = this.dataset.val;
+      if (val === '__all__') {{
+        selected.clear();
+        panelEl.querySelectorAll('input[data-val]').forEach(x => {{ x.checked = (x.dataset.val === '__all__'); }});
+      }} else {{
+        if (this.checked) selected.add(val); else selected.delete(val);
+        const allCb = panelEl.querySelector('input[data-val="__all__"]');
+        if (selected.size === 0) {{ allCb.checked = true; }}
+        else {{ allCb.checked = false; }}
+      }}
+      onChange();
+    }});
+  }});
+}}
+
+function updateMsLabel(btnEl, selected, allLabel, getLabel) {{
+  if (selected.size === 0) {{ btnEl.textContent = allLabel; return; }}
+  if (selected.size === 1) {{ btnEl.textContent = getLabel([...selected][0]); return; }}
+  btnEl.innerHTML = getLabel([...selected][0]) + ' <span class="ms-count">+' + (selected.size - 1) + '</span>';
+}}
+
+function setupMsToggle(btnEl, panelEl) {{
+  btnEl.addEventListener('click', function(e) {{
+    e.stopPropagation();
+    const wasOpen = panelEl.classList.contains('open');
+    document.querySelectorAll('.ms-panel.open').forEach(p => p.classList.remove('open'));
+    document.querySelectorAll('.ms-btn.open').forEach(b => b.classList.remove('open'));
+    if (!wasOpen) {{ panelEl.classList.add('open'); btnEl.classList.add('open'); }}
+  }});
+}}
+document.addEventListener('click', function() {{
+  document.querySelectorAll('.ms-panel.open').forEach(p => p.classList.remove('open'));
+  document.querySelectorAll('.ms-btn.open').forEach(b => b.classList.remove('open'));
+}});
+document.querySelectorAll('.ms-panel').forEach(p => p.addEventListener('click', e => e.stopPropagation()));
+
+function populateCityFilter() {{
+  const panel = document.getElementById('city-panel');
+  const btn = document.getElementById('city-btn');
+  const cities = [...new Set(Object.values(D.stores).map(s => s.city_en))].sort();
+  const items = cities.map(c => ({{ value: c, label: cityUA(c) }}));
+  buildMsPanel(panel, items, selectedCities, 'Всі міста', function() {{
+    updateMsLabel(btn, selectedCities, 'Всі міста', v => cityUA(v));
+    selectedStores.clear();
+    populateStoreFilter();
+    populateWeekBar();
+    renderAll();
+  }});
+  setupMsToggle(btn, panel);
 }}
 
 function populateStoreFilter() {{
-  const sel = document.getElementById('store-filter');
-  const prev = sel.value;
-  sel.innerHTML = '<option value="__all__">Всі заклади</option>';
-  const cityIds = selectedCity === '__all__'
+  const panel = document.getElementById('store-panel');
+  const btn = document.getElementById('store-btn');
+  const cityIds = selectedCities.size === 0
     ? Object.keys(D.stores).map(Number)
-    : Object.entries(D.stores).filter(([_, s]) => s.city_en === selectedCity).map(([id]) => Number(id));
-  cityIds.sort((a, b) => (D.stores[a].short || '').localeCompare(D.stores[b].short || '', 'uk')).forEach(id => {{
-    const s = D.stores[id];
-    if (s) {{
-      const o = document.createElement('option');
-      o.value = id; o.textContent = s.short + ' (' + s.city + ')';
-      sel.appendChild(o);
-    }}
+    : Object.entries(D.stores).filter(([_, s]) => selectedCities.has(s.city_en)).map(([id]) => Number(id));
+  const items = cityIds
+    .sort((a, b) => (D.stores[a].short || '').localeCompare(D.stores[b].short || '', 'uk'))
+    .filter(id => D.stores[id])
+    .map(id => ({{ value: String(id), label: D.stores[id].short + ' (' + D.stores[id].city + ')' }}));
+  buildMsPanel(panel, items, selectedStores, 'Всі заклади', function() {{
+    updateMsLabel(btn, selectedStores, 'Всі заклади', v => D.stores[v] ? D.stores[v].short : v);
+    populateWeekBar();
+    renderAll();
   }});
-  if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
-  else {{ sel.value = '__all__'; selectedStore = '__all__'; }}
+  updateMsLabel(btn, selectedStores, 'Всі заклади', v => D.stores[v] ? D.stores[v].short : v);
+  setupMsToggle(btn, panel);
 }}
 
 function getFilteredStoreIds() {{
-  if (selectedStore !== '__all__') return [Number(selectedStore)];
-  if (selectedCity === '__all__') return Object.keys(D.stores).map(Number);
-  return Object.entries(D.stores).filter(([_, s]) => s.city_en === selectedCity).map(([id]) => Number(id));
+  if (selectedStores.size > 0) return [...selectedStores].map(Number);
+  if (selectedCities.size === 0) return Object.keys(D.stores).map(Number);
+  return Object.entries(D.stores).filter(([_, s]) => selectedCities.has(s.city_en)).map(([id]) => Number(id));
 }}
 
 function getFilteredWeeks() {{
@@ -1425,21 +1484,6 @@ function setupNav() {{
   }}, {{ rootMargin: '-140px 0px -70% 0px' }});
   document.querySelectorAll('.section').forEach(s => observer.observe(s));
 }}
-
-document.getElementById('city-filter').addEventListener('change', function() {{
-  selectedCity = this.value;
-  selectedStore = '__all__';
-  document.getElementById('store-filter').value = '__all__';
-  populateStoreFilter();
-  populateWeekBar();
-  renderAll();
-}});
-
-document.getElementById('store-filter').addEventListener('change', function() {{
-  selectedStore = this.value;
-  populateWeekBar();
-  renderAll();
-}});
 
 document.getElementById('bp-filter').addEventListener('change', function() {{
   selectedBP = this.value;
