@@ -637,6 +637,24 @@ a{{text-decoration:none;color:inherit}}
 .ms-count{{display:inline-block;background:var(--orange);color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;margin-left:4px}}
 .reset-btn{{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 11px;font-size:14px;cursor:pointer;transition:all .15s;line-height:1}}
 .reset-btn:hover{{background:var(--neg);color:#fff;border-color:var(--neg)}}
+.calc-card{{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 24px;margin-top:20px}}
+.calc-title{{font-size:15px;font-weight:700;color:var(--text);margin:0 0 16px}}
+.calc-controls{{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}}
+.calc-field label{{display:block;font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}}
+.calc-field input,.calc-field select{{padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;background:var(--bg);color:var(--text);min-width:160px}}
+.calc-field input:focus,.calc-field select:focus{{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(249,115,22,.12)}}
+.calc-store-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}}
+.calc-store{{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px}}
+.calc-store-name{{font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px}}
+.calc-store-city{{font-size:11px;color:var(--text2);margin-bottom:10px}}
+.calc-bar-wrap{{height:8px;background:rgba(0,0,0,.06);border-radius:4px;overflow:hidden;margin-bottom:8px}}
+.calc-bar{{height:100%;border-radius:4px;transition:width .3s}}
+.calc-metrics{{display:flex;justify-content:space-between;font-size:12px}}
+.calc-spent{{font-weight:700}}
+.calc-left{{font-weight:600}}
+.calc-total-row{{margin-top:16px;padding:14px 16px;background:var(--card);border:2px solid var(--orange);border-radius:10px;display:flex;flex-wrap:wrap;gap:24px;align-items:center}}
+.calc-total-label{{font-size:13px;font-weight:700;color:var(--text)}}
+.calc-total-val{{font-size:18px;font-weight:800}}
 .period-toggle-wrap{{display:flex;align-items:center;padding:0 20px;margin-top:-4px}}
 .period-select{{padding:6px 32px 6px 14px;font-size:13px;font-weight:600;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;border-radius:8px;font-family:inherit;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;transition:all .15s}}
 .period-select:hover{{border-color:var(--orange)}}
@@ -833,6 +851,21 @@ body.dark .revenue-summary-table th{{background:#111827}}
       <div class="chart-card"><h3>Витрати Bolt на кампанії по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-bolt"></canvas></div></div>
     </div>
     <div class="table-wrap scroll-table" id="campaigns-wrap"></div>
+
+    <div class="calc-card" id="budget-calc">
+      <h3 class="calc-title">💰 Калькулятор бюджету на кампанії</h3>
+      <div class="calc-controls">
+        <div class="calc-field">
+          <label for="calc-budget">Бюджет на точку / міс. (₴)</label>
+          <input type="number" id="calc-budget" value="2500" min="0" step="100">
+        </div>
+        <div class="calc-field">
+          <label for="calc-period-select">Період</label>
+          <select id="calc-period-select"></select>
+        </div>
+      </div>
+      <div id="calc-results"></div>
+    </div>
   </section>
 
   <section id="orders-detail-section" class="section">
@@ -1609,6 +1642,69 @@ function renderCancelled() {{
   document.getElementById('cancelled-wrap').innerHTML = t;
 }}
 
+function renderBudgetCalc() {{
+  const ids = getFilteredStoreIds();
+  const camps = D.campaigns || [];
+
+  const periodSel = document.getElementById('calc-period-select');
+  const months = [...new Set(camps.map(c => c.order_month))].filter(Boolean).sort();
+  const curVal = periodSel.value;
+  periodSel.innerHTML = months.map(m => {{
+    const [y, mo] = m.split('-');
+    const mNames = ['Січ','Лют','Бер','Кві','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру'];
+    return '<option value="' + m + '"' + (m === curVal ? ' selected' : '') + '>' + mNames[parseInt(mo) - 1] + ' ' + y + '</option>';
+  }}).join('');
+  if (!curVal && months.length) periodSel.value = months[months.length - 1];
+
+  const selMonth = periodSel.value;
+  const budget = parseFloat(document.getElementById('calc-budget').value) || 0;
+
+  const storeSpend = {{}};
+  camps.forEach(c => {{
+    if (c.order_month !== selMonth || !ids.includes(c.provider_id)) return;
+    if (!storeSpend[c.provider_id]) storeSpend[c.provider_id] = 0;
+    storeSpend[c.provider_id] += c.provider_spend || 0;
+  }});
+
+  let html = '<div class="calc-store-grid">';
+  let totalSpent = 0, totalBudget = 0, storeCount = 0;
+
+  ids.forEach(id => {{
+    const s = D.stores[id];
+    if (!s) return;
+    const spent = Math.round(storeSpend[id] || 0);
+    totalSpent += spent;
+    totalBudget += budget;
+    storeCount++;
+    const pct = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
+    const left = budget - spent;
+    const barColor = pct >= 100 ? 'var(--neg)' : pct >= 75 ? 'var(--warn)' : 'var(--pos)';
+    const leftColor = left < 0 ? 'color:var(--neg)' : 'color:var(--pos)';
+    html += '<div class="calc-store">';
+    html += '<div class="calc-store-name">' + s.short + '</div>';
+    html += '<div class="calc-store-city">' + s.city + '</div>';
+    html += '<div class="calc-bar-wrap"><div class="calc-bar" style="width:' + pct.toFixed(1) + '%;background:' + barColor + '"></div></div>';
+    html += '<div class="calc-metrics">';
+    html += '<span class="calc-spent" style="color:var(--neg)">Витрачено: ₴' + spent.toLocaleString('uk-UA') + '</span>';
+    html += '<span class="calc-left" style="' + leftColor + '">Залишок: ₴' + left.toLocaleString('uk-UA') + '</span>';
+    html += '</div></div>';
+  }});
+  html += '</div>';
+
+  const totalLeft = totalBudget - totalSpent;
+  const totalPct = totalBudget > 0 ? (totalSpent / totalBudget * 100) : 0;
+  html += '<div class="calc-total-row">';
+  html += '<div><div class="calc-total-label">Загальний бюджет</div><div class="calc-total-val" style="color:var(--text)">₴' + totalBudget.toLocaleString('uk-UA') + '</div></div>';
+  html += '<div><div class="calc-total-label">Витрачено</div><div class="calc-total-val" style="color:var(--neg)">₴' + totalSpent.toLocaleString('uk-UA') + ' <span style="font-size:13px;font-weight:600">(' + totalPct.toFixed(1) + '%)</span></div></div>';
+  html += '<div><div class="calc-total-label">Залишок</div><div class="calc-total-val" style="color:' + (totalLeft >= 0 ? 'var(--pos)' : 'var(--neg)') + '">₴' + totalLeft.toLocaleString('uk-UA') + '</div></div>';
+  html += '</div>';
+
+  document.getElementById('calc-results').innerHTML = html;
+}}
+
+document.getElementById('calc-budget').addEventListener('input', renderBudgetCalc);
+document.getElementById('calc-period-select').addEventListener('change', renderBudgetCalc);
+
 function renderTopItems() {{
   const ids = getFilteredStoreIds();
   const selK = getSelectedPeriod();
@@ -1638,6 +1734,7 @@ function renderAll() {{
   renderRevenueChart();
   renderCampaignsChart();
   renderCampaigns();
+  renderBudgetCalc();
   renderOrdersDetail();
   renderComplaints();
   renderCancelled();
