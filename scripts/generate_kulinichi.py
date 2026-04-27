@@ -371,6 +371,32 @@ def fetch_promo_unique_orders(conn):
     """)
 
 
+def fetch_user_metrics(conn):
+    return query(conn, f"""
+    WITH user_orders AS (
+        SELECT
+            user_id, provider_id, order_week, order_created_date,
+            ROW_NUMBER() OVER (PARTITION BY user_id, provider_id ORDER BY order_created_date) AS order_num
+        FROM ng_delivery_spark.fact_order_delivery
+        WHERE provider_id IN ({PROVIDER_IDS})
+        AND order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+        AND order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
+        AND order_state = 'delivered'
+    )
+    SELECT
+        order_week,
+        provider_id,
+        COUNT(DISTINCT user_id) AS unique_users,
+        COUNT(DISTINCT CASE WHEN order_num = 1 THEN user_id END) AS new_users,
+        COUNT(DISTINCT CASE WHEN order_num > 1 THEN user_id END) AS returning_users,
+        COUNT(*) AS total_orders,
+        ROUND(COUNT(*) * 1.0 / NULLIF(COUNT(DISTINCT user_id), 0), 2) AS avg_frequency
+    FROM user_orders
+    GROUP BY order_week, provider_id
+    ORDER BY order_week, provider_id
+    """)
+
+
 # ── Build data for HTML ──────────────────────────────────────────────────
 
 def strip_nda(text):
@@ -384,7 +410,7 @@ def strip_nda(text):
     return text.strip()
 
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df=None):
     data = {}
 
     stores_map = {}
@@ -593,6 +619,22 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         promo_unique[week] = to_native(r["unique_promo_orders"])
     data["promo_unique"] = promo_unique
 
+    user_weekly = {}
+    if user_metrics_df is not None and len(user_metrics_df):
+        for _, r in user_metrics_df.iterrows():
+            week = str(r["order_week"])
+            pid = int(to_native(r["provider_id"]))
+            if week not in user_weekly:
+                user_weekly[week] = {}
+            user_weekly[week][pid] = {
+                "unique_users": int(to_native(r["unique_users"])),
+                "new_users": int(to_native(r["new_users"])),
+                "returning_users": int(to_native(r["returning_users"])),
+                "total_orders": int(to_native(r["total_orders"])),
+                "avg_frequency": to_native(r["avg_frequency"]),
+            }
+    data["user_weekly"] = user_weekly
+
     return data
 
 
@@ -786,6 +828,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
 <nav class="main-nav">
  <a href="#sec-overview" class="nav-link active">Огляд</a>
  <a href="#sec-orders" class="nav-link">Замовлення</a>
+ <a href="#sec-users" class="nav-link">Користувачі</a>
  <a href="#sec-ops" class="nav-link">Операції</a>
  <a href="#sec-stores" class="nav-link">Деталі закладів</a>
  <a href="#sec-availability" class="nav-link">Доступність</a>
@@ -813,6 +856,15 @@ body.dark .revenue-summary-table th{{background:#111827}}
  <div class="charts-grid">
  <div class="chart-card"><h3>Замовлення по тижнях</h3><div class="chart-wrap"><canvas id="chart-orders"></canvas></div></div>
  <div class="chart-card"><h3>Середній чек (₴) по тижнях</h3><div class="chart-wrap"><canvas id="chart-avg-check"></canvas></div></div>
+ </div>
+ </div>
+
+ <div class="section" id="sec-users">
+ <div class="section-title"><span class="section-icon">👥</span> Користувачі</div>
+ <div id="users-kpis" class="kpi-grid"></div>
+ <div class="charts-grid">
+ <div class="chart-card"><h3>Користувачі по тижнях</h3><div class="chart-wrap"><canvas id="chart-users"></canvas></div></div>
+ <div class="chart-card"><h3>Частота замовлень</h3><div class="chart-wrap"><canvas id="chart-frequency"></canvas></div></div>
  </div>
  </div>
 
@@ -1698,6 +1750,80 @@ function renderCancelled() {{
  document.getElementById('cancelled-wrap').innerHTML = t;
 }}
 
+function renderUsers() {{
+ const ids = getFilteredStoreIds();
+ const weeks = allWeeks.slice();
+ const selW = getSelectedWeek();
+
+ const agg = weeks.map(w => {{
+  const wd = D.user_weekly[w] || {{}};
+  let unique = 0, newU = 0, retU = 0, orders = 0;
+  ids.forEach(id => {{
+   const d = wd[id];
+   if (d) {{ unique += d.unique_users; newU += d.new_users; retU += d.returning_users; orders += d.total_orders; }}
+  }});
+  return {{ week: w, unique, newU, retU, orders, freq: unique > 0 ? +(orders / unique).toFixed(2) : 0 }};
+ }});
+
+ const cur = agg.find(a => a.week === selW) || {{ unique: 0, newU: 0, retU: 0, orders: 0, freq: 0 }};
+ const prev = agg.length >= 2 ? agg[agg.length - 2] : null;
+ const retPct = cur.unique > 0 ? Math.round(cur.retU / cur.unique * 100) : 0;
+
+ let khtml = '';
+ khtml += '<div class="kpi-card"><div class="kpi-label">Унікальні клієнти</div><div class="kpi-value">' + cur.unique + '</div>';
+ if (prev && prev.unique > 0) {{
+  const d = Math.round((cur.unique - prev.unique) / prev.unique * 100);
+  khtml += '<div class="kpi-delta ' + (d >= 0 ? 'up' : 'down') + '">' + (d >= 0 ? '+' : '') + d + '%</div>';
+ }}
+ khtml += '</div>';
+ khtml += '<div class="kpi-card"><div class="kpi-label">Нові клієнти</div><div class="kpi-value">' + cur.newU + '</div><div class="kpi-subtext">перше замовлення в закладі</div></div>';
+ khtml += '<div class="kpi-card"><div class="kpi-label">Повторні клієнти</div><div class="kpi-value">' + cur.retU + '</div><div class="kpi-subtext">' + retPct + '% від усіх</div></div>';
+ khtml += '<div class="kpi-card"><div class="kpi-label">Частота замовлень</div><div class="kpi-value">' + cur.freq.toFixed(2) + '</div><div class="kpi-subtext">замовлень на клієнта</div></div>';
+ document.getElementById('users-kpis').innerHTML = khtml;
+
+ const labels = agg.map(a => a.week.replace('2026-', ''));
+
+ if (chartInstances['chart-users']) chartInstances['chart-users'].destroy();
+ chartInstances['chart-users'] = new Chart(document.getElementById('chart-users'), {{
+  type: 'bar',
+  data: {{
+   labels: labels,
+   datasets: [
+    {{ label: 'Нові', data: agg.map(a => a.newU), backgroundColor: 'rgba(59,130,246,.7)', borderRadius: 4, order: 2 }},
+    {{ label: 'Повторні', data: agg.map(a => a.retU), backgroundColor: 'rgba(249,115,22,.7)', borderRadius: 4, order: 2 }},
+    {{ label: 'Всього', data: agg.map(a => a.unique), type: 'line', borderColor: '#111827', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3, order: 1 }}
+   ]
+  }},
+  options: {{
+   responsive: true, maintainAspectRatio: false,
+   plugins: {{ legend: {{ position: 'bottom', labels: {{ font: {{ size: 11 }} }} }} }},
+   scales: {{
+    x: {{ stacked: true, grid: {{ display: false }} }},
+    y: {{ stacked: true, beginAtZero: true, ticks: {{ precision: 0 }} }}
+   }}
+  }}
+ }});
+
+ if (chartInstances['chart-frequency']) chartInstances['chart-frequency'].destroy();
+ chartInstances['chart-frequency'] = new Chart(document.getElementById('chart-frequency'), {{
+  type: 'line',
+  data: {{
+   labels: labels,
+   datasets: [
+    {{ label: 'Частота (зам./клієнт)', data: agg.map(a => a.freq), borderColor: '#F97316', backgroundColor: 'rgba(249,115,22,.1)', fill: true, tension: 0.3, pointRadius: 4 }}
+   ]
+  }},
+  options: {{
+   responsive: true, maintainAspectRatio: false,
+   plugins: {{ legend: {{ display: false }} }},
+   scales: {{
+    x: {{ grid: {{ display: false }} }},
+    y: {{ beginAtZero: true, suggestedMax: 2 }}
+   }}
+  }}
+ }});
+}}
+
 function renderPromo() {{
  const ids = getFilteredStoreIds();
  const selW = getSelectedWeek();
@@ -1789,6 +1915,7 @@ function renderAll() {{
  renderKPIs();
  renderInsights();
  renderOrdersCharts();
+ renderUsers();
  renderOpsCharts();
  renderStoresTable();
  renderDailyAvailability();
@@ -2250,10 +2377,14 @@ def main():
         print("  Fetching promo unique orders…")
         promo_unique_df = fetch_promo_unique_orders(conn)
         print(f"  → {len(promo_unique_df)} rows")
+
+        print("  Fetching user metrics…")
+        user_metrics_df = fetch_user_metrics(conn)
+        print(f"  → {len(user_metrics_df)} rows")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "kulinichi"
