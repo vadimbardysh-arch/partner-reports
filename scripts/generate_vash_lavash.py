@@ -637,11 +637,10 @@ a{{text-decoration:none;color:inherit}}
 .ms-count{{display:inline-block;background:var(--orange);color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;margin-left:4px}}
 .reset-btn{{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 11px;font-size:14px;cursor:pointer;transition:all .15s;line-height:1}}
 .reset-btn:hover{{background:var(--neg);color:#fff;border-color:var(--neg)}}
-.period-toggle-wrap{{display:flex;gap:0;padding:0 20px;margin-top:-4px}}
-.period-btn{{padding:6px 18px;font-size:13px;font-weight:600;border:1px solid var(--border);background:var(--card);color:var(--text2);cursor:pointer;transition:all .15s;font-family:inherit}}
-.period-btn:first-child{{border-radius:8px 0 0 8px}}
-.period-btn:last-child{{border-radius:0 8px 8px 0;border-left:0}}
-.period-btn.active{{background:var(--orange);color:#fff;border-color:var(--orange)}}
+.period-toggle-wrap{{display:flex;align-items:center;padding:0 20px;margin-top:-4px}}
+.period-select{{padding:6px 32px 6px 14px;font-size:13px;font-weight:600;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;border-radius:8px;font-family:inherit;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;transition:all .15s}}
+.period-select:hover{{border-color:var(--orange)}}
+.period-select:focus{{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(249,115,22,.15)}}
 .theme-toggle{{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 12px;font-size:16px;cursor:pointer;transition:all .15s;line-height:1}}
 .theme-toggle:hover{{background:var(--bg);color:var(--text)}}
 .last-update{{font-size:12px;color:var(--text2)}}
@@ -781,8 +780,10 @@ body.dark .revenue-summary-table th{{background:#111827}}
 </nav>
 
 <div class="period-toggle-wrap">
-  <button class="period-btn active" data-mode="week">Тижні</button>
-  <button class="period-btn" data-mode="month">Місяці</button>
+  <select class="period-select" id="period-select">
+    <option value="week" selected>Тижні</option>
+    <option value="month">Місяці</option>
+  </select>
 </div>
 <div class="week-bar" id="week-bar">
   <div class="week-bar-label">Тиждень:</div>
@@ -857,7 +858,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
 
   <section id="items-section" class="section">
     <div class="section-title"><span class="section-icon">🍽️</span> Топ-10 позицій по закладах <span id="items-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
-    <div class="section-insight">Найпопулярніші позиції за обраний тиждень. Кількість замовлених одиниць та виручка (₴).</div>
+    <div class="section-insight" id="items-insight">Найпопулярніші позиції за обраний період. Кількість замовлених одиниць та виручка (₴).</div>
     <div class="items-grid" id="items-grid"></div>
   </section>
 </main>
@@ -1416,9 +1417,9 @@ function renderCampaigns() {{
 
   const summaryEl = document.getElementById('campaigns-summary');
   if (campList.length === 0) {{
-    summaryEl.innerHTML = '<b>' + selW + '</b>. Немає активних кампаній для обраних закладів.';
+    summaryEl.innerHTML = '<b>' + getPeriodLabel(selK) + '</b>. Немає активних кампаній для обраних закладів.';
   }} else {{
-    summaryEl.innerHTML = '<b>' + selW + '</b>. Активних кампаній: <b>' + campList.length + '</b>. '
+    summaryEl.innerHTML = '<b>' + getPeriodLabel(selK) + '</b>. Активних кампаній: <b>' + campList.length + '</b>. '
       + 'Замовлень з кампаніями: <b>' + totOrd + '</b>. '
       + 'Загальна знижка: <b>₴' + totDisc.toLocaleString('uk-UA') + '</b> '
       + '(Bolt: ₴' + totBolt.toLocaleString('uk-UA') + ', Заклад: ₴' + totProv.toLocaleString('uk-UA') + ').';
@@ -1432,7 +1433,7 @@ function renderCampaigns() {{
     + '</tr></thead><tbody>';
 
   if (campList.length === 0) {{
-    t += '<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:24px">Немає кампаній за цей тиждень</td></tr>';
+    t += '<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:24px">Немає кампаній за цей період</td></tr>';
   }} else {{
     campList.forEach(c => {{
       const provArr = [...c.providers];
@@ -1686,15 +1687,10 @@ window.toggleDark = function() {{
 }};
 (function() {{ try {{ if (localStorage.getItem('vash-lavash-dark') === '1') {{ document.body.classList.add('dark'); document.getElementById('theme-toggle').textContent = '☀️'; Chart.defaults.color = '#D1D5DB'; }} }} catch(e) {{}} }})();
 
-document.querySelectorAll('.period-btn').forEach(btn => {{
-  btn.addEventListener('click', () => {{
-    const mode = btn.dataset.mode;
-    if (mode === periodMode) return;
-    periodMode = mode;
-    document.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
-    populateWeekBar();
-    renderAll();
-  }});
+document.getElementById('period-select').addEventListener('change', function() {{
+  periodMode = this.value;
+  populateWeekBar();
+  renderAll();
 }});
 
 initMsToggle('city-btn', 'city-panel');
