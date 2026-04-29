@@ -80,6 +80,12 @@ jobs:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_vash_lavash.py
 
+      - name: Generate Multi-Kitchen multi-store report (Monday / manual only)
+        if: steps.check.outputs.skip != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
+        env:
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: python scripts/generate_multi_kitchen.py
+
       - name: Generate Sponsored Listings dashboard (Monday / manual only)
         if: steps.check.outputs.skip != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
         env:
