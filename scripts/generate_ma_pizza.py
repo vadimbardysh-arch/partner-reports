@@ -781,8 +781,8 @@ body.dark .alert-box{{background:#1F2937;border-color:#374151;color:#FCA5A5}}
   </div>
   <div class="header-right">
     <div class="ms-wrap" id="store-ms"><button class="ms-btn" id="store-btn">Всі заклади</button><div class="ms-panel" id="store-panel"></div></div>
-    <button class="reset-btn" id="reset-btn" onclick="resetAllFilters()" title="Скинути всі фільтри">\✕</button>
-    <button class="theme-toggle" id="theme-toggle" onclick="toggleDark()">\🌙</button>
+    <button class="reset-btn" id="reset-btn" onclick="resetAllFilters()" title="Скинути всі фільтри">✕</button>
+    <button class="theme-toggle" id="theme-toggle" onclick="toggleDark()">🌙</button>
     <span class="last-update">Оновлено: {generated_at}</span>
   </div>
 </header>
@@ -817,16 +817,16 @@ body.dark .alert-box{{background:#1F2937;border-color:#374151;color:#FCA5A5}}
   </section>
 
   <section id="orders-section" class="section">
-    <div class="section-title"><span class="section-icon">\📦</span> Замовлення</div>
+    <div class="section-title"><span class="section-icon">📦</span> Замовлення</div>
     <div class="section-insight" id="insight-orders"></div>
     <div class="charts-grid">
       <div class="chart-card"><h3>Замовлення по тижнях</h3><div class="chart-wrap"><canvas id="chart-orders"></canvas></div></div>
-      <div class="chart-card"><h3>Середній чек (\₴) по тижнях</h3><div class="chart-wrap"><canvas id="chart-avg-check"></canvas></div></div>
+      <div class="chart-card"><h3>Середній чек (₴) по тижнях</h3><div class="chart-wrap"><canvas id="chart-avg-check"></canvas></div></div>
     </div>
   </section>
 
   <section id="ops-section" class="section">
-    <div class="section-title"><span class="section-icon">\⚙\️</span> Операційні показники</div>
+    <div class="section-title"><span class="section-icon">⚙️</span> Операційні показники</div>
     <div class="section-insight" id="insight-ops"></div>
     <div class="charts-grid">
       <div class="chart-card"><h3>Доступність та Прийняття (%)</h3><div class="chart-wrap"><canvas id="chart-ops-rates"></canvas></div></div>
@@ -835,30 +835,30 @@ body.dark .alert-box{{background:#1F2937;border-color:#374151;color:#FCA5A5}}
   </section>
 
   <section id="stores-section" class="section">
-    <div class="section-title"><span class="section-icon">\🏪</span> Деталі по закладах <span id="stores-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="section-title"><span class="section-icon">🏪</span> Деталі по закладах <span id="stores-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
     <div class="table-wrap" id="stores-table-wrap"></div>
   </section>
 
   <section id="revenue-section" class="section">
-    <div class="section-title"><span class="section-icon">\💰</span> Дохідність по тижнях</div>
+    <div class="section-title"><span class="section-icon">💰</span> Дохідність по тижнях</div>
     <div class="charts-grid">
-      <div class="chart-card"><h3>Дохід по тижнях (\₴)</h3><div class="chart-wrap"><canvas id="chart-revenue"></canvas></div></div>
-      <div class="chart-card"><h3>Замовлення \— деталі по закладах</h3><div class="chart-wrap" style="min-height:auto"><div id="revenue-summary"></div></div></div>
+      <div class="chart-card"><h3>Дохід по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-revenue"></canvas></div></div>
+      <div class="chart-card"><h3>Замовлення — деталі по закладах</h3><div class="chart-wrap" style="min-height:auto"><div id="revenue-summary"></div></div></div>
     </div>
   </section>
 
   <section id="campaigns-section" class="section">
-    <div class="section-title"><span class="section-icon">\🎯</span> Кампанії <span id="campaigns-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="section-title"><span class="section-icon">🎯</span> Кампанії <span id="campaigns-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
     <div class="section-insight" id="campaigns-summary"></div>
     <div class="charts-grid">
-      <div class="chart-card"><h3>Витрати закладів на кампанії по тижнях (\₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-spend"></canvas></div></div>
-      <div class="chart-card"><h3>Витрати Bolt на кампанії по тижнях (\₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-bolt"></canvas></div></div>
+      <div class="chart-card"><h3>Витрати закладів на кампанії по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-spend"></canvas></div></div>
+      <div class="chart-card"><h3>Витрати Bolt на кампанії по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-bolt"></canvas></div></div>
     </div>
     <div class="table-wrap scroll-table" id="campaigns-wrap"></div>
     <div class="calc-card" id="budget-calc">
-      <h3 class="calc-title">\💰 Калькулятор бюджету на кампанії</h3>
+      <h3 class="calc-title">💰 Калькулятор бюджету на кампанії</h3>
       <div class="calc-controls">
-        <div class="calc-field"><label for="calc-budget">Бюджет на точку / міс. (\₴)</label><input type="number" id="calc-budget" value="2500" min="0" step="100"></div>
+        <div class="calc-field"><label for="calc-budget">Бюджет на точку / міс. (₴)</label><input type="number" id="calc-budget" value="2500" min="0" step="100"></div>
         <div class="calc-field"><label for="calc-period-select">Період</label><select id="calc-period-select"></select></div>
       </div>
       <div id="calc-results"></div>
@@ -866,12 +866,12 @@ body.dark .alert-box{{background:#1F2937;border-color:#374151;color:#FCA5A5}}
   </section>
 
   <section id="smartpromo-section" class="section">
-    <div class="section-title"><span class="section-icon">\🚀</span> Smart Promo & Sponsored Listing</div>
+    <div class="section-title"><span class="section-icon">🚀</span> Smart Promo & Sponsored Listing</div>
     <div id="smartpromo-content"></div>
   </section>
 
   <section id="orders-detail-section" class="section">
-    <div class="section-title"><span class="section-icon">\🧾</span> Дохідність по замовленнях <span id="orders-detail-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="section-title"><span class="section-icon">🧾</span> Дохідність по замовленнях <span id="orders-detail-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
     <div class="store-filter-wrap">
       <label>Bolt Plus:</label>
       <select id="bp-filter"><option value="__all__">Всі</option><option value="yes">Bolt Plus</option><option value="no">Без Bolt Plus</option></select>
@@ -882,18 +882,18 @@ body.dark .alert-box{{background:#1F2937;border-color:#374151;color:#FCA5A5}}
   </section>
 
   <section id="complaints-section" class="section">
-    <div class="section-title"><span class="section-icon">\⚠\️</span> Замовлення зі скаргами <span id="comp-count" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="section-title"><span class="section-icon">⚠️</span> Замовлення зі скаргами <span id="comp-count" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
     <div class="table-wrap scroll-table" id="complaints-wrap"></div>
   </section>
 
   <section id="cancelled-section" class="section">
-    <div class="section-title"><span class="section-icon">\❌</span> Скасовані замовлення <span id="canc-count" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="section-title"><span class="section-icon">❌</span> Скасовані замовлення <span id="canc-count" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
     <div class="table-wrap scroll-table" id="cancelled-wrap"></div>
   </section>
 
   <section id="items-section" class="section">
-    <div class="section-title"><span class="section-icon">\🍕</span> Топ-10 позицій по закладах <span id="items-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
-    <div class="section-insight" id="items-insight">Найпопулярніші позиції за обраний період. Кількість замовлених одиниць та виручка (\₴).</div>
+    <div class="section-title"><span class="section-icon">🍕</span> Топ-10 позицій по закладах <span id="items-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="section-insight" id="items-insight">Найпопулярніші позиції за обраний період. Кількість замовлених одиниць та виручка (₴).</div>
     <div class="items-grid" id="items-grid"></div>
   </section>
 </main>
@@ -929,7 +929,7 @@ function getSelectedPeriodKey() {{ const keys = getPeriodKeys(); return keys[get
 function getPeriodLabel(key) {{
   if (periodMode === 'month') {{
     const [y, m] = key.split('-');
-    const months = ['\С\і\ч','\Л\ю\т','\Б\е\р','\К\в\і','\Т\р\а','\Ч\е\р','\Л\и\п','\С\е\р','\В\е\р','\Ж\о\в','\Л\и\с','\Г\р\у'];
+    const months = ['Січ','Лют','Бер','Кві','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру'];
     return months[parseInt(m) - 1] + ' ' + y;
   }}
   return key;
@@ -1030,7 +1030,7 @@ function getFilteredPeriodKeys() {{
 
 function populateWeekBar() {{
   const bar = document.getElementById('week-bar');
-  const label = periodMode === 'month' ? '\М\і\с\я\ц\ь:' : '\Т\и\ж\д\е\н\ь:';
+  const label = periodMode === 'month' ? 'Місяць:' : 'Тиждень:';
   let html = '<div class="week-bar-label">' + label + '</div>';
   const keys = getFilteredPeriodKeys();
   const allKeys = getPeriodKeys();
@@ -1057,12 +1057,12 @@ function destroyChart(id) {{ if (chartInstances[id]) {{ chartInstances[id].destr
 
 function wow(cur, prev, dir) {{
   const lbl = periodMode === 'month' ? 'MoM' : 'WoW';
-  if (!prev || prev === 0) return {{ cls: 'neutral', text: '\— ' + lbl }};
+  if (!prev || prev === 0) return {{ cls: 'neutral', text: '— ' + lbl }};
   const chg = ((cur - prev) / Math.abs(prev)) * 100;
   const good = (dir === 'up' && chg > 0) || (dir === 'down' && chg < 0);
   const bad = (dir === 'up' && chg < 0) || (dir === 'down' && chg > 0);
   const cls = good ? 'up' : bad ? 'down' : 'neutral';
-  const arrow = chg > 0 ? '\↑' : chg < 0 ? '\↓' : '';
+  const arrow = chg > 0 ? '↑' : chg < 0 ? '↓' : '';
   return {{ cls, text: arrow + ' ' + Math.abs(chg).toFixed(1) + '% ' + lbl }};
 }}
 
@@ -1090,7 +1090,7 @@ function renderKPIs() {{
   const periodLabel=periodMode==='month'?'за обраний місяць':'за обраний тиждень';
   const kpis=[
     {{label:'Замовлення',value:curOrders.toLocaleString('uk-UA'),...wow(curOrders,prevOrders,'up')}},
-    {{label:'Середній чек',value:'\₴'+avgChk.toFixed(0),...wow(avgChk,prevAvgChk,'up')}},
+    {{label:'Середній чек',value:'₴'+avgChk.toFixed(0),...wow(avgChk,prevAvgChk,'up')}},
     {{label:'Час приготування',value:avgCook.toFixed(1)+' хв',...wow(avgCook,prevAvgCook,'down')}},
     {{label:'Доступність',value:avgAvail.toFixed(1)+'%',cls:avgAvail>=90?'up':'down',text:'середнє по закладах'}},
     {{label:'Прийняття',value:avgAccept.toFixed(1)+'%',cls:avgAccept>=90?'up':'down',text:'середнє по закладах'}},
@@ -1110,7 +1110,7 @@ function renderOrdersCharts() {{
   chartInstances['chart-orders']=new Chart(document.getElementById('chart-orders'),{{type:'bar',data:{{labels,datasets:[{{label:'Замовлення',data:ordersData,backgroundColor:'rgba(239,68,68,.7)',borderColor:'#EF4444',borderWidth:1,borderRadius:6,barPercentage:.6}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{display:false}}}},scales:{{y:{{beginAtZero:true,grid:{{color:'rgba(0,0,0,.05)'}}}},x:{{grid:{{display:false}}}}}}}}}});
   destroyChart('chart-avg-check');
   const checkData=pkeys.map(k=>{{const kd=store[k]||{{}};let sum=0,cnt=0;ids.forEach(id=>{{if(kd[id]){{sum+=kd[id].avg_check*kd[id].orders;cnt+=kd[id].orders;}}}});return cnt>0?Math.round(sum/cnt):0;}});
-  chartInstances['chart-avg-check']=new Chart(document.getElementById('chart-avg-check'),{{type:'line',data:{{labels,datasets:[{{label:'Середній чек',data:checkData,borderColor:'#3B82F6',backgroundColor:'rgba(59,130,246,.08)',fill:true,tension:.35,pointRadius:4,pointBackgroundColor:'#3B82F6',borderWidth:2.5}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{display:false}}}},scales:{{y:{{beginAtZero:false,grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>'\₴'+v}}}},x:{{grid:{{display:false}}}}}}}}}});
+  chartInstances['chart-avg-check']=new Chart(document.getElementById('chart-avg-check'),{{type:'line',data:{{labels,datasets:[{{label:'Середній чек',data:checkData,borderColor:'#3B82F6',backgroundColor:'rgba(59,130,246,.08)',fill:true,tension:.35,pointRadius:4,pointBackgroundColor:'#3B82F6',borderWidth:2.5}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{display:false}}}},scales:{{y:{{beginAtZero:false,grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>'₴'+v}}}},x:{{grid:{{display:false}}}}}}}}}});
 }}
 
 function renderOpsCharts() {{
@@ -1138,7 +1138,7 @@ function renderInsights() {{
   let avgAvail=0,avgAccept=0,aCnt=0,bad=0,ord=0;
   ids.forEach(id=>{{const lo=D.latest_ops[id];if(lo){{avgAvail+=lo.availability;avgAccept+=lo.acceptance;aCnt++;}}if(wd[id]){{bad+=wd[id].bad_orders;ord+=wd[id].orders;}}}});
   if(aCnt>0){{avgAvail/=aCnt;avgAccept/=aCnt;}}const badRate=ord>0?(bad/ord*100):0;
-  let ops='<b>'+getPeriodLabel(selK)+'</b>. ';ops+='Доступність \— <b>'+avgAvail.toFixed(1)+'%</b>. Прийняття \— <b>'+avgAccept.toFixed(1)+'%</b>. Погані замовлення \— <b>'+badRate.toFixed(1)+'%</b>. ';
+  let ops='<b>'+getPeriodLabel(selK)+'</b>. ';ops+='Доступність — <b>'+avgAvail.toFixed(1)+'%</b>. Прийняття — <b>'+avgAccept.toFixed(1)+'%</b>. Погані замовлення — <b>'+badRate.toFixed(1)+'%</b>. ';
   if(avgAvail<80)ops+='<span class="insight-bad">Доступність критично низька!</span> ';
   else if(avgAvail>=95)ops+='<span class="insight-good">Відмінна доступність!</span> ';
   if(badRate>15)ops+='<span class="insight-bad">Високий рівень поганих замовлень.</span>';
@@ -1148,13 +1148,13 @@ function renderInsights() {{
 function renderStoresTable() {{
   const ids=getFilteredStoreIds();const store=getPerStoreData();const keys=getPeriodKeys();const selK=getSelectedPeriod();
   const prevIdx=keys.indexOf(selK)-1;const prevK=prevIdx>=0?keys[prevIdx]:null;const chgLbl=periodMode==='month'?'MoM':'WoW';
-  document.getElementById('stores-week-label').textContent='\— '+getPeriodLabel(selK)+(prevK?' ('+chgLbl+' до '+getPeriodLabel(prevK)+')':'');
+  document.getElementById('stores-week-label').textContent='— '+getPeriodLabel(selK)+(prevK?' ('+chgLbl+' до '+getPeriodLabel(prevK)+')':'');
   const wd=store[selK]||{{}};const pd=prevK?(store[prevK]||{{}}):{{}};
   const rows=ids.filter(id=>wd[id]).map(id=>({{id,...D.stores[id],...wd[id],ops:D.latest_ops[id]||{{}},prev:pd[id]||null}})).sort((a,b)=>b.orders-a.orders);
-  function wBadge(cur,prev,dir){{if(!prev||prev===0)return'';const chg=((cur-prev)/Math.abs(prev))*100;const good=(dir==='up'&&chg>0)||(dir==='down'&&chg<0);const color=good?'var(--pos)':'var(--neg)';const bg=good?'rgba(16,185,129,.1)':'rgba(239,68,68,.08)';const arrow=chg>0?'\↑':'\↓';return' <span style="font-size:10px;font-weight:600;color:'+color+';background:'+bg+';padding:1px 5px;border-radius:10px">'+arrow+Math.abs(chg).toFixed(0)+'%</span>';}}
+  function wBadge(cur,prev,dir){{if(!prev||prev===0)return'';const chg=((cur-prev)/Math.abs(prev))*100;const good=(dir==='up'&&chg>0)||(dir==='down'&&chg<0);const color=good?'var(--pos)':'var(--neg)';const bg=good?'rgba(16,185,129,.1)':'rgba(239,68,68,.08)';const arrow=chg>0?'↑':'↓';return' <span style="font-size:10px;font-weight:600;color:'+color+';background:'+bg+';padding:1px 5px;border-radius:10px">'+arrow+Math.abs(chg).toFixed(0)+'%</span>';}}
   let t='<table class="data-table"><thead><tr><th>#</th><th>Заклад</th><th class="text-right">Замовлення</th><th class="text-right">Сер. чек</th><th class="text-right">Час приг.</th><th class="text-right">Доступність</th><th class="text-right">Прийняття</th><th class="text-right">Фото</th><th class="text-right">Погані зам.</th></tr></thead><tbody>';
   let totOrd=0,totBad=0;
-  rows.forEach((d,i)=>{{const badRate=d.orders>0?(d.bad_orders/d.orders*100):0;totOrd+=d.orders;totBad+=d.bad_orders;t+='<tr><td>'+(i+1)+'</td><td>'+d.short+'</td>';t+='<td class="text-right">'+d.orders+(d.prev?wBadge(d.orders,d.prev.orders,'up'):'')+'</td>';t+='<td class="text-right">\₴'+d.avg_check+'</td>';t+='<td class="text-right">'+d.avg_cooking+' хв</td>';t+='<td class="text-right">'+(d.ops.availability!=null?d.ops.availability.toFixed(1)+'%':'\—')+'</td>';t+='<td class="text-right">'+(d.ops.acceptance!=null?d.ops.acceptance.toFixed(1)+'%':'\—')+'</td>';t+='<td class="text-right">'+(d.ops.photo_coverage!=null?d.ops.photo_coverage.toFixed(1)+'%':'\—')+'</td>';t+='<td class="text-right">'+badRate.toFixed(1)+'%</td></tr>';}});
+  rows.forEach((d,i)=>{{const badRate=d.orders>0?(d.bad_orders/d.orders*100):0;totOrd+=d.orders;totBad+=d.bad_orders;t+='<tr><td>'+(i+1)+'</td><td>'+d.short+'</td>';t+='<td class="text-right">'+d.orders+(d.prev?wBadge(d.orders,d.prev.orders,'up'):'')+'</td>';t+='<td class="text-right">₴'+d.avg_check+'</td>';t+='<td class="text-right">'+d.avg_cooking+' хв</td>';t+='<td class="text-right">'+(d.ops.availability!=null?d.ops.availability.toFixed(1)+'%':'—')+'</td>';t+='<td class="text-right">'+(d.ops.acceptance!=null?d.ops.acceptance.toFixed(1)+'%':'—')+'</td>';t+='<td class="text-right">'+(d.ops.photo_coverage!=null?d.ops.photo_coverage.toFixed(1)+'%':'—')+'</td>';t+='<td class="text-right">'+badRate.toFixed(1)+'%</td></tr>';}});
   const totalBadRate=totOrd>0?(totBad/totOrd*100):0;t+='<tr class="total-row"><td></td><td>Всього</td><td class="text-right">'+totOrd+'</td><td colspan="5"></td><td class="text-right">'+totalBadRate.toFixed(1)+'%</td></tr>';
   t+='</tbody></table>';document.getElementById('stores-table-wrap').innerHTML=t;
 }}
@@ -1165,11 +1165,11 @@ function renderRevenueChart() {{
   const foodData=pkeys.map(k=>{{const rw=revStore[k]||{{}};return ids.reduce((s,id)=>s+((rw[id]&&rw[id].food_revenue)||0),0);}});
   const feeData=pkeys.map(k=>{{const rw=revStore[k]||{{}};return ids.reduce((s,id)=>s+((rw[id]&&rw[id].total_fee_gross)||0),0);}});
   const netData=pkeys.map(k=>{{const rw=revStore[k]||{{}};return ids.reduce((s,id)=>s+((rw[id]&&rw[id].net_income)||0),0);}});
-  chartInstances['chart-revenue']=new Chart(document.getElementById('chart-revenue'),{{type:'bar',data:{{labels,datasets:[{{label:'Дохід від їжі',data:foodData,backgroundColor:'rgba(59,130,246,.7)',borderRadius:4,barPercentage:.7}},{{label:'Комісія (брутто)',data:feeData,backgroundColor:'rgba(239,68,68,.6)',borderRadius:4,barPercentage:.7}},{{label:'Чистий дохід',data:netData,backgroundColor:'rgba(16,185,129,.7)',borderRadius:4,barPercentage:.7}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{position:'bottom',labels:{{usePointStyle:true,padding:12,font:{{size:11}}}}}}}},scales:{{x:{{stacked:false,grid:{{display:false}}}},y:{{beginAtZero:true,grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>'\₴'+v.toLocaleString('uk-UA')}}}}}}}}}});
+  chartInstances['chart-revenue']=new Chart(document.getElementById('chart-revenue'),{{type:'bar',data:{{labels,datasets:[{{label:'Дохід від їжі',data:foodData,backgroundColor:'rgba(59,130,246,.7)',borderRadius:4,barPercentage:.7}},{{label:'Комісія (брутто)',data:feeData,backgroundColor:'rgba(239,68,68,.6)',borderRadius:4,barPercentage:.7}},{{label:'Чистий дохід',data:netData,backgroundColor:'rgba(16,185,129,.7)',borderRadius:4,barPercentage:.7}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{position:'bottom',labels:{{usePointStyle:true,padding:12,font:{{size:11}}}}}}}},scales:{{x:{{stacked:false,grid:{{display:false}}}},y:{{beginAtZero:true,grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>'₴'+v.toLocaleString('uk-UA')}}}}}}}}}});
   let sumHtml='<table class="revenue-summary-table"><thead><tr><th>Заклад</th><th class="text-right">Замовлення</th><th class="text-right">Дохід їжі</th><th class="text-right">Комісія</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th></tr></thead><tbody>';
   const rw=revStore[selK]||{{}};let tOrd=0,tFood=0,tFee=0,tRef=0,tNet=0;
-  ids.filter(id=>rw[id]).sort((a,b)=>(rw[b].net_income||0)-(rw[a].net_income||0)).forEach(id=>{{const r=rw[id];const s=D.stores[id];tOrd+=r.orders||0;tFood+=r.food_revenue||0;tFee+=r.total_fee_gross||0;tRef+=r.refund||0;tNet+=r.net_income||0;sumHtml+='<tr><td>'+(s?s.short:id)+'</td><td class="text-right">'+(r.orders||0)+'</td><td class="text-right">\₴'+(r.food_revenue||0).toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">\₴'+(r.total_fee_gross||0).toLocaleString('uk-UA')+'</td><td class="text-right">\₴'+(r.refund||0).toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--pos)">\₴'+(r.net_income||0).toLocaleString('uk-UA')+'</td></tr>';}});
-  sumHtml+='<tr class="total-row"><td>Всього</td><td class="text-right">'+tOrd+'</td><td class="text-right">\₴'+tFood.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">\₴'+tFee.toLocaleString('uk-UA')+'</td><td class="text-right">\₴'+tRef.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--pos)">\₴'+tNet.toLocaleString('uk-UA')+'</td></tr>';
+  ids.filter(id=>rw[id]).sort((a,b)=>(rw[b].net_income||0)-(rw[a].net_income||0)).forEach(id=>{{const r=rw[id];const s=D.stores[id];tOrd+=r.orders||0;tFood+=r.food_revenue||0;tFee+=r.total_fee_gross||0;tRef+=r.refund||0;tNet+=r.net_income||0;sumHtml+='<tr><td>'+(s?s.short:id)+'</td><td class="text-right">'+(r.orders||0)+'</td><td class="text-right">₴'+(r.food_revenue||0).toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">₴'+(r.total_fee_gross||0).toLocaleString('uk-UA')+'</td><td class="text-right">₴'+(r.refund||0).toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--pos)">₴'+(r.net_income||0).toLocaleString('uk-UA')+'</td></tr>';}});
+  sumHtml+='<tr class="total-row"><td>Всього</td><td class="text-right">'+tOrd+'</td><td class="text-right">₴'+tFood.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">₴'+tFee.toLocaleString('uk-UA')+'</td><td class="text-right">₴'+tRef.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--pos)">₴'+tNet.toLocaleString('uk-UA')+'</td></tr>';
   sumHtml+='</tbody></table>';document.getElementById('revenue-summary').innerHTML=sumHtml;
 }}
 
@@ -1179,21 +1179,21 @@ function renderCampaignsChart() {{
   const provSpend=pkeys.map(k=>camps.filter(r=>getCampaignPeriodKey(r)===k&&ids.includes(r.provider_id)).reduce((s,r)=>s+(r.provider_spend||0),0));
   const boltSpend=pkeys.map(k=>camps.filter(r=>getCampaignPeriodKey(r)===k&&ids.includes(r.provider_id)).reduce((s,r)=>s+(r.bolt_spend||0),0));
   const campOrders=pkeys.map(k=>camps.filter(r=>getCampaignPeriodKey(r)===k&&ids.includes(r.provider_id)).reduce((s,r)=>s+(r.orders||0),0));
-  chartInstances['chart-campaign-spend']=new Chart(document.getElementById('chart-campaign-spend'),{{type:'bar',data:{{labels,datasets:[{{label:'Витрати закладу \₴',data:provSpend,backgroundColor:'rgba(239,68,68,.7)',borderRadius:4,barPercentage:.6,yAxisID:'y'}},{{label:'Промо-замовлення',data:campOrders,type:'line',borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.08)',pointRadius:3,pointBackgroundColor:'#EF4444',borderWidth:2,tension:.3,fill:false,yAxisID:'y1'}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{position:'bottom',labels:{{usePointStyle:true,padding:12,font:{{size:11}}}}}}}},scales:{{x:{{grid:{{display:false}}}},y:{{beginAtZero:true,position:'left',grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>'\₴'+v.toLocaleString('uk-UA')}}}},y1:{{beginAtZero:true,position:'right',grid:{{display:false}},ticks:{{font:{{size:10}}}}}}}}}}}});
-  chartInstances['chart-campaign-bolt']=new Chart(document.getElementById('chart-campaign-bolt'),{{type:'bar',data:{{labels,datasets:[{{label:'Витрати Bolt \₴',data:boltSpend,backgroundColor:'rgba(59,130,246,.7)',borderRadius:4,barPercentage:.6,yAxisID:'y'}},{{label:'Промо-замовлення',data:campOrders,type:'line',borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.08)',pointRadius:3,pointBackgroundColor:'#EF4444',borderWidth:2,tension:.3,fill:false,yAxisID:'y1'}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{position:'bottom',labels:{{usePointStyle:true,padding:12,font:{{size:11}}}}}}}},scales:{{x:{{grid:{{display:false}}}},y:{{beginAtZero:true,position:'left',grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>'\₴'+v.toLocaleString('uk-UA')}}}},y1:{{beginAtZero:true,position:'right',grid:{{display:false}},ticks:{{font:{{size:10}}}}}}}}}}}});
+  chartInstances['chart-campaign-spend']=new Chart(document.getElementById('chart-campaign-spend'),{{type:'bar',data:{{labels,datasets:[{{label:'Витрати закладу ₴',data:provSpend,backgroundColor:'rgba(239,68,68,.7)',borderRadius:4,barPercentage:.6,yAxisID:'y'}},{{label:'Промо-замовлення',data:campOrders,type:'line',borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.08)',pointRadius:3,pointBackgroundColor:'#EF4444',borderWidth:2,tension:.3,fill:false,yAxisID:'y1'}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{position:'bottom',labels:{{usePointStyle:true,padding:12,font:{{size:11}}}}}}}},scales:{{x:{{grid:{{display:false}}}},y:{{beginAtZero:true,position:'left',grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>'₴'+v.toLocaleString('uk-UA')}}}},y1:{{beginAtZero:true,position:'right',grid:{{display:false}},ticks:{{font:{{size:10}}}}}}}}}}}});
+  chartInstances['chart-campaign-bolt']=new Chart(document.getElementById('chart-campaign-bolt'),{{type:'bar',data:{{labels,datasets:[{{label:'Витрати Bolt ₴',data:boltSpend,backgroundColor:'rgba(59,130,246,.7)',borderRadius:4,barPercentage:.6,yAxisID:'y'}},{{label:'Промо-замовлення',data:campOrders,type:'line',borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.08)',pointRadius:3,pointBackgroundColor:'#EF4444',borderWidth:2,tension:.3,fill:false,yAxisID:'y1'}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{position:'bottom',labels:{{usePointStyle:true,padding:12,font:{{size:11}}}}}}}},scales:{{x:{{grid:{{display:false}}}},y:{{beginAtZero:true,position:'left',grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>'₴'+v.toLocaleString('uk-UA')}}}},y1:{{beginAtZero:true,position:'right',grid:{{display:false}},ticks:{{font:{{size:10}}}}}}}}}}}});
 }}
 
 function renderCampaigns() {{
   const ids=getFilteredStoreIds();const selK=getSelectedPeriod();
-  document.getElementById('campaigns-week-label').textContent='\— '+getPeriodLabel(selK);
+  document.getElementById('campaigns-week-label').textContent='— '+getPeriodLabel(selK);
   const rows=(D.campaigns||[]).filter(r=>getCampaignPeriodKey(r)===selK&&ids.includes(r.provider_id));
   const bycamp={{}};rows.forEach(r=>{{const key=r.campaign_id;if(!bycamp[key])bycamp[key]={{...r,orders:0,total_discount:0,bolt_spend:0,provider_spend:0,providers:new Set()}};bycamp[key].orders+=r.orders;bycamp[key].total_discount+=r.total_discount;bycamp[key].bolt_spend+=r.bolt_spend;bycamp[key].provider_spend+=r.provider_spend;bycamp[key].providers.add(r.provider_short);}});
   const campList=Object.values(bycamp).sort((a,b)=>b.orders-a.orders);
   let totOrd=0,totDisc=0,totBolt=0,totProv=0;campList.forEach(c=>{{totOrd+=c.orders;totDisc+=c.total_discount;totBolt+=c.bolt_spend;totProv+=c.provider_spend;}});
   const summaryEl=document.getElementById('campaigns-summary');
-  if(campList.length===0){{summaryEl.innerHTML='<b>'+getPeriodLabel(selK)+'</b>. Немає активних кампаній для обраних закладів.';}}else{{summaryEl.innerHTML='<b>'+getPeriodLabel(selK)+'</b>. Активних кампаній: <b>'+campList.length+'</b>. Замовлень з кампаніями: <b>'+totOrd+'</b>. Загальна знижка: <b>\₴'+totDisc.toLocaleString('uk-UA')+'</b> (Bolt: \₴'+totBolt.toLocaleString('uk-UA')+', Заклад: \₴'+totProv.toLocaleString('uk-UA')+').';}}
-  let t='<table class="data-table"><thead><tr><th>Кампанія</th><th>Хто платить</th><th>Дати</th><th>Заклади</th><th class="text-right">Зам.</th><th class="text-right">Знижка \₴</th><th class="text-right">Bolt \₴</th><th class="text-right">Заклад \₴</th></tr></thead><tbody>';
-  if(campList.length===0){{t+='<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:24px">Немає кампаній за цей період</td></tr>';}}else{{campList.forEach(c=>{{const provArr=[...c.providers];const provText=provArr.length>3?provArr.slice(0,3).join(', ')+' +'+(provArr.length-3):provArr.join(', ');const payer=c.provider_spend>0&&c.bolt_spend>0?'Спільно':c.provider_spend>0?'Заклад':c.bolt_spend>0?'Bolt':'\—';const payerCls=payer==='Bolt'?'color:var(--blue);font-weight:600':payer==='Заклад'?'color:var(--neg);font-weight:600':payer==='Спільно'?'color:var(--warn);font-weight:600':'';t+='<tr><td style="white-space:normal;min-width:180px;max-width:280px" title="'+(c.full_name||'').replace(/"/g,'&quot;')+'">'+c.name+'</td><td style="'+payerCls+';white-space:nowrap">'+payer+'</td><td style="font-size:11px;white-space:nowrap">'+c.start_date+' \→ '+c.end_date+'</td><td style="font-size:12px">'+provText+'</td><td class="text-right">'+c.orders+'</td><td class="text-right">\₴'+c.total_discount.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--blue)">\₴'+c.bolt_spend.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">\₴'+c.provider_spend.toLocaleString('uk-UA')+'</td></tr>';}});t+='<tr class="total-row"><td colspan="4">Всього</td><td class="text-right">'+totOrd+'</td><td class="text-right">\₴'+totDisc.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--blue)">\₴'+totBolt.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">\₴'+totProv.toLocaleString('uk-UA')+'</td></tr>';}}
+  if(campList.length===0){{summaryEl.innerHTML='<b>'+getPeriodLabel(selK)+'</b>. Немає активних кампаній для обраних закладів.';}}else{{summaryEl.innerHTML='<b>'+getPeriodLabel(selK)+'</b>. Активних кампаній: <b>'+campList.length+'</b>. Замовлень з кампаніями: <b>'+totOrd+'</b>. Загальна знижка: <b>₴'+totDisc.toLocaleString('uk-UA')+'</b> (Bolt: ₴'+totBolt.toLocaleString('uk-UA')+', Заклад: ₴'+totProv.toLocaleString('uk-UA')+').';}}
+  let t='<table class="data-table"><thead><tr><th>Кампанія</th><th>Хто платить</th><th>Дати</th><th>Заклади</th><th class="text-right">Зам.</th><th class="text-right">Знижка ₴</th><th class="text-right">Bolt ₴</th><th class="text-right">Заклад ₴</th></tr></thead><tbody>';
+  if(campList.length===0){{t+='<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:24px">Немає кампаній за цей період</td></tr>';}}else{{campList.forEach(c=>{{const provArr=[...c.providers];const provText=provArr.length>3?provArr.slice(0,3).join(', ')+' +'+(provArr.length-3):provArr.join(', ');const payer=c.provider_spend>0&&c.bolt_spend>0?'Спільно':c.provider_spend>0?'Заклад':c.bolt_spend>0?'Bolt':'—';const payerCls=payer==='Bolt'?'color:var(--blue);font-weight:600':payer==='Заклад'?'color:var(--neg);font-weight:600':payer==='Спільно'?'color:var(--warn);font-weight:600':'';t+='<tr><td style="white-space:normal;min-width:180px;max-width:280px" title="'+(c.full_name||'').replace(/"/g,'&quot;')+'">'+c.name+'</td><td style="'+payerCls+';white-space:nowrap">'+payer+'</td><td style="font-size:11px;white-space:nowrap">'+c.start_date+' → '+c.end_date+'</td><td style="font-size:12px">'+provText+'</td><td class="text-right">'+c.orders+'</td><td class="text-right">₴'+c.total_discount.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--blue)">₴'+c.bolt_spend.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">₴'+c.provider_spend.toLocaleString('uk-UA')+'</td></tr>';}});t+='<tr class="total-row"><td colspan="4">Всього</td><td class="text-right">'+totOrd+'</td><td class="text-right">₴'+totDisc.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--blue)">₴'+totBolt.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">₴'+totProv.toLocaleString('uk-UA')+'</td></tr>';}}
   t+='</tbody></table>';document.getElementById('campaigns-wrap').innerHTML=t;
 }}
 
@@ -1203,10 +1203,10 @@ function renderSmartPromo() {{
   const hasSP = ids.some(id => sp[id] && sp[id] > 0);
   let html = '';
   if (!hasSP) {{
-    html += '<div class="alert-box"><h4>\🚫 Smart Promo \— НЕ АКТИВНИЙ на жодній точці</h4><p>За всю історію жоден заклад MA Pizza не використовував Smart Promo. Smart Promo дає в середньому <strong>+20\–30% апліфт замовлень</strong> при активації. Рекомендуємо активувати на всіх 7 точках.</p></div>';
-    html += '<div class="alert-box"><h4>\🚫 Sponsored Listing \— НІКОЛИ не використовувався</h4><p>Жоден заклад MA Pizza не використовував Sponsored Listings. Це інструмент платної видимості у додатку Bolt Food. Рекомендуємо тестувати з бюджетом <strong>400\–600 \₴/тиждень на точку</strong>.</p></div>';
+    html += '<div class="alert-box"><h4>🚫 Smart Promo — НЕ АКТИВНИЙ на жодній точці</h4><p>За всю історію жоден заклад MA Pizza не використовував Smart Promo. Smart Promo дає в середньому <strong>+20–30% апліфт замовлень</strong> при активації. Рекомендуємо активувати на всіх 7 точках.</p></div>';
+    html += '<div class="alert-box"><h4>🚫 Sponsored Listing — НІКОЛИ не використовувався</h4><p>Жоден заклад MA Pizza не використовував Sponsored Listings. Це інструмент платної видимості у додатку Bolt Food. Рекомендуємо тестувати з бюджетом <strong>400–600 ₴/тиждень на точку</strong>.</p></div>';
   }}
-  html += '<div class="section-title" style="margin-top:8px"><span class="section-icon">\📍</span> Статус промо по точках</div>';
+  html += '<div class="section-title" style="margin-top:8px"><span class="section-icon">📍</span> Статус промо по точках</div>';
   html += '<div class="promo-status-grid">';
   ids.forEach(id => {{
     const s = D.stores[id];
@@ -1226,14 +1226,14 @@ function renderBudgetCalc() {{
   const periodSel=document.getElementById('calc-period-select');
   const months=[...new Set(camps.map(c=>c.order_month))].filter(Boolean).sort();
   const curVal=periodSel.value;
-  periodSel.innerHTML=months.map(m=>{{const[y,mo]=m.split('-');const mNames=['\С\і\ч','\Л\ю\т','\Б\е\р','\К\в\і','\Т\р\а','\Ч\е\р','\Л\и\п','\С\е\р','\В\е\р','\Ж\о\в','\Л\и\с','\Г\р\у'];return'<option value="'+m+'"'+(m===curVal?' selected':'')+'>'+mNames[parseInt(mo)-1]+' '+y+'</option>';}}).join('');
+  periodSel.innerHTML=months.map(m=>{{const[y,mo]=m.split('-');const mNames=['Січ','Лют','Бер','Кві','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру'];return'<option value="'+m+'"'+(m===curVal?' selected':'')+'>'+mNames[parseInt(mo)-1]+' '+y+'</option>';}}).join('');
   if(!curVal&&months.length)periodSel.value=months[months.length-1];
   const selMonth=periodSel.value;const budget=parseFloat(document.getElementById('calc-budget').value)||0;
   const storeSpend={{}};camps.forEach(c=>{{if(c.order_month!==selMonth||!ids.includes(c.provider_id))return;if(!storeSpend[c.provider_id])storeSpend[c.provider_id]=0;storeSpend[c.provider_id]+=c.provider_spend||0;}});
   let html='<div class="calc-store-grid">';let totalSpent=0,totalBudget=0;
-  ids.forEach(id=>{{const s=D.stores[id];if(!s)return;const spent=Math.round(storeSpend[id]||0);totalSpent+=spent;totalBudget+=budget;const pct=budget>0?Math.min((spent/budget)*100,100):0;const left=budget-spent;const barColor=pct>=100?'var(--neg)':pct>=75?'var(--warn)':'var(--pos)';const leftColor=left<0?'color:var(--neg)':'color:var(--pos)';html+='<div class="calc-store"><div class="calc-store-name">'+s.short+'</div><div class="calc-store-city">'+s.city+'</div><div class="calc-bar-wrap"><div class="calc-bar" style="width:'+pct.toFixed(1)+'%;background:'+barColor+'"></div></div><div class="calc-metrics"><span class="calc-spent" style="color:var(--neg)">Витрачено: \₴'+spent.toLocaleString('uk-UA')+'</span><span class="calc-left" style="'+leftColor+'">Залишок: \₴'+left.toLocaleString('uk-UA')+'</span></div></div>';}});
+  ids.forEach(id=>{{const s=D.stores[id];if(!s)return;const spent=Math.round(storeSpend[id]||0);totalSpent+=spent;totalBudget+=budget;const pct=budget>0?Math.min((spent/budget)*100,100):0;const left=budget-spent;const barColor=pct>=100?'var(--neg)':pct>=75?'var(--warn)':'var(--pos)';const leftColor=left<0?'color:var(--neg)':'color:var(--pos)';html+='<div class="calc-store"><div class="calc-store-name">'+s.short+'</div><div class="calc-store-city">'+s.city+'</div><div class="calc-bar-wrap"><div class="calc-bar" style="width:'+pct.toFixed(1)+'%;background:'+barColor+'"></div></div><div class="calc-metrics"><span class="calc-spent" style="color:var(--neg)">Витрачено: ₴'+spent.toLocaleString('uk-UA')+'</span><span class="calc-left" style="'+leftColor+'">Залишок: ₴'+left.toLocaleString('uk-UA')+'</span></div></div>';}});
   html+='</div>';const totalLeft=totalBudget-totalSpent;const totalPct=totalBudget>0?(totalSpent/totalBudget*100):0;
-  html+='<div class="calc-total-row"><div><div class="calc-total-label">Загальний бюджет</div><div class="calc-total-val" style="color:var(--text)">\₴'+totalBudget.toLocaleString('uk-UA')+'</div></div><div><div class="calc-total-label">Витрачено</div><div class="calc-total-val" style="color:var(--neg)">\₴'+totalSpent.toLocaleString('uk-UA')+' <span style="font-size:13px;font-weight:600">('+totalPct.toFixed(1)+'%)</span></div></div><div><div class="calc-total-label">Залишок</div><div class="calc-total-val" style="color:'+(totalLeft>=0?'var(--pos)':'var(--neg)')+'">\₴'+totalLeft.toLocaleString('uk-UA')+'</div></div></div>';
+  html+='<div class="calc-total-row"><div><div class="calc-total-label">Загальний бюджет</div><div class="calc-total-val" style="color:var(--text)">₴'+totalBudget.toLocaleString('uk-UA')+'</div></div><div><div class="calc-total-label">Витрачено</div><div class="calc-total-val" style="color:var(--neg)">₴'+totalSpent.toLocaleString('uk-UA')+' <span style="font-size:13px;font-weight:600">('+totalPct.toFixed(1)+'%)</span></div></div><div><div class="calc-total-label">Залишок</div><div class="calc-total-val" style="color:'+(totalLeft>=0?'var(--pos)':'var(--neg)')+'">₴'+totalLeft.toLocaleString('uk-UA')+'</div></div></div>';
   document.getElementById('calc-results').innerHTML=html;
 }}
 document.getElementById('calc-budget').addEventListener('input',renderBudgetCalc);
@@ -1241,19 +1241,19 @@ document.getElementById('calc-period-select').addEventListener('change',renderBu
 
 function fmtDiscount(r) {{
   const bolt=r.bolt_discount||0;const prov=r.provider_discount||0;const total=r.total_discount||0;
-  if(total<=0)return'\—';const parts=[];if(bolt>0)parts.push('Bolt: '+Math.round(bolt));if(prov>0)parts.push('Заклад: '+Math.round(prov));if(!parts.length)parts.push(Math.round(total));return parts.join(' / ');
+  if(total<=0)return'—';const parts=[];if(bolt>0)parts.push('Bolt: '+Math.round(bolt));if(prov>0)parts.push('Заклад: '+Math.round(prov));if(!parts.length)parts.push(Math.round(total));return parts.join(' / ');
 }}
 function fmtFee(net,gross){{const vat=Math.round(gross-net);return Math.round(net)+' + '+vat+' = '+Math.round(gross);}}
 
 function renderOrdersDetail() {{
-  const ids=getFilteredStoreIds();const selK=getSelectedPeriod();document.getElementById('orders-detail-week-label').textContent='\— '+getPeriodLabel(selK);
+  const ids=getFilteredStoreIds();const selK=getSelectedPeriod();document.getElementById('orders-detail-week-label').textContent='— '+getPeriodLabel(selK);
   const periodField=periodMode==='month'?'order_month':'order_week';
   let rows=(D.orders||[]).filter(r=>r[periodField]===selK&&ids.includes(r.provider_id));
   if(selectedBP==='yes')rows=rows.filter(r=>r.bolt_plus==='Bolt Plus');else if(selectedBP==='no')rows=rows.filter(r=>r.bolt_plus!=='Bolt Plus');
   if(selectedState==='delivered')rows=rows.filter(r=>r.order_state_raw==='delivered');else if(selectedState==='failed')rows=rows.filter(r=>r.order_state_raw!=='delivered');
   let t='<table class="data-table"><thead><tr><th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Bolt+</th><th class="text-right">Ціна до знижки</th><th class="text-right">Знижка (за чий рахунок)</th><th class="text-right">Дохід від їжі</th><th class="text-right">Комісія (нетто+ПДВ=брутто)</th><th class="text-right">Bolt Plus комісія</th><th class="text-right">Всього комісія</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th><th>Причина</th></tr></thead><tbody>';
   let totFood=0,totRev=0,totFee=0,totBpFee=0,totRef=0,totNet=0;
-  rows.forEach(r=>{{const date=r.order_created_date?String(r.order_created_date).substring(0,10):'';totFood+=r.food_before_discount||0;totRev+=r.food_revenue||0;totFee+=r.total_fee_gross||0;totBpFee+=r.bp_fee_gross||0;totRef+=r.refund||0;totNet+=r.net_income||0;const isBp=(r.bp_fee_net||0)>0.5;const bpLabel=r.bolt_plus||'Ні';const bpClass=isBp?' class="bp"':'';const feeNet=r.fee_net||0;const feeGross=r.fee_gross||0;const bpFeeNet=r.bp_fee_net||0;const bpFeeGross=r.bp_fee_gross||0;const bpText=(isBp&&bpFeeNet>0.5)?fmtFee(bpFeeNet,bpFeeGross):'\—';const isFailed=r.order_state_raw!=='delivered';const stateColor=isFailed?' style="color:var(--neg);font-weight:600"':'';const failReason=r.fail_reason||'';const nc=(r.net_income||0)<0?' style="color:var(--neg)"':'';t+='<tr'+(isFailed?' style="background:rgba(239,68,68,.04)"':'')+'><td>'+date+'</td><td>'+(r.order_reference_id||'')+'</td><td>'+(r.provider_short||'')+'</td><td'+stateColor+'>'+(r.order_state||'')+'</td><td'+bpClass+'>'+bpLabel+'</td><td class="text-right">'+(r.food_before_discount||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+fmtDiscount(r)+'</td><td class="text-right">'+(r.food_revenue||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="font-size:11px">'+(isFailed?'\—':fmtFee(feeNet,feeGross))+'</td><td class="text-right" style="font-size:11px">'+(isFailed?'\—':bpText)+'</td><td class="text-right" style="color:var(--neg)">'+(r.total_fee_gross||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+(r.refund||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right"'+nc+'>'+(r.net_income||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="comment-cell"'+(isFailed?' style="color:var(--neg)"':'')+'>'+failReason+'</td></tr>';}});
+  rows.forEach(r=>{{const date=r.order_created_date?String(r.order_created_date).substring(0,10):'';totFood+=r.food_before_discount||0;totRev+=r.food_revenue||0;totFee+=r.total_fee_gross||0;totBpFee+=r.bp_fee_gross||0;totRef+=r.refund||0;totNet+=r.net_income||0;const isBp=(r.bp_fee_net||0)>0.5;const bpLabel=r.bolt_plus||'Ні';const bpClass=isBp?' class="bp"':'';const feeNet=r.fee_net||0;const feeGross=r.fee_gross||0;const bpFeeNet=r.bp_fee_net||0;const bpFeeGross=r.bp_fee_gross||0;const bpText=(isBp&&bpFeeNet>0.5)?fmtFee(bpFeeNet,bpFeeGross):'—';const isFailed=r.order_state_raw!=='delivered';const stateColor=isFailed?' style="color:var(--neg);font-weight:600"':'';const failReason=r.fail_reason||'';const nc=(r.net_income||0)<0?' style="color:var(--neg)"':'';t+='<tr'+(isFailed?' style="background:rgba(239,68,68,.04)"':'')+'><td>'+date+'</td><td>'+(r.order_reference_id||'')+'</td><td>'+(r.provider_short||'')+'</td><td'+stateColor+'>'+(r.order_state||'')+'</td><td'+bpClass+'>'+bpLabel+'</td><td class="text-right">'+(r.food_before_discount||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+fmtDiscount(r)+'</td><td class="text-right">'+(r.food_revenue||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="font-size:11px">'+(isFailed?'—':fmtFee(feeNet,feeGross))+'</td><td class="text-right" style="font-size:11px">'+(isFailed?'—':bpText)+'</td><td class="text-right" style="color:var(--neg)">'+(r.total_fee_gross||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+(r.refund||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right"'+nc+'>'+(r.net_income||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="comment-cell"'+(isFailed?' style="color:var(--neg)"':'')+'>'+failReason+'</td></tr>';}});
   const failedCount=rows.filter(r=>r.order_state_raw!=='delivered').length;const deliveredCount=rows.length-failedCount;
   t+='<tr class="total-row"><td colspan="5">Всього ('+rows.length+' зам., '+deliveredCount+' дост., '+failedCount+' невдал.)</td><td class="text-right">'+totFood.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td><td class="text-right">'+totRev.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td><td class="text-right">'+totBpFee.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="color:var(--neg)">'+totFee.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+totRef.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+totNet.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td></tr>';
   t+='</tbody></table>';document.getElementById('orders-detail-wrap').innerHTML=t;
@@ -1264,7 +1264,7 @@ function renderComplaints() {{
   const rows=(D.complaints||[]).filter(r=>r[periodField]===selK&&ids.includes(r.provider_id));
   document.getElementById('comp-count').textContent='('+rows.length+' за '+getPeriodLabel(selK)+')';
   let t='<table class="data-table"><thead><tr><th>Дата</th><th>Order Ref</th><th>Заклад</th><th class="text-right">Сума</th><th>Тип проблеми</th><th>Винний</th><th class="text-center">Рейтинг</th><th>Коментар</th></tr></thead><tbody>';
-  if(rows.length===0){{t+='<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:24px">Немає скарг за цей період</td></tr>';}}else{{rows.forEach(r=>{{const date=r.order_created_date?String(r.order_created_date).substring(0,10):'';const comment=(r.provider_rating_comment||'').substring(0,120);t+='<tr><td>'+date+'</td><td>'+(r.order_reference_id||'')+'</td><td>'+(r.provider_short||'')+'</td><td class="text-right">\₴'+(r.sum_uah||0)+'</td><td>'+(r.bad_order_type||'')+'</td><td>'+(r.fault||'')+'</td><td class="text-center">'+(r.rating!=null?r.rating:'\—')+'</td><td class="comment-cell">'+comment+'</td></tr>';}});}}
+  if(rows.length===0){{t+='<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:24px">Немає скарг за цей період</td></tr>';}}else{{rows.forEach(r=>{{const date=r.order_created_date?String(r.order_created_date).substring(0,10):'';const comment=(r.provider_rating_comment||'').substring(0,120);t+='<tr><td>'+date+'</td><td>'+(r.order_reference_id||'')+'</td><td>'+(r.provider_short||'')+'</td><td class="text-right">₴'+(r.sum_uah||0)+'</td><td>'+(r.bad_order_type||'')+'</td><td>'+(r.fault||'')+'</td><td class="text-center">'+(r.rating!=null?r.rating:'—')+'</td><td class="comment-cell">'+comment+'</td></tr>';}});}}
   t+='</tbody></table>';document.getElementById('complaints-wrap').innerHTML=t;
 }}
 
@@ -1279,8 +1279,8 @@ function renderCancelled() {{
 
 function renderTopItems() {{
   const ids=getFilteredStoreIds();const selK=getSelectedPeriod();const itemsStore=getItemsData();const weekItems=itemsStore[selK]||{{}};
-  document.getElementById('items-week-label').textContent='\— '+getPeriodLabel(selK);
-  let html='';ids.forEach(id=>{{const items=weekItems[id];if(!items||!items.length)return;const s=D.stores[id];html+='<div class="items-card"><h4>'+s.short+'</h4><div class="items-city">'+s.city+'</div><ol>';items.forEach(it=>{{html+='<li>'+it.name+'<span class="item-qty">'+it.qty+' шт</span><span class="item-rev">\₴'+it.revenue.toLocaleString('uk-UA')+'</span></li>';}});html+='</ol></div>';}});
+  document.getElementById('items-week-label').textContent='— '+getPeriodLabel(selK);
+  let html='';ids.forEach(id=>{{const items=weekItems[id];if(!items||!items.length)return;const s=D.stores[id];html+='<div class="items-card"><h4>'+s.short+'</h4><div class="items-city">'+s.city+'</div><ol>';items.forEach(it=>{{html+='<li>'+it.name+'<span class="item-qty">'+it.qty+' шт</span><span class="item-rev">₴'+it.revenue.toLocaleString('uk-UA')+'</span></li>';}});html+='</ol></div>';}});
   document.getElementById('items-grid').innerHTML=html||'<p style="color:var(--text2);padding:24px;text-align:center">Немає даних.</p>';
 }}
 
@@ -1302,11 +1302,11 @@ document.getElementById('state-filter').addEventListener('change',function(){{se
 
 window.toggleDark=function(){{
   document.body.classList.toggle('dark');const isDark=document.body.classList.contains('dark');
-  document.getElementById('theme-toggle').textContent=isDark?'\☀\️':'\🌙';
+  document.getElementById('theme-toggle').textContent=isDark?'☀️':'🌙';
   try{{localStorage.setItem('ma-pizza-dark',isDark?'1':'0')}}catch(e){{}}
   Chart.defaults.color=isDark?'#D1D5DB':'#374151';renderAll();
 }};
-(function(){{try{{if(localStorage.getItem('ma-pizza-dark')==='1'){{document.body.classList.add('dark');document.getElementById('theme-toggle').textContent='\☀\️';Chart.defaults.color='#D1D5DB';}}}}catch(e){{}}}})();
+(function(){{try{{if(localStorage.getItem('ma-pizza-dark')==='1'){{document.body.classList.add('dark');document.getElementById('theme-toggle').textContent='☀️';Chart.defaults.color='#D1D5DB';}}}}catch(e){{}}}})();
 
 document.getElementById('period-select').addEventListener('change',function(){{periodMode=this.value;populateWeekBar();renderAll();}});
 
