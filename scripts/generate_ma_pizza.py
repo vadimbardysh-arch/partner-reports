@@ -1,6 +1,7 @@
 """
 Generate a multi-store weekly HTML report for MA Pizza (Lviv) by querying Databricks.
-Produces ma-pizza/index.html with Smart Promo & Sponsored Listing analytics.
+Produces ma-pizza/index.html — identical structure to the Vash Lavash dashboard,
+plus Smart Promo & Sponsored Listing analytics.
 """
 
 import os
@@ -19,20 +20,49 @@ import pandas as pd
 from config import SERVER_HOSTNAME, HTTP_PATH
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WEEKS_BACK = 12
+WEEKS_BACK = 52
 
 MA_PIZZA_PROVIDERS = {
-    51222: {"name": "MA Pizza Пулюя", "short": "Пулюя"},
-    51223: {"name": "MA Pizza Тернопільська", "short": "Тернопільська"},
-    51224: {"name": "MA Pizza Малоголосківська", "short": "Малоголосківська"},
-    51226: {"name": "MA Pizza Залізнична", "short": "Залізнична"},
-    51229: {"name": "MA Pizza Івана Франка", "short": "Івана Франка"},
-    64470: {"name": "MA Pizza Пасічна", "short": "Пасічна"},
-    115837: {"name": "MA Pizza Героїв УПА", "short": "Героїв УПА"},
+    51222: {"name": "MA Pizza вул. Пулюя", "short": "Пулюя", "city": "Lviv"},
+    51223: {"name": "MA Pizza вул. Тернопільська", "short": "Тернопільська", "city": "Lviv"},
+    51224: {"name": "MA Pizza вул. Малоголосківська", "short": "Малоголосківська", "city": "Lviv"},
+    51226: {"name": "MA Pizza вул. Залізнична", "short": "Залізнична", "city": "Lviv"},
+    51229: {"name": "MA Pizza вул. Івана Франка", "short": "Івана Франка", "city": "Lviv"},
+    64470: {"name": "MA Pizza вул. Пасічна", "short": "Пасічна", "city": "Lviv"},
+    115837: {"name": "MA Pizza вул. Героїв УПА", "short": "Героїв УПА", "city": "Lviv"},
 }
 
 PROVIDER_IDS = ",".join(str(k) for k in MA_PIZZA_PROVIDERS)
 
+CITY_UA = {"Lviv": "Львів"}
+
+BAD_ORDER_TYPE_UA = {
+    "late_delivery_order_15min": "Пізня доставка (>15 хв)",
+    "timing_quality_cs_ticket": "Скарга на час доставки",
+    "delivery_quality_cs_ticket": "Скарга на доставку",
+    "order_quality_cs_ticket": "Скарга на якість замовлення",
+    "missing_or_wrong_items_cs_ticket": "Відсутні/неправильні товари",
+    "failed_order_after_provider_accepted": "Невдале після прийняття",
+    "bad_rating_order": "Поганий рейтинг",
+}
+FAULT_UA = {"provider": "Заклад", "courier": "Кур’єр", "bolt": "Bolt", "eater": "Клієнт", "unknown": "Невідомо"}
+ORDER_STATE_UA = {"delivered": "Доставлено", "cancelled": "Скасовано", "rejected": "Відхилено", "failed": "Помилка"}
+
+SPEND_OBJ_UA = {
+    "provider_campaign_obligations_commitments": "Зобов’язання",
+    "provider_campaign_portal": "Портал провайдера",
+    "provider_campaign_marketing": "Маркетинг",
+    "provider_campaign_locations": "Локації",
+    "bolt_plus_campaign": "Bolt Plus",
+    "new_city_launch": "Запуск міста",
+    "activation": "Активація",
+    "marketing_3rd_party_partnership": "Партнерство",
+    "retention": "Утримання",
+}
+TARGET_UA = {"delivery_price": "Доставка", "item_price": "Знижка на товар"}
+
+
+# ── Connection ────────────────────────────────────────────────────────────
 
 def connect():
     token = os.environ.get("DATABRICKS_TOKEN")
@@ -70,215 +100,577 @@ def safe_json(df):
     return json.loads(df.to_json(orient="records", date_format="iso"))
 
 
-def fetch_all(conn):
+def week_sort_key(w):
+    parts = w.split("-W")
+    return (int(parts[0]), int(parts[1]))
+
+def month_sort_key(m):
+    parts = m.split("-")
+    return (int(parts[0]), int(parts[1]))
+
+def week_to_month(w):
+    year, wk = w.split("-W")
+    from datetime import timedelta
+    jan1 = datetime(int(year), 1, 1)
+    d = jan1 + timedelta(weeks=int(wk) - 1)
+    return d.strftime("%Y-%m")
+
+
+# ── Queries ──────────────────────────────────────────────────────────────
+
+def fetch_weekly_per_store(conn):
+    return query(conn, f"""
+    SELECT
+      f.provider_id,
+      f.provider_name,
+      f.city_name,
+      f.order_week,
+      COUNT(*) AS orders,
+      ROUND(AVG(f.order_gmv), 0) AS avg_check,
+      ROUND(AVG(f.order_actual_cooking_time_minutes), 1) AS avg_cooking,
+      SUM(CASE WHEN f.is_bad_order = true THEN 1 ELSE 0 END) AS bad_orders
+    FROM ng_delivery_spark.fact_order_delivery f
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_state = 'delivered'
+    GROUP BY f.provider_id, f.provider_name, f.city_name, f.order_week
+    ORDER BY f.order_week, f.provider_id
+    """)
+
+
+def fetch_ops_metrics(conn):
+    return query(conn, f"""
+    SELECT
+      provider_id,
+      date,
+      ROUND(availability_rate_last_7d * 100, 1) AS availability,
+      ROUND(acceptance_rate_last_7d * 100, 1) AS acceptance,
+      ROUND(image_coverage_rate * 100, 1) AS photo_coverage
+    FROM ng_public_spark.etl_incentives_provider_targeting_features
+    WHERE provider_id IN ({PROVIDER_IDS})
+      AND date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    ORDER BY date, provider_id
+    """)
+
+
+def fetch_top_items(conn):
+    return query(conn, f"""
+    WITH ranked AS (
+      SELECT
+        f.provider_id,
+        f.order_week,
+        COALESCE(GET_JSON_OBJECT(b.name_translations, '$.uk-UA'), b.name) AS item_name,
+        COUNT(*) AS qty,
+        ROUND(SUM(b.total_price), 0) AS revenue,
+        ROW_NUMBER() OVER (PARTITION BY f.provider_id, f.order_week ORDER BY COUNT(*) DESC) AS rn
+      FROM ng_delivery_spark.etl_delivery_order_user_basket_item_v2 b
+      JOIN ng_delivery_spark.fact_order_delivery f ON b.order_id = f.order_id
+      WHERE f.provider_id IN ({PROVIDER_IDS})
+        AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+        AND b.created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
+        AND f.order_state = 'delivered'
+        AND b.total_price IS NOT NULL
+        AND b.total_price > 0
+      GROUP BY f.provider_id, f.order_week, COALESCE(GET_JSON_OBJECT(b.name_translations, '$.uk-UA'), b.name)
+    )
+    SELECT provider_id, order_week, item_name, qty, revenue
+    FROM ranked WHERE rn <= 10
+    ORDER BY provider_id, order_week, qty DESC
+    """)
+
+
+def fetch_orders_detail(conn):
+    return query(conn, f"""
+    SELECT
+      f.order_id, f.order_reference_id, f.order_created_date, f.order_week,
+      f.provider_id, f.provider_name, f.order_state,
+      CASE WHEN f.is_bolt_plus_order THEN 'Bolt Plus' ELSE 'Ні' END AS bolt_plus,
+      f.is_bolt_plus_order,
+      ROUND(COALESCE(f.provider_price_before_discount, 0), 2) AS food_before_discount,
+      ROUND(COALESCE(f.total_order_item_discount, 0), 2) AS total_discount,
+      ROUND(COALESCE((COALESCE(m.bolt_delivery_campaign_cost_eur, 0) + COALESCE(m.bolt_menu_campaign_cost_eur, 0)) * m.currency_rate, 0), 2) AS bolt_discount,
+      ROUND(COALESCE((COALESCE(m.provider_delivery_campaign_cost_eur, 0) + COALESCE(m.provider_menu_campaign_cost_eur, 0)) * m.currency_rate, 0), 2) AS provider_discount,
+      ROUND(COALESCE(f.provider_price_after_discount, 0), 2) AS food_revenue,
+      ROUND(COALESCE(m.provider_commission_net_eur * m.currency_rate, 0), 2) AS fee_net,
+      ROUND(COALESCE(m.provider_commission_gross_eur * m.currency_rate, 0), 2) AS fee_gross,
+      ROUND(COALESCE(f.commission_local - COALESCE(m.provider_commission_net_eur * m.currency_rate, 0), 0), 2) AS bp_fee_net,
+      ROUND(COALESCE((f.commission_local - COALESCE(m.provider_commission_net_eur * m.currency_rate, 0)) * 1.2, 0), 2) AS bp_fee_gross,
+      ROUND(COALESCE(f.commission_local * 1.2, 0), 2) AS total_fee_gross,
+      ROUND(COALESCE(f.total_refunded_amount, 0), 2) AS refund,
+      ROUND(COALESCE(f.provider_price_after_discount, 0) - COALESCE(f.commission_local * 1.2, 0) - COALESCE(f.total_refunded_amount, 0), 2) AS net_income,
+      CASE
+        WHEN f.order_state = 'delivered' THEN NULL
+        WHEN f.is_rejected_by_provider = true THEN 'Відхилено закладом'
+        WHEN f.is_not_responded_by_provider = true THEN 'Без відповіді від закладу'
+        WHEN f.order_state = 'failed' THEN 'Помилка системи'
+        WHEN f.order_state = 'cancelled' THEN 'Скасовано клієнтом'
+        ELSE 'Інше'
+      END AS fail_reason
+    FROM ng_delivery_spark.fact_order_delivery f
+    LEFT JOIN ng_public_spark.etl_delivery_order_monetary_metrics m
+      ON f.order_id = m.order_id
+      AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    ORDER BY f.order_created_date DESC, f.order_id DESC
+    """)
+
+
+def fetch_complaints(conn):
+    return query(conn, f"""
+    SELECT
+      d.order_id, f.order_reference_id, f.order_created_date, f.order_week,
+      f.provider_id, f.provider_name,
+      ROUND(f.order_gmv, 0) AS sum_uah,
+      d.bad_order_type, d.bad_order_actor_at_fault AS fault,
+      d.provider_rating_value AS rating,
+      d.provider_rating_comment
+    FROM ng_delivery_spark.dim_order_delivery d
+    JOIN ng_delivery_spark.fact_order_delivery f ON d.order_id = f.order_id
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND (d.is_bad_order = true OR d.is_cs_ticket_order = true)
+    ORDER BY f.order_created_date DESC
+    """)
+
+
+def fetch_cancelled(conn):
+    return query(conn, f"""
+    SELECT
+      f.order_id, f.order_reference_id, f.order_created_date, f.order_week,
+      f.provider_id, f.provider_name, f.order_state,
+      CASE
+        WHEN f.is_rejected_by_provider = true THEN 'Відхилено закладом'
+        WHEN f.is_not_responded_by_provider = true THEN 'Без відповіді від закладу'
+        WHEN f.order_state = 'failed' THEN 'Помилка'
+        ELSE 'Скасовано'
+      END AS reason,
+      d.failed_order_comment AS comment
+    FROM ng_delivery_spark.fact_order_delivery f
+    LEFT JOIN ng_delivery_spark.dim_order_delivery d ON f.order_id = d.order_id
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_state IN ('rejected', 'cancelled', 'failed')
+    ORDER BY f.order_created_date DESC
+    """)
+
+
+def fetch_revenue_weekly(conn):
+    return query(conn, f"""
+    SELECT
+      f.order_week, f.provider_id,
+      COUNT(*) AS orders,
+      ROUND(SUM(f.provider_price_after_discount), 0) AS food_revenue,
+      ROUND(SUM(f.commission_local * 1.2), 0) AS total_fee_gross,
+      ROUND(SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS refund,
+      ROUND(SUM(f.provider_price_after_discount) - SUM(f.commission_local * 1.2) - SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS net_income
+    FROM ng_delivery_spark.fact_order_delivery f
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_state = 'delivered'
+    GROUP BY f.order_week, f.provider_id
+    ORDER BY f.order_week, f.provider_id
+    """)
+
+
+def fetch_campaigns(conn):
+    return query(conn, f"""
+    SELECT
+      c.campaign_id,
+      c.name AS campaign_name,
+      c.spend_objective,
+      c.target,
+      ROUND(c.discount_level, 0) AS discount_pct,
+      c.cost_share_v2,
+      DATE(c.campaign_start) AS start_date,
+      DATE(c.campaign_end) AS end_date,
+      c.provider_id,
+      CONCAT(YEAR(c.order_created_date), '-W', WEEKOFYEAR(c.order_created_date)) AS order_week,
+      COUNT(*) AS orders,
+      ROUND(SUM(c.discount_value_local), 0) AS total_discount_uah,
+      ROUND(SUM(c.bolt_spend_local), 0) AS bolt_spend_uah,
+      ROUND(SUM(c.provider_spend_local), 0) AS provider_spend_uah
+    FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+    WHERE c.provider_id IN ({PROVIDER_IDS})
+      AND c.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    GROUP BY c.campaign_id, c.name, c.spend_objective, c.target,
+             c.discount_level, c.cost_share_v2,
+             DATE(c.campaign_start), DATE(c.campaign_end),
+             c.provider_id,
+             CONCAT(YEAR(c.order_created_date), '-W', WEEKOFYEAR(c.order_created_date))
+    ORDER BY order_week DESC, orders DESC
+    """)
+
+
+def fetch_smart_promo(conn):
+    return query(conn, f"""
+    SELECT provider_id, COUNT(*) AS cnt
+    FROM core_models_spark.fact_provider_smart_promo_offer_campaign_enrollment
+    WHERE provider_id IN ({PROVIDER_IDS})
+    GROUP BY provider_id
+    """)
+
+
+# ── Build data for HTML ──────────────────────────────────────────────────
+
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df):
     data = {}
-    days = WEEKS_BACK * 7
 
-    print("  → orders...")
-    data["orders"] = safe_json(query(conn, f"""
-        SELECT DATE_TRUNC('week', order_created_date) AS week_date,
-               provider_id,
-               COUNT(CASE WHEN order_state='delivered' THEN 1 END) AS delivered,
-               COUNT(*) AS total_orders,
-               COUNT(CASE WHEN order_state!='delivered' THEN 1 END) AS failed,
-               ROUND(AVG(CASE WHEN order_state='delivered' THEN provider_price_before_discount END),0) AS avg_check
-        FROM ng_delivery_spark.fact_order_delivery
-        WHERE provider_id IN ({PROVIDER_IDS})
-          AND order_created_date >= DATE_SUB(CURRENT_DATE(), {days})
-        GROUP BY 1,2 ORDER BY 1,2
-    """))
+    stores_map = {}
+    for pid, info in MA_PIZZA_PROVIDERS.items():
+        stores_map[pid] = {
+            "name": info["name"],
+            "short": info["short"],
+            "city": CITY_UA.get(info["city"], info["city"]),
+            "city_en": info["city"],
+        }
+    for _, r in weekly_df.iterrows():
+        pid = int(to_native(r["provider_id"]))
+        if pid not in stores_map:
+            stores_map[pid] = {
+                "name": r["provider_name"],
+                "short": r["provider_name"],
+                "city": CITY_UA.get(r["city_name"], r["city_name"]),
+                "city_en": r["city_name"],
+            }
+    data["stores"] = stores_map
 
-    print("  → revenue...")
-    data["revenue"] = safe_json(query(conn, f"""
-        SELECT DATE_TRUNC('week', m.order_created) AS week_date,
-               m.provider_id,
-               COUNT(*) AS delivered,
-               ROUND(SUM(m.menu_price_full_eur * m.currency_rate),0) AS rev_before,
-               ROUND(SUM(m.menu_price_after_discount_eur * m.currency_rate),0) AS rev_after,
-               ROUND(SUM(m.provider_commission_gross_eur * m.currency_rate),0) AS bolt_comm,
-               ROUND(SUM(m.delivery_price_after_discount_eur * m.currency_rate),0) AS del_fee,
-               ROUND(SUM(m.provider_menu_campaign_cost_eur * m.currency_rate),0) AS prov_disc,
-               ROUND(SUM(m.bolt_menu_campaign_cost_eur * m.currency_rate),0) AS bolt_disc,
-               ROUND(SUM(m.provider_delivery_campaign_cost_eur * m.currency_rate),0) AS prov_del_disc,
-               ROUND(SUM(m.bolt_delivery_campaign_cost_eur * m.currency_rate),0) AS bolt_del_disc
-        FROM ng_public_spark.etl_delivery_order_monetary_metrics m
-        JOIN ng_delivery_spark.fact_order_delivery f ON m.order_id = f.order_id
-        WHERE m.provider_id IN ({PROVIDER_IDS})
-          AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {days + 7}), 'yyyy-MM-dd')
-          AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {days + 7})
-          AND f.order_state = 'delivered'
-        GROUP BY 1,2 ORDER BY 1,2
-    """))
+    weekly = {}
+    for _, r in weekly_df.iterrows():
+        pid = int(to_native(r["provider_id"]))
+        week = str(r["order_week"])
+        if week not in weekly:
+            weekly[week] = {}
+        weekly[week][pid] = {
+            "orders": to_native(r["orders"]),
+            "avg_check": to_native(r["avg_check"]),
+            "avg_cooking": to_native(r["avg_cooking"]),
+            "bad_orders": to_native(r["bad_orders"]),
+        }
+    weekly = dict(sorted(weekly.items(), key=lambda x: week_sort_key(x[0])))
+    data["weekly"] = weekly
 
-    print("  → ops...")
-    data["ops"] = safe_json(query(conn, f"""
-        SELECT DATE_TRUNC('week', order_created_date) AS week_date,
-               provider_id,
-               COUNT(CASE WHEN order_state='delivered' THEN 1 END) AS delivered,
-               COUNT(CASE WHEN order_state='delivered' AND is_bad_order=true THEN 1 END) AS bad_orders,
-               COUNT(CASE WHEN order_state='delivered' AND has_ticket=true THEN 1 END) AS complaints
-        FROM ng_delivery_spark.fact_order_delivery
-        WHERE provider_id IN ({PROVIDER_IDS})
-          AND order_created_date >= DATE_SUB(CURRENT_DATE(), {days})
-        GROUP BY 1,2 ORDER BY 1,2
-    """))
+    monthly = {}
+    for wk, stores_data in weekly.items():
+        mk = week_to_month(wk)
+        if mk not in monthly:
+            monthly[mk] = {}
+        for pid, vals in stores_data.items():
+            if pid not in monthly[mk]:
+                monthly[mk][pid] = {"orders": 0, "_check_sum": 0, "_cook_sum": 0, "_cook_cnt": 0, "bad_orders": 0}
+            monthly[mk][pid]["orders"] += vals["orders"]
+            monthly[mk][pid]["_check_sum"] += vals["avg_check"] * vals["orders"]
+            if vals["avg_cooking"] and vals["avg_cooking"] > 0:
+                monthly[mk][pid]["_cook_sum"] += vals["avg_cooking"] * vals["orders"]
+                monthly[mk][pid]["_cook_cnt"] += vals["orders"]
+            monthly[mk][pid]["bad_orders"] += vals["bad_orders"]
+    for mk in monthly:
+        for pid in monthly[mk]:
+            d = monthly[mk][pid]
+            d["avg_check"] = round(d["_check_sum"] / d["orders"]) if d["orders"] else 0
+            d["avg_cooking"] = round(d["_cook_sum"] / d["_cook_cnt"], 1) if d["_cook_cnt"] else 0
+            del d["_check_sum"]
+            del d["_cook_sum"]
+            del d["_cook_cnt"]
+    monthly = dict(sorted(monthly.items(), key=lambda x: month_sort_key(x[0])))
+    data["monthly"] = monthly
 
-    print("  → availability...")
-    data["avail"] = safe_json(query(conn, f"""
-        SELECT provider_id, date,
-               ROUND(availability_rate_last_7d * 100, 1) AS avail_7d,
-               ROUND(acceptance_rate_last_7d * 100, 1) AS accept_7d
-        FROM ng_public_spark.etl_incentives_provider_targeting_features
-        WHERE provider_id IN ({PROVIDER_IDS})
-          AND date >= DATE_SUB(CURRENT_DATE(), {days + 7})
-          AND DAYOFWEEK(date) = 7
-        ORDER BY provider_id, date
-    """))
+    ops_weekly = {}
+    if len(ops_df):
+        ops_df["date_str"] = ops_df["date"].astype(str)
+        ops_df["dow"] = pd.to_datetime(ops_df["date"]).dt.dayofweek
+        mondays = ops_df[ops_df["dow"] == 0].copy()
+        if len(mondays) == 0:
+            mondays = ops_df.sort_values("date").drop_duplicates(subset=["provider_id"], keep="last")
+        for _, r in mondays.iterrows():
+            pid = int(to_native(r["provider_id"]))
+            ds = str(r["date_str"])
+            year = int(ds[:4])
+            iso_week = pd.Timestamp(ds).isocalendar().week
+            week_key = f"{year}-W{iso_week}"
+            if week_key not in ops_weekly:
+                ops_weekly[week_key] = {}
+            ops_weekly[week_key][pid] = {
+                "availability": to_native(r["availability"]),
+                "acceptance": to_native(r["acceptance"]),
+                "photo_coverage": to_native(r["photo_coverage"]),
+            }
 
-    print("  → campaigns...")
-    data["campaigns"] = safe_json(query(conn, f"""
-        SELECT DATE_TRUNC('week', order_created_date) AS week_date,
-               provider_id, spend_objective,
-               COUNT(DISTINCT order_id) AS promo_orders,
-               ROUND(SUM(discount_value_local),0) AS total_discount,
-               ROUND(SUM(provider_spend_local),0) AS provider_spend,
-               ROUND(SUM(bolt_spend_local),0) AS bolt_spend
-        FROM ng_public_spark.etl_delivery_campaign_order_metrics
-        WHERE provider_id IN ({PROVIDER_IDS})
-          AND order_created_date >= DATE_SUB(CURRENT_DATE(), {days})
-        GROUP BY 1,2,3 ORDER BY 1,2,3
-    """))
+    latest_ops = {}
+    if len(ops_df):
+        latest = ops_df.sort_values("date").drop_duplicates(subset=["provider_id"], keep="last")
+        for _, r in latest.iterrows():
+            pid = int(to_native(r["provider_id"]))
+            latest_ops[pid] = {
+                "availability": to_native(r["availability"]),
+                "acceptance": to_native(r["acceptance"]),
+                "photo_coverage": to_native(r["photo_coverage"]),
+            }
+    data["ops_weekly"] = ops_weekly
+    data["latest_ops"] = latest_ops
 
-    print("  → smart promo check...")
-    sp_df = query(conn, f"""
-        SELECT COUNT(*) AS cnt
-        FROM core_models_spark.fact_provider_smart_promo_offer_campaign_enrollment
-        WHERE provider_id IN ({PROVIDER_IDS})
-    """)
-    data["smart_promo_count"] = int(to_native(sp_df.iloc[0]["cnt"]))
+    ops_monthly = {}
+    for wk, stores_data in ops_weekly.items():
+        mk = week_to_month(wk)
+        if mk not in ops_monthly:
+            ops_monthly[mk] = {}
+        for pid, vals in stores_data.items():
+            if pid not in ops_monthly[mk]:
+                ops_monthly[mk][pid] = {"_avail_sum": 0, "_accept_sum": 0, "_photo_sum": 0, "_cnt": 0}
+            ops_monthly[mk][pid]["_avail_sum"] += vals["availability"]
+            ops_monthly[mk][pid]["_accept_sum"] += vals["acceptance"]
+            ops_monthly[mk][pid]["_photo_sum"] += vals["photo_coverage"]
+            ops_monthly[mk][pid]["_cnt"] += 1
+    for mk in ops_monthly:
+        for pid in ops_monthly[mk]:
+            d = ops_monthly[mk][pid]
+            n = d["_cnt"]
+            ops_monthly[mk][pid] = {
+                "availability": round(d["_avail_sum"] / n, 1) if n else 0,
+                "acceptance": round(d["_accept_sum"] / n, 1) if n else 0,
+                "photo_coverage": round(d["_photo_sum"] / n, 1) if n else 0,
+            }
+    data["ops_monthly"] = ops_monthly
 
-    print("  → order details...")
-    data["order_details"] = safe_json(query(conn, f"""
-        SELECT f.order_id, f.provider_id,
-               DATE(f.order_created_date) AS order_created_date,
-               DATE_FORMAT(f.order_created_at, 'HH:mm') AS order_time,
-               f.order_state,
-               ROUND(f.provider_price_before_discount,0) AS check_before,
-               ROUND(f.delivery_price,0) AS del_fee,
-               f.is_bolt_plus_order AS bp,
-               f.is_bad_order AS bad,
-               f.has_ticket AS ticket,
-               ROUND(f.actual_delivery_time_min,0) AS del_min,
-               p.provider_name
-        FROM ng_delivery_spark.fact_order_delivery f
-        JOIN ng_delivery_spark.dim_provider_v2 p ON f.provider_id = p.provider_id
-        WHERE f.provider_id IN ({PROVIDER_IDS})
-          AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {days})
-        ORDER BY f.order_created_date DESC, f.order_created_at DESC
-    """))
+    top_items = {}
+    for _, r in items_df.iterrows():
+        pid = int(to_native(r["provider_id"]))
+        week = str(r["order_week"])
+        if week not in top_items:
+            top_items[week] = {}
+        if pid not in top_items[week]:
+            top_items[week][pid] = []
+        top_items[week][pid].append({
+            "name": str(r["item_name"]),
+            "qty": to_native(r["qty"]),
+            "revenue": to_native(r["revenue"]),
+        })
+    data["top_items"] = top_items
 
-    print("  → top items...")
-    ti_df = query(conn, f"""
-        SELECT provider_id, basket_item_name,
-               SUM(basket_item_amount) AS qty,
-               ROUND(SUM(item_price_before_discount_with_vat_local * basket_item_amount),0) AS rev
-        FROM ng_delivery_spark.dim_basket_item_delivery
-        WHERE provider_id IN ({PROVIDER_IDS})
-          AND basket_item_created_date >= DATE_SUB(CURRENT_DATE(), 28)
-          AND order_state = 'delivered'
-          AND basket_item_is_dish = true
-        GROUP BY 1,2 ORDER BY 1, qty DESC
-    """)
-    data["top_items"] = safe_json(ti_df.groupby("provider_id").head(10))
+    monthly_items = {}
+    for wk, stores_data in top_items.items():
+        mk = week_to_month(wk)
+        if mk not in monthly_items:
+            monthly_items[mk] = {}
+        for pid, items_list in stores_data.items():
+            if pid not in monthly_items[mk]:
+                monthly_items[mk][pid] = {}
+            for it in items_list:
+                nm = it["name"]
+                if nm not in monthly_items[mk][pid]:
+                    monthly_items[mk][pid][nm] = {"name": nm, "qty": 0, "revenue": 0}
+                monthly_items[mk][pid][nm]["qty"] += it["qty"]
+                monthly_items[mk][pid][nm]["revenue"] += it["revenue"]
+    for mk in monthly_items:
+        for pid in monthly_items[mk]:
+            monthly_items[mk][pid] = sorted(monthly_items[mk][pid].values(), key=lambda x: -x["qty"])[:10]
+    data["monthly_items"] = monthly_items
+
+    orders_list = safe_json(orders_df)
+    for row in orders_list:
+        raw_state = row.get("order_state", "") or ""
+        row["order_state_raw"] = raw_state
+        row["order_state"] = ORDER_STATE_UA.get(raw_state, raw_state)
+        pid = row.get("provider_id")
+        if pid and int(pid) in MA_PIZZA_PROVIDERS:
+            row["provider_short"] = MA_PIZZA_PROVIDERS[int(pid)]["short"]
+        else:
+            row["provider_short"] = row.get("provider_name", "")
+        ow = row.get("order_week", "")
+        if ow:
+            row["order_month"] = week_to_month(str(ow))
+    data["orders"] = orders_list
+
+    comp_list = safe_json(complaints_df)
+    for row in comp_list:
+        raw_type = row.get("bad_order_type", "") or ""
+        row["bad_order_type"] = BAD_ORDER_TYPE_UA.get(raw_type, raw_type)
+        raw_fault = row.get("fault", "") or ""
+        row["fault"] = FAULT_UA.get(str(raw_fault).lower(), raw_fault)
+        pid = row.get("provider_id")
+        if pid and int(pid) in MA_PIZZA_PROVIDERS:
+            row["provider_short"] = MA_PIZZA_PROVIDERS[int(pid)]["short"]
+        else:
+            row["provider_short"] = row.get("provider_name", "")
+        ow = row.get("order_week", "")
+        if ow:
+            row["order_month"] = week_to_month(str(ow))
+    data["complaints"] = comp_list
+
+    canc_list = safe_json(cancelled_df)
+    for row in canc_list:
+        raw_state = row.get("order_state", "") or ""
+        row["order_state"] = ORDER_STATE_UA.get(raw_state, raw_state)
+        pid = row.get("provider_id")
+        if pid and int(pid) in MA_PIZZA_PROVIDERS:
+            row["provider_short"] = MA_PIZZA_PROVIDERS[int(pid)]["short"]
+        else:
+            row["provider_short"] = row.get("provider_name", "")
+        ow = row.get("order_week", "")
+        if ow:
+            row["order_month"] = week_to_month(str(ow))
+    data["cancelled"] = canc_list
+
+    revenue = {}
+    for _, r in revenue_df.iterrows():
+        week = str(r["order_week"])
+        pid = int(to_native(r["provider_id"]))
+        if week not in revenue:
+            revenue[week] = {}
+        revenue[week][pid] = {
+            "orders": to_native(r["orders"]),
+            "food_revenue": to_native(r["food_revenue"]),
+            "total_fee_gross": to_native(r["total_fee_gross"]),
+            "refund": to_native(r["refund"]),
+            "net_income": to_native(r["net_income"]),
+        }
+    revenue = dict(sorted(revenue.items(), key=lambda x: week_sort_key(x[0])))
+    data["revenue"] = revenue
+
+    monthly_revenue = {}
+    for wk, stores_data in revenue.items():
+        mk = week_to_month(wk)
+        if mk not in monthly_revenue:
+            monthly_revenue[mk] = {}
+        for pid, vals in stores_data.items():
+            if pid not in monthly_revenue[mk]:
+                monthly_revenue[mk][pid] = {"orders": 0, "food_revenue": 0, "total_fee_gross": 0, "refund": 0, "net_income": 0}
+            for k in ("orders", "food_revenue", "total_fee_gross", "refund", "net_income"):
+                monthly_revenue[mk][pid][k] += vals.get(k, 0)
+    monthly_revenue = dict(sorted(monthly_revenue.items(), key=lambda x: month_sort_key(x[0])))
+    data["monthly_revenue"] = monthly_revenue
+
+    campaigns = []
+    for _, r in campaigns_df.iterrows():
+        pid = int(to_native(r["provider_id"]))
+        raw_obj = str(r["spend_objective"] or "")
+        raw_target = str(r["target"] or "")
+        cname = str(r["campaign_name"] or "")
+        disc_pct = to_native(r["discount_pct"])
+        target_ua = TARGET_UA.get(raw_target, raw_target)
+        obj_ua = SPEND_OBJ_UA.get(raw_obj, raw_obj)
+        if raw_target == "delivery_price":
+            friendly = f"Безк. доставка — {obj_ua}"
+        else:
+            friendly = f"{int(disc_pct)}% на товар — {obj_ua}"
+        campaigns.append({
+            "campaign_id": to_native(r["campaign_id"]),
+            "name": friendly,
+            "full_name": cname[:120],
+            "objective": obj_ua,
+            "target": target_ua,
+            "discount_pct": to_native(r["discount_pct"]),
+            "cost_share": to_native(r["cost_share_v2"]),
+            "start_date": str(r["start_date"]),
+            "end_date": str(r["end_date"]),
+            "provider_id": pid,
+            "provider_short": MA_PIZZA_PROVIDERS.get(pid, {}).get("short", str(pid)),
+            "order_week": str(r["order_week"]),
+            "order_month": week_to_month(str(r["order_week"])),
+            "orders": to_native(r["orders"]),
+            "total_discount": to_native(r["total_discount_uah"]),
+            "bolt_spend": to_native(r["bolt_spend_uah"]),
+            "provider_spend": to_native(r["provider_spend_uah"]),
+        })
+    data["campaigns"] = campaigns
+
+    sp_map = {}
+    for _, r in smart_promo_df.iterrows():
+        sp_map[int(to_native(r["provider_id"]))] = int(to_native(r["cnt"]))
+    data["smart_promo"] = sp_map
 
     return data
 
 
-def build_html(data):
-    providers_js = {str(k): v["short"] for k, v in MA_PIZZA_PROVIDERS.items()}
-    provider_ids_js = sorted(MA_PIZZA_PROVIDERS.keys())
+# ── HTML ─────────────────────────────────────────────────────────────────
 
-    data_js = json.dumps({
-        "providers": providers_js,
-        "providerIds": provider_ids_js,
-        "weeks": sorted({str(r["week_date"])[:10] for r in data["orders"]}),
-        "orders": data["orders"],
-        "revenue": data["revenue"],
-        "ops": data["ops"],
-        "avail": data["avail"],
-        "campaigns": data["campaigns"],
-        "smartPromoCount": data["smart_promo_count"],
-        "orderDetails": data["order_details"],
-        "topItems": data["top_items"],
-    }, default=str)
+CITY_UA_JSON = json.dumps(CITY_UA, ensure_ascii=False)
 
-    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+def generate_html(data, generated_at):
+    data_json = json.dumps(data, ensure_ascii=False)
 
-    # Read the HTML template that was previously stored inline
-    # For maintainability, the full HTML is generated inline below
-    html = _build_full_html(data_js, now_str)
-    return html
-
-
-def _build_full_html(data_js, now_str):
-    return f'''<!DOCTYPE html>
+    return f"""<!DOCTYPE html>
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MA PIZZA | тижневий звіт</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
 :root{{
- --green:#34D186;--green-bg:rgba(52,209,134,.08);--dark:#1A1D21;
- --bg:#F3F4F6;--card:#FFF;--text:#111827;--text2:#6B7280;--border:#E5E7EB;
- --pos:#10B981;--neg:#EF4444;--warn:#F59E0B;--blue:#3B82F6;--accent:#EF4444;
- --r:12px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
-}}
-[data-theme=dark]{{
- --bg:#111827;--card:#1F2937;--text:#F9FAFB;--text2:#9CA3AF;--border:#374151;
- --shadow:0 1px 3px rgba(0,0,0,.3);
+  --green:#34D186;--green-bg:rgba(52,209,134,.08);--dark:#1A1D21;
+  --bg:#F3F4F6;--card:#FFF;--text:#111827;--text2:#6B7280;--border:#E5E7EB;
+  --pos:#10B981;--neg:#EF4444;--warn:#F59E0B;--blue:#3B82F6;--orange:#EF4444;
+  --r:12px;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
 }}
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.5}}
 a{{text-decoration:none;color:inherit}}
+
 .header{{position:sticky;top:0;z-index:102;background:var(--card);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}}
 .header-left{{display:flex;align-items:center;gap:12px}}
 .header-left h1{{font-size:20px;font-weight:800;letter-spacing:-.3px}}
-.brand-dot{{width:10px;height:10px;border-radius:50%;background:var(--accent);display:inline-block}}
+.brand-dot{{width:10px;height:10px;border-radius:50%;background:var(--orange);display:inline-block}}
 .header-right{{display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
 .ms-wrap{{position:relative;min-width:180px}}
 .ms-btn{{padding:8px 32px 8px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;display:block;width:100%;text-align:left;color:var(--text);position:relative}}
 .ms-btn::after{{content:'\\25BE';position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text2)}}
-.ms-btn:hover,.ms-btn.open{{border-color:var(--accent)}}
+.ms-btn:hover,.ms-btn.open{{border-color:var(--orange)}}
 .ms-panel{{display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:100%;max-height:320px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:1000;padding:4px 0}}
 .ms-panel.open{{display:block}}
 .ms-item{{display:flex;align-items:center;gap:8px;padding:6px 14px;font-size:13px;cursor:pointer;white-space:nowrap}}
 .ms-item:hover{{background:var(--bg)}}
-.ms-item input{{accent-color:var(--accent);width:15px;height:15px;cursor:pointer;flex-shrink:0}}
+.ms-item input{{accent-color:var(--orange);width:15px;height:15px;cursor:pointer;flex-shrink:0}}
 .ms-item.all-item{{border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:2px;font-weight:600}}
+.ms-count{{display:inline-block;background:var(--orange);color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;margin-left:4px}}
 .reset-btn{{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 11px;font-size:14px;cursor:pointer;transition:all .15s;line-height:1}}
 .reset-btn:hover{{background:var(--neg);color:#fff;border-color:var(--neg)}}
+.calc-card{{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 24px;margin-top:20px}}
+.calc-title{{font-size:15px;font-weight:700;color:var(--text);margin:0 0 16px}}
+.calc-controls{{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}}
+.calc-field label{{display:block;font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}}
+.calc-field input,.calc-field select{{padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;background:var(--bg);color:var(--text);min-width:160px}}
+.calc-field input:focus,.calc-field select:focus{{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(239,68,68,.12)}}
+.calc-store-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}}
+.calc-store{{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px}}
+.calc-store-name{{font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px}}
+.calc-store-city{{font-size:11px;color:var(--text2);margin-bottom:10px}}
+.calc-bar-wrap{{height:8px;background:rgba(0,0,0,.06);border-radius:4px;overflow:hidden;margin-bottom:8px}}
+.calc-bar{{height:100%;border-radius:4px;transition:width .3s}}
+.calc-metrics{{display:flex;justify-content:space-between;font-size:12px}}
+.calc-spent{{font-weight:700}}
+.calc-left{{font-weight:600}}
+.calc-total-row{{margin-top:16px;padding:14px 16px;background:var(--card);border:2px solid var(--orange);border-radius:10px;display:flex;flex-wrap:wrap;gap:24px;align-items:center}}
+.calc-total-label{{font-size:13px;font-weight:700;color:var(--text)}}
+.calc-total-val{{font-size:18px;font-weight:800}}
+.period-toggle-wrap{{display:flex;align-items:center;padding:0 20px;margin-top:-4px}}
+.period-select{{padding:6px 32px 6px 14px;font-size:13px;font-weight:600;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;border-radius:8px;font-family:inherit;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;transition:all .15s}}
+.period-select:hover{{border-color:var(--orange)}}
+.period-select:focus{{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(239,68,68,.15)}}
 .theme-toggle{{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 12px;font-size:16px;cursor:pointer;transition:all .15s;line-height:1}}
 .theme-toggle:hover{{background:var(--bg);color:var(--text)}}
 .last-update{{font-size:12px;color:var(--text2)}}
+
 .main-nav{{position:sticky;top:52px;z-index:100;background:var(--card);border-bottom:1px solid var(--border);display:flex;gap:0;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding:0 16px}}
 .main-nav::-webkit-scrollbar{{display:none}}
-.nav-link{{padding:12px 16px;font-size:13px;font-weight:500;color:var(--text2);white-space:nowrap;border-bottom:2px solid transparent;transition:all .15s;cursor:pointer}}
+.nav-link{{padding:12px 16px;font-size:13px;font-weight:500;color:var(--text2);white-space:nowrap;border-bottom:2px solid transparent;transition:all .15s}}
 .nav-link:hover{{color:var(--text);background:var(--bg)}}
-.nav-link.active{{color:var(--accent);border-bottom-color:var(--accent)}}
+.nav-link.active{{color:var(--orange);border-bottom-color:var(--orange)}}
+
 .week-bar{{position:sticky;top:94px;z-index:99;background:var(--card);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;padding:8px 16px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}}
 .week-bar::-webkit-scrollbar{{display:none}}
 .week-bar-label{{font-size:12px;font-weight:600;color:var(--text2);white-space:nowrap;margin-right:4px}}
 .week-pill{{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:500;background:var(--bg);color:var(--text2);cursor:pointer;white-space:nowrap;border:1px solid transparent;transition:all .15s;user-select:none}}
-.week-pill:hover{{background:rgba(239,68,68,.08);color:var(--accent)}}
-.week-pill.active{{background:var(--accent);color:#fff;border-color:var(--accent)}}
+.week-pill:hover{{background:rgba(239,68,68,.08);color:var(--orange)}}
+.week-pill.active{{background:var(--orange);color:#fff;border-color:var(--orange)}}
+
 .main-content{{max-width:1360px;margin:0 auto;padding:20px}}
-.section{{margin-bottom:32px;display:none}}
-.section.visible{{display:block}}
+.section{{margin-bottom:32px}}
 .section-title{{font-size:18px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}}
 .section-icon{{font-size:20px}}
+
 .kpi-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:28px}}
 .kpi-card{{background:var(--card);border-radius:var(--r);padding:18px 20px;box-shadow:var(--shadow);border:1px solid var(--border)}}
 .kpi-label{{font-size:12px;color:var(--text2);font-weight:500;text-transform:uppercase;letter-spacing:.3px;margin-bottom:8px}}
@@ -287,148 +679,703 @@ a{{text-decoration:none;color:inherit}}
 .kpi-change.up{{color:var(--pos);background:rgba(16,185,129,.1)}}
 .kpi-change.down{{color:var(--neg);background:rgba(239,68,68,.1)}}
 .kpi-change.neutral{{color:var(--text2);background:var(--bg)}}
+
 .charts-grid{{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}}
 .chart-card{{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);border:1px solid var(--border);padding:20px;min-height:320px;display:flex;flex-direction:column}}
 .chart-card h3{{font-size:14px;font-weight:600;margin-bottom:14px;color:var(--text)}}
 .chart-card .chart-wrap{{flex:1;position:relative;min-height:240px}}
 .chart-card canvas{{width:100%!important}}
+
 .table-wrap{{overflow-x:auto;border-radius:var(--r);border:1px solid var(--border);background:var(--card)}}
 .data-table{{width:100%;border-collapse:collapse;font-size:13px}}
 .data-table th{{background:var(--bg);font-weight:600;text-align:left;padding:10px 14px;white-space:nowrap;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:1}}
-.data-table td{{padding:9px 14px;border-bottom:1px solid var(--border)}}
+.data-table td{{padding:9px 14px;border-bottom:1px solid var(--border);white-space:nowrap}}
+.data-table tr:last-child td{{border-bottom:none}}
 .data-table tr:hover td{{background:rgba(239,68,68,.04)}}
-.data-table .num{{text-align:right;font-variant-numeric:tabular-nums}}
-.data-table .total-row td{{font-weight:700;background:var(--bg);border-top:2px solid var(--border)}}
-.tag{{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}}
-.tag.green{{background:rgba(16,185,129,.1);color:#059669}}
-.tag.red{{background:rgba(239,68,68,.1);color:#DC2626}}
-.tag.blue{{background:rgba(59,130,246,.1);color:#2563EB}}
-.tag.orange{{background:rgba(245,158,11,.1);color:#D97706}}
-.tag.purple{{background:rgba(139,92,246,.1);color:#7C3AED}}
-.filter-row{{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;align-items:center}}
-.filter-row label{{font-size:12px;font-weight:600;color:var(--text2)}}
-.filter-row select{{padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card);color:var(--text)}}
-.top-items-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}}
-.top-item-card{{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);border:1px solid var(--border);padding:18px;overflow:hidden}}
-.top-item-card h4{{font-size:14px;font-weight:700;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}}
-.top-row{{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:12px;border-bottom:1px solid rgba(0,0,0,.04)}}
-.top-row:last-child{{border-bottom:none}}
-.top-rank{{width:20px;text-align:center;font-weight:700;color:var(--accent)}}
-.top-name{{flex:1;margin:0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
-.top-qty{{width:45px;text-align:right;font-weight:600}}
-.top-rev{{width:65px;text-align:right;color:var(--text2);font-variant-numeric:tabular-nums}}
+.data-table tr.total-row td{{background:var(--bg);font-weight:700}}
+.data-table tr.total-row:hover td{{background:var(--bg)}}
+.cell-best{{background:rgba(16,185,129,.1)!important;font-weight:600}}
+.cell-worst{{background:rgba(239,68,68,.08)!important}}
+.text-right{{text-align:right}}
+.text-center{{text-align:center}}
+
+.section-insight{{background:linear-gradient(135deg,rgba(239,68,68,.06),rgba(59,130,246,.04));border:1px solid rgba(239,68,68,.15);border-radius:10px;padding:14px 18px;margin-bottom:16px;font-size:13px;line-height:1.6;color:var(--text)}}
+.section-insight b{{font-weight:600}}
+.insight-good{{color:var(--pos)}}
+.insight-bad{{color:var(--neg)}}
+
+.badge{{display:inline-flex;align-items:center;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}}
+.badge-orange{{background:rgba(239,68,68,.1);color:var(--orange)}}
+.bp{{color:var(--blue);font-weight:600}}
+
+.store-filter-wrap{{margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
+.store-filter-wrap label{{font-size:12px;font-weight:600;color:var(--text2)}}
+.store-filter-wrap select{{padding:6px 12px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:inherit;background:var(--card);cursor:pointer;min-width:200px}}
+
+.items-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}}
+.items-card{{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow);border:1px solid var(--border);padding:16px;overflow:hidden}}
+.items-card h4{{font-size:14px;font-weight:700;margin-bottom:4px}}
+.items-card .items-city{{font-size:11px;color:var(--text2);margin-bottom:10px}}
+.items-card ol{{margin:0;padding-left:20px;font-size:12px}}
+.items-card li{{padding:3px 0;border-bottom:1px solid var(--border)}}
+.items-card li:last-child{{border-bottom:none}}
+.items-card .item-qty{{color:var(--orange);font-weight:600;float:right}}
+.items-card .item-rev{{color:var(--text2);font-size:11px;float:right;margin-right:8px}}
+
+.scroll-table{{max-height:600px;overflow-y:auto}}
+.comment-cell{{max-width:250px;white-space:normal;word-break:break-word}}
+.revenue-summary-table{{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}}
+.revenue-summary-table th{{background:var(--bg);font-weight:600;text-align:left;padding:8px 10px;border-bottom:1px solid var(--border)}}
+.revenue-summary-table td{{padding:7px 10px;border-bottom:1px solid var(--border)}}
+
+.alert-box{{background:#FEF2F2;border:2px solid #FECACA;border-radius:12px;padding:20px;margin-bottom:16px;color:#991B1B}}
+.alert-box h4{{font-size:15px;font-weight:700;margin-bottom:8px}}
+.alert-box p{{font-size:13px;line-height:1.7}}
 .promo-status-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:24px}}
 .promo-status-card{{background:var(--card);border-radius:var(--r);padding:16px 20px;box-shadow:var(--shadow);border:1px solid var(--border)}}
 .promo-status-card .ps-name{{font-size:14px;font-weight:700;margin-bottom:8px}}
 .promo-status-card .ps-row{{display:flex;justify-content:space-between;padding:4px 0;font-size:12px}}
 .promo-status-card .ps-label{{color:var(--text2)}}
-.alert-box{{background:#FEF2F2;border:2px solid #FECACA;border-radius:12px;padding:20px;margin-bottom:24px;color:#991B1B}}
-.alert-box h4{{font-size:15px;font-weight:700;margin-bottom:8px}}
-.alert-box p{{font-size:13px;line-height:1.7}}
+.tag{{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}}
+.tag.green{{background:rgba(16,185,129,.1);color:#059669}}
+.tag.red{{background:rgba(239,68,68,.1);color:#DC2626}}
+.tag.blue{{background:rgba(59,130,246,.1);color:#2563EB}}
+
+body.dark{{--bg:#111827;--card:#1F2937;--text:#F9FAFB;--text2:#9CA3AF;--border:#374151;--shadow:0 1px 3px rgba(0,0,0,.3)}}
+body.dark .header{{background:var(--card)}}
+body.dark .main-nav{{background:var(--card)}}
+body.dark .week-bar{{background:var(--card)}}
+body.dark .data-table th{{background:#111827}}
+body.dark .ms-btn{{background:var(--card);color:var(--text);border-color:var(--border)}}
+body.dark .ms-panel{{background:var(--card);border-color:var(--border);box-shadow:0 8px 24px rgba(0,0,0,.4)}}
+body.dark .ms-item:hover{{background:var(--bg)}}
+body.dark .section-insight{{background:linear-gradient(135deg,rgba(239,68,68,.08),rgba(59,130,246,.06));border-color:rgba(239,68,68,.2)}}
+body.dark .week-pill{{background:#374151;color:var(--text2)}}
+body.dark .chart-card{{background:var(--card)}}
+body.dark .kpi-card{{background:var(--card)}}
+body.dark .items-card{{background:var(--card)}}
+body.dark .store-filter-wrap select{{background:var(--card);color:var(--text);border-color:var(--border)}}
+body.dark .revenue-summary-table th{{background:#111827}}
+body.dark .alert-box{{background:#1F2937;border-color:#374151;color:#FCA5A5}}
+
 @media(max-width:900px){{
- .charts-grid{{grid-template-columns:1fr}}
- .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
- .header{{padding:10px 16px}}
+  .charts-grid{{grid-template-columns:1fr}}
+  .kpi-grid{{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}}
+  .header{{padding:12px 16px}}
+  .main-content{{padding:14px}}
+  .items-grid{{grid-template-columns:1fr}}
+}}
+@media(max-width:600px){{
+  .kpi-grid{{grid-template-columns:repeat(2,1fr)}}
+  .kpi-value{{font-size:20px}}
+  .header-left h1{{font-size:16px}}
 }}
 </style>
 </head>
 <body>
-<div class="header">
- <div class="header-left"><span class="brand-dot"></span><h1>MA PIZZA — Львів</h1></div>
- <div class="header-right">
-  <div class="ms-wrap" id="storeFilter"><button class="ms-btn" id="storeBtnLabel">Всі заклади</button><div class="ms-panel" id="storePanel"></div></div>
-  <button class="reset-btn" onclick="resetFilters()" title="Скинути фільтри">&#10005;</button>
-  <button class="theme-toggle" onclick="toggleTheme()">&#x1F319;</button>
-  <span class="last-update">Оновлено: {now_str}</span>
- </div>
-</div>
-<nav class="main-nav" id="mainNav">
- <span class="nav-link active" data-tab="overview">Огляд</span>
- <span class="nav-link" data-tab="orders">Замовлення</span>
- <span class="nav-link" data-tab="ops">Операції</span>
- <span class="nav-link" data-tab="stores">Деталі закладів</span>
- <span class="nav-link" data-tab="revenue">Дохідність</span>
- <span class="nav-link" data-tab="campaigns">Кампанії</span>
- <span class="nav-link" data-tab="smartpromo">Smart Promo & SL</span>
- <span class="nav-link" data-tab="orderdetails">Деталі замовлень</span>
- <span class="nav-link" data-tab="complaints">Скарги</span>
- <span class="nav-link" data-tab="cancelled">Скасовані</span>
- <span class="nav-link" data-tab="topitems">Топ позиції</span>
+
+<header class="header">
+  <div class="header-left">
+    <span class="brand-dot"></span>
+    <h1>MA PIZZA | тижневий звіт</h1>
+  </div>
+  <div class="header-right">
+    <div class="ms-wrap" id="store-ms"><button class="ms-btn" id="store-btn">Всі заклади</button><div class="ms-panel" id="store-panel"></div></div>
+    <button class="reset-btn" id="reset-btn" onclick="resetAllFilters()" title="Скинути всі фільтри">\✕</button>
+    <button class="theme-toggle" id="theme-toggle" onclick="toggleDark()">\🌙</button>
+    <span class="last-update">Оновлено: {generated_at}</span>
+  </div>
+</header>
+
+<nav class="main-nav" id="main-nav">
+  <a href="#kpis" class="nav-link active">Огляд</a>
+  <a href="#orders-section" class="nav-link">Замовлення</a>
+  <a href="#ops-section" class="nav-link">Операції</a>
+  <a href="#stores-section" class="nav-link">Деталі закладів</a>
+  <a href="#revenue-section" class="nav-link">Дохідність</a>
+  <a href="#campaigns-section" class="nav-link">Кампанії</a>
+  <a href="#smartpromo-section" class="nav-link">Smart Promo & SL</a>
+  <a href="#orders-detail-section" class="nav-link">Деталі замовлень</a>
+  <a href="#complaints-section" class="nav-link">Скарги</a>
+  <a href="#cancelled-section" class="nav-link">Скасовані</a>
+  <a href="#items-section" class="nav-link">Топ позиції</a>
 </nav>
-<div class="week-bar" id="weekBar"></div>
-<div class="main-content">
-<div class="section visible" id="sec-overview"><div class="kpi-grid" id="kpiGrid"></div><div class="charts-grid"><div class="chart-card"><h3>Замовлення по тижнях</h3><div class="chart-wrap"><canvas id="chartOrders"></canvas></div></div><div class="chart-card"><h3>Середній чек (&#8372;) по тижнях</h3><div class="chart-wrap"><canvas id="chartAvgCheck"></canvas></div></div></div></div>
-<div class="section" id="sec-orders"><div class="section-title"><span class="section-icon">&#128230;</span> Замовлення</div><div class="charts-grid"><div class="chart-card"><h3>Замовлення по тижнях</h3><div class="chart-wrap"><canvas id="chartOrdersFull"></canvas></div></div><div class="chart-card"><h3>Середній чек (&#8372;) по тижнях</h3><div class="chart-wrap"><canvas id="chartAvgCheckFull"></canvas></div></div></div></div>
-<div class="section" id="sec-ops"><div class="section-title"><span class="section-icon">&#9881;&#65039;</span> Операційні показники</div><div class="charts-grid"><div class="chart-card"><h3>Доступність та Прийняття (%)</h3><div class="chart-wrap"><canvas id="chartAvail"></canvas></div></div><div class="chart-card"><h3>Рівень поганих замовлень (%)</h3><div class="chart-wrap"><canvas id="chartBadOrder"></canvas></div></div></div></div>
-<div class="section" id="sec-stores"><div class="section-title"><span class="section-icon">&#127978;</span> Деталі по закладах</div><div class="table-wrap"><table class="data-table" id="storeTable"></table></div></div>
-<div class="section" id="sec-revenue"><div class="section-title"><span class="section-icon">&#128176;</span> Дохідність по тижнях</div><div class="charts-grid" style="margin-bottom:20px"><div class="chart-card"><h3>Дохід по тижнях (&#8372;)</h3><div class="chart-wrap"><canvas id="chartRevenue"></canvas></div></div><div class="chart-card"><h3>Витрати на знижки по тижнях (&#8372;)</h3><div class="chart-wrap"><canvas id="chartDiscounts"></canvas></div></div></div><div class="table-wrap"><table class="data-table" id="revTable"></table></div></div>
-<div class="section" id="sec-campaigns"><div class="section-title"><span class="section-icon">&#127919;</span> Кампанії по типах</div><div class="charts-grid" style="margin-bottom:20px"><div class="chart-card"><h3>Витрати партнера на кампанії (&#8372;)</h3><div class="chart-wrap"><canvas id="chartProvDisc"></canvas></div></div><div class="chart-card"><h3>Витрати Bolt на кампанії (&#8372;)</h3><div class="chart-wrap"><canvas id="chartBoltDisc"></canvas></div></div></div><div class="section-title"><span class="section-icon">&#128202;</span> Кампанії — деталі по типах</div><div class="table-wrap"><table class="data-table" id="campTable"></table></div></div>
-<div class="section" id="sec-smartpromo"><div class="section-title"><span class="section-icon">&#128640;</span> Smart Promo & Sponsored Listing</div><div id="smartPromoContent"></div></div>
-<div class="section" id="sec-orderdetails"><div class="section-title"><span class="section-icon">&#129534;</span> Дохідність по замовленнях</div><div class="filter-row"><label>Bolt Plus:</label><select id="filterBP"><option value="all">Всі</option><option value="yes">Bolt Plus</option><option value="no">Без Bolt Plus</option></select><label>Статус:</label><select id="filterStatus"><option value="all">Всі</option><option value="delivered">Доставлені</option><option value="failed">Невдалі / Скасовані</option></select></div><div class="table-wrap" style="max-height:600px;overflow-y:auto"><table class="data-table" id="orderTable"></table></div></div>
-<div class="section" id="sec-complaints"><div class="section-title"><span class="section-icon">&#9888;&#65039;</span> Замовлення зі скаргами</div><div class="table-wrap" style="max-height:600px;overflow-y:auto"><table class="data-table" id="complaintTable"></table></div></div>
-<div class="section" id="sec-cancelled"><div class="section-title"><span class="section-icon">&#10060;</span> Скасовані замовлення</div><div class="table-wrap" style="max-height:600px;overflow-y:auto"><table class="data-table" id="cancelledTable"></table></div></div>
-<div class="section" id="sec-topitems"><div class="section-title"><span class="section-icon">&#127829;</span> Топ-10 позицій по закладах</div><p style="font-size:13px;color:var(--text2);margin-bottom:16px">Найпопулярніші позиції за останні 4 тижні.</p><div class="top-items-grid" id="topItemsGrid"></div></div>
+
+<div class="period-toggle-wrap">
+  <select class="period-select" id="period-select">
+    <option value="week" selected>Тижні</option>
+    <option value="month">Місяці</option>
+  </select>
 </div>
+<div class="week-bar" id="week-bar">
+  <div class="week-bar-label">Тиждень:</div>
+</div>
+
+<main class="main-content">
+  <section id="kpis" class="section">
+    <div class="kpi-grid" id="kpi-grid"></div>
+  </section>
+
+  <section id="orders-section" class="section">
+    <div class="section-title"><span class="section-icon">\📦</span> Замовлення</div>
+    <div class="section-insight" id="insight-orders"></div>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Замовлення по тижнях</h3><div class="chart-wrap"><canvas id="chart-orders"></canvas></div></div>
+      <div class="chart-card"><h3>Середній чек (\₴) по тижнях</h3><div class="chart-wrap"><canvas id="chart-avg-check"></canvas></div></div>
+    </div>
+  </section>
+
+  <section id="ops-section" class="section">
+    <div class="section-title"><span class="section-icon">\⚙\️</span> Операційні показники</div>
+    <div class="section-insight" id="insight-ops"></div>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Доступність та Прийняття (%)</h3><div class="chart-wrap"><canvas id="chart-ops-rates"></canvas></div></div>
+      <div class="chart-card"><h3>Рівень поганих замовлень (%)</h3><div class="chart-wrap"><canvas id="chart-bad-orders"></canvas></div></div>
+    </div>
+  </section>
+
+  <section id="stores-section" class="section">
+    <div class="section-title"><span class="section-icon">\🏪</span> Деталі по закладах <span id="stores-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="table-wrap" id="stores-table-wrap"></div>
+  </section>
+
+  <section id="revenue-section" class="section">
+    <div class="section-title"><span class="section-icon">\💰</span> Дохідність по тижнях</div>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Дохід по тижнях (\₴)</h3><div class="chart-wrap"><canvas id="chart-revenue"></canvas></div></div>
+      <div class="chart-card"><h3>Замовлення \— деталі по закладах</h3><div class="chart-wrap" style="min-height:auto"><div id="revenue-summary"></div></div></div>
+    </div>
+  </section>
+
+  <section id="campaigns-section" class="section">
+    <div class="section-title"><span class="section-icon">\🎯</span> Кампанії <span id="campaigns-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="section-insight" id="campaigns-summary"></div>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Витрати закладів на кампанії по тижнях (\₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-spend"></canvas></div></div>
+      <div class="chart-card"><h3>Витрати Bolt на кампанії по тижнях (\₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-bolt"></canvas></div></div>
+    </div>
+    <div class="table-wrap scroll-table" id="campaigns-wrap"></div>
+    <div class="calc-card" id="budget-calc">
+      <h3 class="calc-title">\💰 Калькулятор бюджету на кампанії</h3>
+      <div class="calc-controls">
+        <div class="calc-field"><label for="calc-budget">Бюджет на точку / міс. (\₴)</label><input type="number" id="calc-budget" value="2500" min="0" step="100"></div>
+        <div class="calc-field"><label for="calc-period-select">Період</label><select id="calc-period-select"></select></div>
+      </div>
+      <div id="calc-results"></div>
+    </div>
+  </section>
+
+  <section id="smartpromo-section" class="section">
+    <div class="section-title"><span class="section-icon">\🚀</span> Smart Promo & Sponsored Listing</div>
+    <div id="smartpromo-content"></div>
+  </section>
+
+  <section id="orders-detail-section" class="section">
+    <div class="section-title"><span class="section-icon">\🧾</span> Дохідність по замовленнях <span id="orders-detail-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="store-filter-wrap">
+      <label>Bolt Plus:</label>
+      <select id="bp-filter"><option value="__all__">Всі</option><option value="yes">Bolt Plus</option><option value="no">Без Bolt Plus</option></select>
+      <label style="margin-left:12px">Статус:</label>
+      <select id="state-filter"><option value="__all__">Всі</option><option value="delivered">Доставлені</option><option value="failed">Невдалі / Скасовані</option></select>
+    </div>
+    <div class="table-wrap scroll-table" id="orders-detail-wrap"></div>
+  </section>
+
+  <section id="complaints-section" class="section">
+    <div class="section-title"><span class="section-icon">\⚠\️</span> Замовлення зі скаргами <span id="comp-count" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="table-wrap scroll-table" id="complaints-wrap"></div>
+  </section>
+
+  <section id="cancelled-section" class="section">
+    <div class="section-title"><span class="section-icon">\❌</span> Скасовані замовлення <span id="canc-count" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="table-wrap scroll-table" id="cancelled-wrap"></div>
+  </section>
+
+  <section id="items-section" class="section">
+    <div class="section-title"><span class="section-icon">\🍕</span> Топ-10 позицій по закладах <span id="items-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="section-insight" id="items-insight">Найпопулярніші позиції за обраний період. Кількість замовлених одиниць та виручка (\₴).</div>
+    <div class="items-grid" id="items-grid"></div>
+  </section>
+</main>
+
 <script>
-const RAW={data_js};
-const COLORS=['#EF4444','#3B82F6','#10B981','#F59E0B','#8B5CF6','#EC4899','#14B8A6'];
-const PROV=RAW.providers;const PIDS=RAW.providerIds;
-let selectedStores=new Set(PIDS.map(String));let selectedWeek=null;let activeTab='overview';let charts={{}};
-function n(v){{return v==null?0:Number(v)}}function fmt(v){{if(v==null)return'\\u2014';let x=Number(v);return isNaN(x)?'\\u2014':x.toLocaleString('uk-UA')}}
-function weekLabel(w){{let d=new Date(w+'T00:00:00');let e=new Date(d);e.setDate(e.getDate()+6);return d.toLocaleDateString('uk-UA',{{day:'numeric',month:'short'}})+' \\u2014 '+e.toLocaleDateString('uk-UA',{{day:'numeric',month:'short'}})}}
-function initStoreFilter(){{const panel=document.getElementById('storePanel');const btn=document.getElementById('storeBtnLabel');let html='<div class="ms-item all-item"><input type="checkbox" id="cbAll" checked><label for="cbAll">Всі заклади</label></div>';PIDS.forEach(pid=>{{html+=`<div class="ms-item"><input type="checkbox" id="cb${{pid}}" value="${{pid}}" checked><label for="cb${{pid}}">${{PROV[pid]}}</label></div>`}});panel.innerHTML=html;btn.onclick=()=>panel.classList.toggle('open');document.addEventListener('click',e=>{{if(!document.getElementById('storeFilter').contains(e.target))panel.classList.remove('open')}});panel.querySelectorAll('input').forEach(cb=>{{cb.addEventListener('change',()=>{{if(cb.id==='cbAll')panel.querySelectorAll('input:not(#cbAll)').forEach(c=>c.checked=cb.checked);else document.getElementById('cbAll').checked=[...panel.querySelectorAll('input:not(#cbAll)')].every(c=>c.checked);selectedStores=new Set([...panel.querySelectorAll('input:not(#cbAll):checked')].map(c=>c.value));updateLabel();render()}})}}); function updateLabel(){{if(selectedStores.size===PIDS.length)btn.textContent='Всі заклади';else if(selectedStores.size===0)btn.textContent='Оберіть заклад';else if(selectedStores.size<=2)btn.textContent=[...selectedStores].map(id=>PROV[id]).join(', ');else btn.textContent=selectedStores.size+' закладів'}}}}
-function initWeekBar(){{const bar=document.getElementById('weekBar');let html='<span class="week-bar-label">Тиждень:</span>';RAW.weeks.forEach(w=>{{html+=`<span class="week-pill${{selectedWeek===w?' active':''}}" data-week="${{w}}">${{weekLabel(w)}}</span>`}});bar.innerHTML=html;bar.querySelectorAll('.week-pill').forEach(pill=>{{pill.onclick=()=>{{if(selectedWeek===pill.dataset.week)selectedWeek=null;else selectedWeek=pill.dataset.week;bar.querySelectorAll('.week-pill').forEach(p=>p.classList.remove('active'));if(selectedWeek)pill.classList.add('active');render()}}}});if(bar.lastElementChild)bar.lastElementChild.scrollIntoView({{inline:'end',block:'nearest'}})}}
-function initNav(){{document.querySelectorAll('.nav-link').forEach(link=>{{link.onclick=()=>{{document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));link.classList.add('active');activeTab=link.dataset.tab;document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));document.getElementById('sec-'+activeTab).classList.add('visible');render()}}}})}}
-function filt(arr){{return arr.filter(r=>selectedStores.has(String(r.provider_id)))}}function filtWeek(arr,ws){{if(!ws)return filt(arr);let ww=Array.isArray(ws)?ws:[ws];return arr.filter(r=>selectedStores.has(String(r.provider_id))&&ww.includes((r.week_date||r.date||'').substring(0,10)))}}function getWeeks(){{return selectedWeek?[selectedWeek]:RAW.weeks}}function destroyChart(id){{if(charts[id]){{charts[id].destroy();delete charts[id]}}}}function addDays(ds,d){{let dt=new Date(ds+'T00:00:00');dt.setDate(dt.getDate()+d);return dt.toISOString().substring(0,10)}}
-function makeLineChart(cid,labels,datasets){{destroyChart(cid);const ctx=document.getElementById(cid);if(!ctx)return;charts[cid]=new Chart(ctx,{{type:'line',data:{{labels,datasets}},options:{{responsive:true,maintainAspectRatio:false,interaction:{{mode:'index',intersect:false}},plugins:{{legend:{{position:'bottom',labels:{{boxWidth:12,padding:10,font:{{size:11}}}}}}}},scales:{{x:{{grid:{{display:false}},ticks:{{font:{{size:11}},maxRotation:45}}}},y:{{beginAtZero:true,grid:{{color:'rgba(0,0,0,.06)'}},ticks:{{font:{{size:11}}}}}}}}}}}})}}
-function makeBarChart(cid,labels,datasets){{destroyChart(cid);const ctx=document.getElementById(cid);if(!ctx)return;charts[cid]=new Chart(ctx,{{type:'bar',data:{{labels,datasets}},options:{{responsive:true,maintainAspectRatio:false,interaction:{{mode:'index',intersect:false}},plugins:{{legend:{{position:'bottom',labels:{{boxWidth:12,padding:10,font:{{size:11}}}}}}}},scales:{{x:{{stacked:true,grid:{{display:false}},ticks:{{font:{{size:11}},maxRotation:45}}}},y:{{stacked:true,beginAtZero:true,grid:{{color:'rgba(0,0,0,.06)'}},ticks:{{font:{{size:11}}}}}}}}}}}})}}
-function renderKPI(){{const ws=getWeeks();const od=filtWeek(RAW.orders,ws),rv=filtWeek(RAW.revenue,ws),op=filtWeek(RAW.ops,ws);const nw=ws.length||1;const tD=od.reduce((s,r)=>s+n(r.delivered),0),tAll=od.reduce((s,r)=>s+n(r.total_orders),0),tF=od.reduce((s,r)=>s+n(r.failed),0),tR=rv.reduce((s,r)=>s+n(r.rev_before),0),tBad=op.reduce((s,r)=>s+n(r.bad_orders),0),tComp=op.reduce((s,r)=>s+n(r.complaints),0);const avgC=tD?Math.round(tR/tD):0,pW=Math.round(tD/nw*10)/10,fR=tAll?Math.round(tF/tAll*1000)/10:0,bR=tD?Math.round(tBad/tD*1000)/10:0;document.getElementById('kpiGrid').innerHTML=`<div class="kpi-card"><div class="kpi-label">Замовлень (delivered)</div><div class="kpi-value">${{fmt(tD)}}</div><div class="kpi-change neutral">${{pW}} / тиж</div></div><div class="kpi-card"><div class="kpi-label">Середній чек</div><div class="kpi-value">${{fmt(avgC)}} \\u20B4</div></div><div class="kpi-card"><div class="kpi-label">Виручка</div><div class="kpi-value">${{fmt(tR)}} \\u20B4</div></div><div class="kpi-card"><div class="kpi-label">Fail Rate</div><div class="kpi-value" style="color:${{fR>10?'var(--neg)':fR>5?'var(--warn)':'var(--pos)'}}">${{fR}}%</div></div><div class="kpi-card"><div class="kpi-label">Bad Order Rate</div><div class="kpi-value" style="color:${{bR>10?'var(--neg)':bR>5?'var(--warn)':'var(--pos)'}}">${{bR}}%</div></div><div class="kpi-card"><div class="kpi-label">Smart Promo</div><div class="kpi-value" style="color:var(--warn)">${{RAW.smartPromoCount>0?'\\u2705 Активний':'\\u274C Не активний'}}</div><div class="kpi-change ${{RAW.smartPromoCount>0?'up':'down'}}">${{RAW.smartPromoCount}} кампаній</div></div><div class="kpi-card"><div class="kpi-label">Скарг</div><div class="kpi-value">${{tComp}}</div></div>`}}
-function renderOrderCharts(prefix){{const labels=RAW.weeks.map(weekLabel);const c1=prefix?'chartOrdersFull':'chartOrders',c2=prefix?'chartAvgCheckFull':'chartAvgCheck';if(selectedStores.size<=3&&selectedStores.size>0){{const ds1=[],ds2=[];[...selectedStores].forEach((pid,i)=>{{ds1.push({{label:PROV[pid],data:RAW.weeks.map(w=>{{const r=RAW.orders.find(x=>x.week_date.substring(0,10)===w&&x.provider_id==pid);return r?n(r.delivered):0}}),borderColor:COLORS[i%COLORS.length],backgroundColor:COLORS[i%COLORS.length]+'33',tension:.3,borderWidth:2,pointRadius:3,fill:false}});ds2.push({{label:PROV[pid],data:RAW.weeks.map(w=>{{const r=RAW.orders.find(x=>x.week_date.substring(0,10)===w&&x.provider_id==pid);return r&&n(r.avg_check)?n(r.avg_check):null}}),borderColor:COLORS[i%COLORS.length],tension:.3,borderWidth:2,pointRadius:3,fill:false}})}});makeLineChart(c1,labels,ds1);makeLineChart(c2,labels,ds2)}}else{{const aggW={{}};RAW.weeks.forEach(w=>{{const wd=filtWeek(RAW.orders,[w]);aggW[w]={{d:wd.reduce((s,r)=>s+n(r.delivered),0),ac:wd.reduce((s,r)=>s+n(r.delivered),0)?Math.round(wd.filter(r=>n(r.avg_check)>0).reduce((s,r)=>s+n(r.avg_check)*n(r.delivered),0)/wd.reduce((s,r)=>s+n(r.delivered),0)):0}}}});makeLineChart(c1,labels,[{{label:'Замовлення',data:RAW.weeks.map(w=>aggW[w].d),borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.1)',tension:.3,borderWidth:2,pointRadius:4,fill:true}}]);makeLineChart(c2,labels,[{{label:'Сер. чек \\u20B4',data:RAW.weeks.map(w=>aggW[w].ac||null),borderColor:'#3B82F6',backgroundColor:'rgba(59,130,246,.1)',tension:.3,borderWidth:2,pointRadius:4,fill:true}}])}}}}
-function renderOpsCharts(){{const labels=RAW.weeks.map(weekLabel);const sats=RAW.weeks.map(w=>{{let d=new Date(w+'T00:00:00');d.setDate(d.getDate()+5);return d.toISOString().substring(0,10)}});if(selectedStores.size<=3&&selectedStores.size>0){{const dsA=[],dsAc=[],dsB=[];[...selectedStores].forEach((pid,i)=>{{dsA.push({{label:PROV[pid]+' \\u2014 Дост.',data:sats.map(s=>{{const r=RAW.avail.find(x=>x.date.substring(0,10)===s&&x.provider_id==pid);return r?n(r.avail_7d):null}}),borderColor:COLORS[i%COLORS.length],tension:.3,borderWidth:2,pointRadius:3,fill:false}});dsAc.push({{label:PROV[pid]+' \\u2014 Прийн.',data:sats.map(s=>{{const r=RAW.avail.find(x=>x.date.substring(0,10)===s&&x.provider_id==pid);return r&&r.accept_7d!=null?n(r.accept_7d):null}}),borderColor:COLORS[i%COLORS.length],borderDash:[5,5],tension:.3,borderWidth:2,pointRadius:3,fill:false}});dsB.push({{label:PROV[pid],data:RAW.weeks.map(w=>{{const o=RAW.ops.find(x=>x.week_date.substring(0,10)===w&&x.provider_id==pid);return o&&n(o.delivered)?Math.round(n(o.bad_orders)/n(o.delivered)*1000)/10:null}}),borderColor:COLORS[i%COLORS.length],tension:.3,borderWidth:2,pointRadius:3,fill:false}})}});makeLineChart('chartAvail',labels,[...dsA,...dsAc]);makeLineChart('chartBadOrder',labels,dsB)}}else{{const aA=sats.map(s=>{{const rr=RAW.avail.filter(x=>x.date.substring(0,10)===s&&selectedStores.has(String(x.provider_id))&&x.avail_7d!=null);return rr.length?Math.round(rr.reduce((s,r)=>s+n(r.avail_7d),0)/rr.length*10)/10:null}});const aAc=sats.map(s=>{{const rr=RAW.avail.filter(x=>x.date.substring(0,10)===s&&selectedStores.has(String(x.provider_id))&&x.accept_7d!=null);return rr.length?Math.round(rr.reduce((s,r)=>s+n(r.accept_7d),0)/rr.length*10)/10:null}});const bR=RAW.weeks.map(w=>{{const rr=RAW.ops.filter(x=>x.week_date.substring(0,10)===w&&selectedStores.has(String(x.provider_id)));const d=rr.reduce((s,r)=>s+n(r.delivered),0),b=rr.reduce((s,r)=>s+n(r.bad_orders),0);return d?Math.round(b/d*1000)/10:null}});makeLineChart('chartAvail',labels,[{{label:'Доступність %',data:aA,borderColor:'#10B981',backgroundColor:'rgba(16,185,129,.1)',tension:.3,borderWidth:2,pointRadius:4,fill:true}},{{label:'Прийняття %',data:aAc,borderColor:'#3B82F6',backgroundColor:'rgba(59,130,246,.1)',tension:.3,borderWidth:2,pointRadius:4,fill:true}}]);makeLineChart('chartBadOrder',labels,[{{label:'Bad Order %',data:bR,borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.1)',tension:.3,borderWidth:2,pointRadius:4,fill:true}}])}}}}
-function renderStoreTable(){{const ws=getWeeks(),nW=ws.length;let html='<thead><tr><th>Заклад</th><th class="num">Зам/тиж</th><th class="num">Delivered</th><th class="num">Failed</th><th class="num">Сер.чек \\u20B4</th><th class="num">Виручка \\u20B4</th><th class="num">Доступність</th><th class="num">Bad %</th></tr></thead><tbody>';let tD=0,tF=0,tR=0;[...selectedStores].sort((a,b)=>a-b).forEach(pid=>{{const od=filtWeek(RAW.orders,ws).filter(r=>r.provider_id==pid),rv=filtWeek(RAW.revenue,ws).filter(r=>r.provider_id==pid),op=filtWeek(RAW.ops,ws).filter(r=>r.provider_id==pid);const del=od.reduce((s,r)=>s+n(r.delivered),0),fail=od.reduce((s,r)=>s+n(r.failed),0),rev=rv.reduce((s,r)=>s+n(r.rev_before),0),bad=op.reduce((s,r)=>s+n(r.bad_orders),0);const avgC=del?Math.round(rev/del):0,pW=Math.round(del/nW*10)/10,badP=del?Math.round(bad/del*1000)/10:0;const la=RAW.avail.filter(r=>r.provider_id==pid).sort((a,b)=>b.date.localeCompare(a.date))[0];const av=la?(la.avail_7d!=null?la.avail_7d+'%':'\\u2014'):'\\u2014';tD+=del;tF+=fail;tR+=rev;html+=`<tr><td><strong>${{PROV[pid]}}</strong></td><td class="num">${{pW}}</td><td class="num">${{del}}</td><td class="num">${{fail||'\\u2014'}}</td><td class="num">${{fmt(avgC)}}</td><td class="num">${{fmt(rev)}}</td><td class="num">${{av}}</td><td class="num" style="color:${{badP>10?'var(--neg)':badP>5?'var(--warn)':'inherit'}}">${{badP}}%</td></tr>`}});html+=`<tr class="total-row"><td>РАЗОМ</td><td class="num">${{Math.round(tD/nW*10)/10}}</td><td class="num">${{tD}}</td><td class="num">${{tF}}</td><td class="num">${{tD?fmt(Math.round(tR/tD)):'\\u2014'}}</td><td class="num">${{fmt(tR)}}</td><td class="num">\\u2014</td><td class="num">\\u2014</td></tr></tbody>`;document.getElementById('storeTable').innerHTML=html}}
-function renderRevenueCharts(){{const labels=RAW.weeks.map(weekLabel);if(selectedStores.size<=5&&selectedStores.size>0){{const ds=[],dd=[];[...selectedStores].sort((a,b)=>a-b).forEach((pid,i)=>{{ds.push({{label:PROV[pid],data:RAW.weeks.map(w=>{{const r=RAW.revenue.find(x=>x.week_date.substring(0,10)===w&&x.provider_id==pid);return r?n(r.rev_before):0}}),backgroundColor:COLORS[i%COLORS.length]+'99',borderColor:COLORS[i%COLORS.length],borderWidth:1}});dd.push({{label:PROV[pid],data:RAW.weeks.map(w=>{{const r=RAW.revenue.find(x=>x.week_date.substring(0,10)===w&&x.provider_id==pid);return r?n(r.prov_disc)+n(r.prov_del_disc):0}}),backgroundColor:COLORS[i%COLORS.length]+'99',borderColor:COLORS[i%COLORS.length],borderWidth:1}})}});makeBarChart('chartRevenue',labels,ds);makeBarChart('chartDiscounts',labels,dd)}}else{{const tRW=RAW.weeks.map(w=>filt(RAW.revenue).filter(r=>r.week_date.substring(0,10)===w).reduce((s,r)=>s+n(r.rev_before),0)),tDW=RAW.weeks.map(w=>filt(RAW.revenue).filter(r=>r.week_date.substring(0,10)===w).reduce((s,r)=>s+n(r.prov_disc)+n(r.prov_del_disc),0));makeBarChart('chartRevenue',labels,[{{label:'Виручка \\u20B4',data:tRW,backgroundColor:'#EF444499',borderColor:'#EF4444',borderWidth:1}}]);makeBarChart('chartDiscounts',labels,[{{label:'Витрати партнера \\u20B4',data:tDW,backgroundColor:'#F59E0B99',borderColor:'#F59E0B',borderWidth:1}}])}}}}
-function renderRevenueTable(){{const ws=getWeeks();let html='<thead><tr><th>Заклад</th><th class="num">Зам.</th><th class="num">Виручка \\u20B4</th><th class="num">Після знижок \\u20B4</th><th class="num">Комісія Bolt \\u20B4</th><th class="num">Дост. \\u20B4</th><th class="num">Знижки партнера \\u20B4</th><th class="num">Знижки Bolt \\u20B4</th></tr></thead><tbody>';let t={{d:0,rb:0,ra:0,c:0,df:0,pd:0,bd:0}};[...selectedStores].sort((a,b)=>a-b).forEach(pid=>{{const rd=filtWeek(RAW.revenue,ws).filter(r=>r.provider_id==pid);const d=rd.reduce((s,r)=>s+n(r.delivered),0),rb=rd.reduce((s,r)=>s+n(r.rev_before),0),ra=rd.reduce((s,r)=>s+n(r.rev_after),0),c=rd.reduce((s,r)=>s+n(r.bolt_comm),0),df=rd.reduce((s,r)=>s+n(r.del_fee),0),pd=rd.reduce((s,r)=>s+n(r.prov_disc)+n(r.prov_del_disc),0),bd=rd.reduce((s,r)=>s+n(r.bolt_disc)+n(r.bolt_del_disc),0);t.d+=d;t.rb+=rb;t.ra+=ra;t.c+=c;t.df+=df;t.pd+=pd;t.bd+=bd;html+=`<tr><td><strong>${{PROV[pid]}}</strong></td><td class="num">${{d}}</td><td class="num">${{fmt(rb)}}</td><td class="num">${{fmt(ra)}}</td><td class="num">${{fmt(c)}}</td><td class="num">${{fmt(df)}}</td><td class="num">${{fmt(pd)}}</td><td class="num">${{fmt(bd)}}</td></tr>`}});html+=`<tr class="total-row"><td>РАЗОМ</td><td class="num">${{t.d}}</td><td class="num">${{fmt(t.rb)}}</td><td class="num">${{fmt(t.ra)}}</td><td class="num">${{fmt(t.c)}}</td><td class="num">${{fmt(t.df)}}</td><td class="num">${{fmt(t.pd)}}</td><td class="num">${{fmt(t.bd)}}</td></tr></tbody>`;document.getElementById('revTable').innerHTML=html}}
-const OBJ_LABELS={{'provider_campaign_portal':'Portal (партнер)','provider_campaign_obligations_commitments':'Obligations','bolt_plus_campaign':'Bolt Plus','marketing_3rd_party_partnership':'3rd Party (Visa)','engagement':'Engagement','activation':'Activation','acquisition':'Acquisition','reactivation':'Reactivation','other':'Інше'}};
-const OBJ_COLORS={{'provider_campaign_portal':'#F59E0B','provider_campaign_obligations_commitments':'#3B82F6','bolt_plus_campaign':'#8B5CF6','marketing_3rd_party_partnership':'#EC4899','engagement':'#10B981','activation':'#14B8A6','acquisition':'#6366F1','reactivation':'#F97316','other':'#6B7280'}};
-function renderCampaignCharts(){{const labels=RAW.weeks.map(weekLabel);const objs=[...new Set(RAW.campaigns.map(r=>r.spend_objective))];const dsP=[],dsB=[];objs.forEach(obj=>{{dsP.push({{label:OBJ_LABELS[obj]||obj,data:RAW.weeks.map(w=>filt(RAW.campaigns).filter(r=>r.week_date.substring(0,10)===w&&r.spend_objective===obj).reduce((s,r)=>s+n(r.provider_spend),0)),backgroundColor:(OBJ_COLORS[obj]||'#999')+'99',borderColor:OBJ_COLORS[obj]||'#999',borderWidth:1}});dsB.push({{label:OBJ_LABELS[obj]||obj,data:RAW.weeks.map(w=>filt(RAW.campaigns).filter(r=>r.week_date.substring(0,10)===w&&r.spend_objective===obj).reduce((s,r)=>s+n(r.bolt_spend),0)),backgroundColor:(OBJ_COLORS[obj]||'#999')+'99',borderColor:OBJ_COLORS[obj]||'#999',borderWidth:1}})}});makeBarChart('chartProvDisc',labels,dsP);makeBarChart('chartBoltDisc',labels,dsB)}}
-function renderCampaignTable(){{const ws=getWeeks();const cd=filtWeek(RAW.campaigns,ws);const byObj={{}};cd.forEach(r=>{{const k=r.spend_objective;if(!byObj[k])byObj[k]={{orders:0,disc:0,prov:0,bolt:0}};byObj[k].orders+=n(r.promo_orders);byObj[k].disc+=n(r.total_discount);byObj[k].prov+=n(r.provider_spend);byObj[k].bolt+=n(r.bolt_spend)}});let html='<thead><tr><th>Тип кампанії</th><th class="num">Промо замовлення</th><th class="num">Знижка \\u20B4</th><th class="num">Партнер \\u20B4</th><th class="num">Bolt \\u20B4</th></tr></thead><tbody>';let tO=0,tD=0,tP=0,tB=0;Object.entries(byObj).sort((a,b)=>b[1].orders-a[1].orders).forEach(([k,v])=>{{html+=`<tr><td><strong>${{OBJ_LABELS[k]||k}}</strong></td><td class="num">${{v.orders}}</td><td class="num">${{fmt(v.disc)}}</td><td class="num">${{fmt(v.prov)}}</td><td class="num">${{fmt(v.bolt)}}</td></tr>`;tO+=v.orders;tD+=v.disc;tP+=v.prov;tB+=v.bolt}});html+=`<tr class="total-row"><td>РАЗОМ</td><td class="num">${{tO}}</td><td class="num">${{fmt(tD)}}</td><td class="num">${{fmt(tP)}}</td><td class="num">${{fmt(tB)}}</td></tr></tbody>`;document.getElementById('campTable').innerHTML=html}}
-function renderSmartPromo(){{const ws=getWeeks(),nW=ws.length;let html='';html+='<div class="alert-box"><h4>\\u{1F6AB} Smart Promo \\u2014 НЕ АКТИВНИЙ на жодній точці</h4><p>За всю історію жоден заклад MA Pizza не використовував Smart Promo. Це означає, що партнер втрачає можливість автоматичного таргетування клієнтів зі знижками. Smart Promo дає в середньому <strong>+20\\u201330% апліфт замовлень</strong> при активації. Рекомендуємо активувати на всіх 7 точках.</p></div>';html+='<div class="alert-box"><h4>\\u{1F6AB} Sponsored Listing \\u2014 НІКОЛИ не використовувався</h4><p>Жоден заклад MA Pizza не використовував Sponsored Listings. Це інструмент платної видимості у додатку Bolt Food \\u2014 заклад з\\\'являється вище у пошуку та на головній сторінці. Конкуренти у Львові скоріше за все вже використовують цей інструмент. Рекомендуємо тестувати з бюджетом <strong>400\\u2013600 \\u20B4/тиждень на точку</strong>.</p></div>';html+='<div class="section-title" style="margin-top:8px"><span class="section-icon">\\u{1F4CD}</span> Статус промо по точках</div><div class="promo-status-grid">';[...selectedStores].sort((a,b)=>a-b).forEach(pid=>{{const od=filtWeek(RAW.orders,ws).filter(r=>r.provider_id==pid);const del=od.reduce((s,r)=>s+n(r.delivered),0);const avgC=del?Math.round(od.filter(r=>n(r.avg_check)>0).reduce((s,r)=>s+n(r.avg_check)*n(r.delivered),0)/del):0;const cd=filtWeek(RAW.campaigns,ws).filter(r=>r.provider_id==pid);const hasPortal=cd.some(r=>r.spend_objective==='provider_campaign_portal');const hasObl=cd.some(r=>r.spend_objective==='provider_campaign_obligations_commitments');const provSpend=cd.reduce((s,r)=>s+n(r.provider_spend),0);const potentialSP10=Math.round(avgC*0.1*(del/nW)*2);html+=`<div class="promo-status-card"><div class="ps-name">${{PROV[pid]}}</div><div class="ps-row"><span class="ps-label">Smart Promo</span><span class="tag red">Не активний</span></div><div class="ps-row"><span class="ps-label">Sponsored Listing</span><span class="tag red">Не активний</span></div><div class="ps-row"><span class="ps-label">Portal кампанії</span><span class="tag ${{hasPortal?'green':'orange'}}">${{hasPortal?'Активні':'Ні'}}</span></div><div class="ps-row"><span class="ps-label">Obligations</span><span class="tag ${{hasObl?'green':'orange'}}">${{hasObl?'Активні':'Ні'}}</span></div><div class="ps-row"><span class="ps-label">Витрати партнера</span><span style="font-weight:600">${{fmt(provSpend)}} \\u20B4</span></div><div class="ps-row"><span class="ps-label">Зам/тиж</span><span style="font-weight:600">${{Math.round(del/nW*10)/10}}</span></div><div class="ps-row"><span class="ps-label">Сер.чек</span><span style="font-weight:600">${{fmt(avgC)}} \\u20B4</span></div><div class="ps-row"><span class="ps-label">Потенціал SP 10% / 2тиж</span><span style="font-weight:600;color:var(--accent)">~${{fmt(potentialSP10)}} \\u20B4</span></div></div>`}});html+='</div>';html+='<div class="section-title" style="margin-top:16px"><span class="section-icon">\\u{1F4CA}</span> Замовлення з промо по типах</div><div class="table-wrap"><table class="data-table"><thead><tr><th>Заклад</th><th class="num">Portal</th><th class="num">Obligations</th><th class="num">Bolt Plus</th><th class="num">Engagement</th><th class="num">3rd Party</th><th class="num">Інше</th><th class="num">Разом промо</th><th class="num">Всього зам.</th><th class="num">% з промо</th></tr></thead><tbody>';let gt={{p:0,o:0,bp:0,e:0,tp:0,ot:0,pr:0,al:0}};[...selectedStores].sort((a,b)=>a-b).forEach(pid=>{{const cd=filtWeek(RAW.campaigns,ws).filter(r=>r.provider_id==pid),od=filtWeek(RAW.orders,ws).filter(r=>r.provider_id==pid);const allDel=od.reduce((s,r)=>s+n(r.delivered),0);const p=cd.filter(r=>r.spend_objective==='provider_campaign_portal').reduce((s,r)=>s+n(r.promo_orders),0),o=cd.filter(r=>r.spend_objective==='provider_campaign_obligations_commitments').reduce((s,r)=>s+n(r.promo_orders),0),bp=cd.filter(r=>r.spend_objective==='bolt_plus_campaign').reduce((s,r)=>s+n(r.promo_orders),0),e=cd.filter(r=>['engagement','activation','acquisition','reactivation'].includes(r.spend_objective)).reduce((s,r)=>s+n(r.promo_orders),0),tp=cd.filter(r=>r.spend_objective==='marketing_3rd_party_partnership').reduce((s,r)=>s+n(r.promo_orders),0),ot=cd.filter(r=>r.spend_objective==='other').reduce((s,r)=>s+n(r.promo_orders),0),pr=p+o+bp+e+tp+ot,pct=allDel?Math.round(pr/allDel*1000)/10:0;gt.p+=p;gt.o+=o;gt.bp+=bp;gt.e+=e;gt.tp+=tp;gt.ot+=ot;gt.pr+=pr;gt.al+=allDel;html+=`<tr><td><strong>${{PROV[pid]}}</strong></td><td class="num">${{p||'\\u2014'}}</td><td class="num">${{o||'\\u2014'}}</td><td class="num">${{bp||'\\u2014'}}</td><td class="num">${{e||'\\u2014'}}</td><td class="num">${{tp||'\\u2014'}}</td><td class="num">${{ot||'\\u2014'}}</td><td class="num" style="font-weight:600">${{pr}}</td><td class="num">${{allDel}}</td><td class="num">${{pct}}%</td></tr>`}});const gPct=gt.al?Math.round(gt.pr/gt.al*1000)/10:0;html+=`<tr class="total-row"><td>РАЗОМ</td><td class="num">${{gt.p}}</td><td class="num">${{gt.o}}</td><td class="num">${{gt.bp}}</td><td class="num">${{gt.e}}</td><td class="num">${{gt.tp}}</td><td class="num">${{gt.ot}}</td><td class="num">${{gt.pr}}</td><td class="num">${{gt.al}}</td><td class="num">${{gPct}}%</td></tr></tbody></table></div>`;document.getElementById('smartPromoContent').innerHTML=html}}
-function renderOrderDetails(){{const ws=getWeeks();const bpF=document.getElementById('filterBP').value,stF=document.getElementById('filterStatus').value;let rows=RAW.orderDetails.filter(r=>selectedStores.has(String(r.provider_id)));if(ws.length<RAW.weeks.length)rows=rows.filter(r=>ws.some(w=>r.order_created_date>=w&&r.order_created_date<addDays(w,7)));if(bpF==='yes')rows=rows.filter(r=>r.bp===true);if(bpF==='no')rows=rows.filter(r=>r.bp!==true);if(stF==='delivered')rows=rows.filter(r=>r.order_state==='delivered');if(stF==='failed')rows=rows.filter(r=>r.order_state!=='delivered');let html='<thead><tr><th>Дата</th><th>Час</th><th>Заклад</th><th>Статус</th><th class="num">Чек \\u20B4</th><th class="num">Дост. \\u20B4</th><th>BP</th><th class="num">Дост. хв</th></tr></thead><tbody>';rows.slice(0,300).forEach(r=>{{const st=r.order_state==='delivered'?'<span class="tag green">Доставлено</span>':'<span class="tag red">'+(r.order_state||'\\u2014')+'</span>';const bp=r.bp?'<span class="tag purple">Plus</span>':'';html+=`<tr><td>${{r.order_created_date||''}}</td><td>${{r.order_time||''}}</td><td>${{PROV[r.provider_id]||r.provider_name}}</td><td>${{st}}</td><td class="num">${{fmt(r.check_before)}}</td><td class="num">${{fmt(r.del_fee)}}</td><td>${{bp}}</td><td class="num">${{r.del_min||'\\u2014'}}</td></tr>`}});if(rows.length>300)html+='<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:12px">Показано 300 з '+rows.length+'</td></tr>';html+='</tbody>';document.getElementById('orderTable').innerHTML=html}}
-function renderComplaints(){{const ws=getWeeks();let rows=RAW.orderDetails.filter(r=>selectedStores.has(String(r.provider_id))&&r.ticket===true);if(ws.length<RAW.weeks.length)rows=rows.filter(r=>ws.some(w=>r.order_created_date>=w&&r.order_created_date<addDays(w,7)));let html='<thead><tr><th>Дата</th><th>Час</th><th>Заклад</th><th class="num">Чек \\u20B4</th><th class="num">Дост. хв</th><th>Bad</th></tr></thead><tbody>';if(!rows.length)html+='<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--text2)">Немає скарг за обраний період</td></tr>';rows.forEach(r=>{{html+=`<tr><td>${{r.order_created_date}}</td><td>${{r.order_time||''}}</td><td>${{PROV[r.provider_id]||r.provider_name}}</td><td class="num">${{fmt(r.check_before)}}</td><td class="num">${{r.del_min||'\\u2014'}}</td><td>${{r.bad?'<span class="tag red">Bad</span>':''}}</td></tr>`}});html+='</tbody>';document.getElementById('complaintTable').innerHTML=html}}
-function renderCancelled(){{const ws=getWeeks();let rows=RAW.orderDetails.filter(r=>selectedStores.has(String(r.provider_id))&&r.order_state!=='delivered');if(ws.length<RAW.weeks.length)rows=rows.filter(r=>ws.some(w=>r.order_created_date>=w&&r.order_created_date<addDays(w,7)));let html='<thead><tr><th>Дата</th><th>Час</th><th>Заклад</th><th>Статус</th><th class="num">Чек \\u20B4</th></tr></thead><tbody>';if(!rows.length)html+='<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text2)">Немає скасованих за обраний період</td></tr>';rows.forEach(r=>{{html+=`<tr><td>${{r.order_created_date}}</td><td>${{r.order_time||''}}</td><td>${{PROV[r.provider_id]||r.provider_name}}</td><td><span class="tag red">${{r.order_state}}</span></td><td class="num">${{fmt(r.check_before)}}</td></tr>`}});html+='</tbody>';document.getElementById('cancelledTable').innerHTML=html}}
-function renderTopItems(){{const grid=document.getElementById('topItemsGrid');let html='';[...selectedStores].sort((a,b)=>a-b).forEach(pid=>{{const items=RAW.topItems.filter(r=>r.provider_id==pid).slice(0,10);if(!items.length)return;html+=`<div class="top-item-card"><h4>${{PROV[pid]}}</h4>`;items.forEach((it,i)=>{{html+=`<div class="top-row"><span class="top-rank">${{i+1}}</span><span class="top-name">${{it.basket_item_name}}</span><span class="top-qty">${{it.qty}} шт</span><span class="top-rev">${{fmt(it.rev)}} \\u20B4</span></div>`}});html+='</div>'}});grid.innerHTML=html}}
-function render(){{if(activeTab==='overview'){{renderKPI();renderOrderCharts()}}if(activeTab==='orders')renderOrderCharts('full');if(activeTab==='ops')renderOpsCharts();if(activeTab==='stores')renderStoreTable();if(activeTab==='revenue'){{renderRevenueCharts();renderRevenueTable()}}if(activeTab==='campaigns'){{renderCampaignCharts();renderCampaignTable()}}if(activeTab==='smartpromo')renderSmartPromo();if(activeTab==='orderdetails')renderOrderDetails();if(activeTab==='complaints')renderComplaints();if(activeTab==='cancelled')renderCancelled();if(activeTab==='topitems')renderTopItems()}}
-function resetFilters(){{selectedWeek=null;selectedStores=new Set(PIDS.map(String));document.querySelectorAll('#storePanel input').forEach(cb=>cb.checked=true);document.getElementById('storeBtnLabel').textContent='Всі заклади';initWeekBar();render()}}
-function toggleTheme(){{const b=document.documentElement;b.setAttribute('data-theme',b.getAttribute('data-theme')==='dark'?'light':'dark')}}
-document.getElementById('filterBP').addEventListener('change',renderOrderDetails);document.getElementById('filterStatus').addEventListener('change',renderOrderDetails);
-initStoreFilter();initWeekBar();initNav();render();
+const D = {data_json};
+
+const CITY_UA = {CITY_UA_JSON};
+let allWeeks = Object.keys(D.weekly).sort((a,b) => {{
+  const [ay,aw] = a.split('-W').map(Number);
+  const [by,bw] = b.split('-W').map(Number);
+  return ay !== by ? ay - by : aw - bw;
+}});
+let allMonths = Object.keys(D.monthly || {{}}).sort();
+let periodMode = 'week';
+let selectedWeekIdx = allWeeks.length - 1;
+let selectedMonthIdx = allMonths.length - 1;
+let selectedStores = new Set();
+let selectedBP = '__all__';
+let selectedState = '__all__';
+let chartInstances = {{}};
+
+function weekSortCmp(a, b) {{
+  const [ay,aw] = a.split('-W').map(Number);
+  const [by,bw] = b.split('-W').map(Number);
+  return ay !== by ? ay - by : aw - bw;
+}}
+
+function getPeriodKeys() {{ return periodMode === 'month' ? allMonths : allWeeks; }}
+function getSelectedPeriodIdx() {{ return periodMode === 'month' ? selectedMonthIdx : selectedWeekIdx; }}
+function setSelectedPeriodIdx(i) {{ if (periodMode === 'month') selectedMonthIdx = i; else selectedWeekIdx = i; }}
+function getSelectedPeriodKey() {{ const keys = getPeriodKeys(); return keys[getSelectedPeriodIdx()] || keys[keys.length - 1]; }}
+function getPeriodLabel(key) {{
+  if (periodMode === 'month') {{
+    const [y, m] = key.split('-');
+    const months = ['\С\і\ч','\Л\ю\т','\Б\е\р','\К\в\і','\Т\р\а','\Ч\е\р','\Л\и\п','\С\е\р','\В\е\р','\Ж\о\в','\Л\и\с','\Г\р\у'];
+    return months[parseInt(m) - 1] + ' ' + y;
+  }}
+  return key;
+}}
+function getPerStoreData() {{ return periodMode === 'month' ? (D.monthly || {{}}) : D.weekly; }}
+function getRevenueData() {{ return periodMode === 'month' ? (D.monthly_revenue || {{}}) : D.revenue; }}
+function getItemsData() {{ return periodMode === 'month' ? (D.monthly_items || {{}}) : D.top_items; }}
+function getCampaignPeriodKey(c) {{ return periodMode === 'month' ? c.order_month : c.order_week; }}
+function getOpsData() {{ return periodMode === 'month' ? (D.ops_monthly || {{}}) : D.ops_weekly; }}
+
+function getSelectedPeriod() {{ return getSelectedPeriodKey(); }}
+function cityUA(c) {{ return CITY_UA[c] || c; }}
+
+function buildMsPanel(panelEl, items, selected, allLabel, onChange) {{
+  let html = '<label class="ms-item all-item"><input type="checkbox" data-val="__all__" ' + (selected.size === 0 ? 'checked' : '') + '> ' + allLabel + '</label>';
+  items.forEach(it => {{
+    html += '<label class="ms-item"><input type="checkbox" data-val="' + it.value + '" ' + (selected.has(it.value) ? 'checked' : '') + '> ' + it.label + '</label>';
+  }});
+  panelEl.innerHTML = html;
+  panelEl.querySelectorAll('input[type=checkbox]').forEach(cb => {{
+    cb.addEventListener('change', function() {{
+      const val = this.dataset.val;
+      if (val === '__all__') {{
+        selected.clear();
+        panelEl.querySelectorAll('input[data-val]').forEach(x => {{ x.checked = (x.dataset.val === '__all__'); }});
+      }} else {{
+        if (this.checked) selected.add(val); else selected.delete(val);
+        const allCb = panelEl.querySelector('input[data-val="__all__"]');
+        if (selected.size === 0) {{ allCb.checked = true; }}
+        else {{ allCb.checked = false; }}
+      }}
+      onChange();
+    }});
+  }});
+}}
+
+function updateMsLabel(btnEl, selected, allLabel, getLabel) {{
+  if (selected.size === 0) {{ btnEl.textContent = allLabel; return; }}
+  if (selected.size === 1) {{ btnEl.textContent = getLabel([...selected][0]); return; }}
+  btnEl.innerHTML = getLabel([...selected][0]) + ' <span class="ms-count">+' + (selected.size - 1) + '</span>';
+}}
+
+function initMsToggle(btnId, panelId) {{
+  const btn = document.getElementById(btnId);
+  const panel = document.getElementById(panelId);
+  btn.addEventListener('click', function(e) {{
+    e.stopPropagation();
+    const wasOpen = panel.classList.contains('open');
+    closeAllMs();
+    if (!wasOpen) {{ panel.classList.add('open'); btn.classList.add('open'); }}
+  }});
+  panel.addEventListener('click', e => e.stopPropagation());
+}}
+function closeAllMs() {{
+  document.querySelectorAll('.ms-panel.open').forEach(p => p.classList.remove('open'));
+  document.querySelectorAll('.ms-btn.open').forEach(b => b.classList.remove('open'));
+}}
+document.addEventListener('click', closeAllMs);
+
+function populateStoreFilter() {{
+  const panel = document.getElementById('store-panel');
+  const btn = document.getElementById('store-btn');
+  const ids = Object.keys(D.stores).map(Number)
+    .sort((a, b) => (D.stores[a].short || '').localeCompare(D.stores[b].short || '', 'uk'));
+  const items = ids.filter(id => D.stores[id])
+    .map(id => ({{ value: String(id), label: D.stores[id].short }}));
+  buildMsPanel(panel, items, selectedStores, 'Всі заклади', function() {{
+    updateMsLabel(btn, selectedStores, 'Всі заклади', v => D.stores[v] ? D.stores[v].short : v);
+    populateWeekBar();
+    renderAll();
+  }});
+  updateMsLabel(btn, selectedStores, 'Всі заклади', v => D.stores[v] ? D.stores[v].short : v);
+}}
+
+function resetAllFilters() {{
+  selectedStores.clear();
+  populateStoreFilter();
+  selectedWeekIdx = allWeeks.length - 1;
+  selectedMonthIdx = allMonths.length - 1;
+  populateWeekBar();
+  renderAll();
+}}
+
+function getFilteredStoreIds() {{
+  if (selectedStores.size > 0) return [...selectedStores].map(Number);
+  return Object.keys(D.stores).map(Number);
+}}
+
+function getFilteredPeriodKeys() {{
+  const ids = getFilteredStoreIds();
+  const keys = getPeriodKeys();
+  const store = getPerStoreData();
+  return keys.filter(k => {{
+    const kd = store[k] || {{}};
+    return ids.some(id => kd[id]);
+  }});
+}}
+
+function populateWeekBar() {{
+  const bar = document.getElementById('week-bar');
+  const label = periodMode === 'month' ? '\М\і\с\я\ц\ь:' : '\Т\и\ж\д\е\н\ь:';
+  let html = '<div class="week-bar-label">' + label + '</div>';
+  const keys = getFilteredPeriodKeys();
+  const allKeys = getPeriodKeys();
+  const selIdx = getSelectedPeriodIdx();
+  keys.forEach(k => {{
+    const idx = allKeys.indexOf(k);
+    const lbl = getPeriodLabel(k);
+    html += '<div class="week-pill' + (idx === selIdx ? ' active' : '') + '" data-idx="' + idx + '">' + lbl + '</div>';
+  }});
+  bar.innerHTML = html;
+  bar.querySelectorAll('.week-pill').forEach(pill => {{
+    pill.addEventListener('click', () => {{
+      setSelectedPeriodIdx(parseInt(pill.dataset.idx));
+      bar.querySelectorAll('.week-pill').forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      renderAll();
+    }});
+  }});
+  const active = bar.querySelector('.week-pill.active');
+  if (active) active.scrollIntoView({{ behavior: 'smooth', block: 'nearest', inline: 'center' }});
+}}
+
+function destroyChart(id) {{ if (chartInstances[id]) {{ chartInstances[id].destroy(); delete chartInstances[id]; }} }}
+
+function wow(cur, prev, dir) {{
+  const lbl = periodMode === 'month' ? 'MoM' : 'WoW';
+  if (!prev || prev === 0) return {{ cls: 'neutral', text: '\— ' + lbl }};
+  const chg = ((cur - prev) / Math.abs(prev)) * 100;
+  const good = (dir === 'up' && chg > 0) || (dir === 'down' && chg < 0);
+  const bad = (dir === 'up' && chg < 0) || (dir === 'down' && chg > 0);
+  const cls = good ? 'up' : bad ? 'down' : 'neutral';
+  const arrow = chg > 0 ? '\↑' : chg < 0 ? '\↓' : '';
+  return {{ cls, text: arrow + ' ' + Math.abs(chg).toFixed(1) + '% ' + lbl }};
+}}
+
+function renderKPIs() {{
+  const ids = getFilteredStoreIds();
+  const store = getPerStoreData();
+  const keys = getPeriodKeys();
+  const selK = getSelectedPeriod();
+  const prevIdx = keys.indexOf(selK) - 1;
+  const prevK = prevIdx >= 0 ? keys[prevIdx] : null;
+  const wd = store[selK] || {{}};
+  const pd = prevK ? (store[prevK] || {{}}) : {{}};
+  let curOrders=0,curCheck=0,curCooking=0,curBad=0,cnt=0;
+  let prevOrders=0,prevCheck=0,prevCooking=0,prevBad=0,pcnt=0;
+  ids.forEach(id => {{
+    if (wd[id]) {{ curOrders+=wd[id].orders;curCheck+=wd[id].avg_check*wd[id].orders;curCooking+=wd[id].avg_cooking*wd[id].orders;curBad+=wd[id].bad_orders;cnt+=wd[id].orders; }}
+    if (pd[id]) {{ prevOrders+=pd[id].orders;prevCheck+=pd[id].avg_check*pd[id].orders;prevCooking+=pd[id].avg_cooking*pd[id].orders;prevBad+=pd[id].bad_orders;pcnt+=pd[id].orders; }}
+  }});
+  const avgChk=cnt>0?curCheck/cnt:0, avgCook=cnt>0?curCooking/cnt:0, badRate=curOrders>0?(curBad/curOrders*100):0;
+  const prevAvgChk=pcnt>0?prevCheck/pcnt:0, prevAvgCook=pcnt>0?prevCooking/pcnt:0, prevBadRate=prevOrders>0?(prevBad/prevOrders*100):0;
+  const storeCount=ids.filter(id=>wd[id]).length;
+  let avgAvail=0,avgAccept=0,aCnt=0;
+  ids.forEach(id=>{{ const lo=D.latest_ops[id]; if(lo){{avgAvail+=lo.availability;avgAccept+=lo.acceptance;aCnt++;}} }});
+  if(aCnt>0){{avgAvail/=aCnt;avgAccept/=aCnt;}}
+  const periodLabel=periodMode==='month'?'за обраний місяць':'за обраний тиждень';
+  const kpis=[
+    {{label:'Замовлення',value:curOrders.toLocaleString('uk-UA'),...wow(curOrders,prevOrders,'up')}},
+    {{label:'Середній чек',value:'\₴'+avgChk.toFixed(0),...wow(avgChk,prevAvgChk,'up')}},
+    {{label:'Час приготування',value:avgCook.toFixed(1)+' хв',...wow(avgCook,prevAvgCook,'down')}},
+    {{label:'Доступність',value:avgAvail.toFixed(1)+'%',cls:avgAvail>=90?'up':'down',text:'середнє по закладах'}},
+    {{label:'Прийняття',value:avgAccept.toFixed(1)+'%',cls:avgAccept>=90?'up':'down',text:'середнє по закладах'}},
+    {{label:'Погані замовлення',value:badRate.toFixed(1)+'%',...wow(badRate,prevBadRate,'down')}},
+    {{label:'Активних закладів',value:storeCount,cls:'neutral',text:periodLabel}},
+  ];
+  document.getElementById('kpi-grid').innerHTML=kpis.map(k=>
+    '<div class="kpi-card"><div class="kpi-label">'+k.label+'</div><div class="kpi-value">'+k.value+'</div>'+
+    '<span class="kpi-change '+k.cls+'">'+k.text+'</span></div>'
+  ).join('');
+}}
+
+function renderOrdersCharts() {{
+  const ids=getFilteredStoreIds();const pkeys=getFilteredPeriodKeys();const labels=pkeys.map(k=>getPeriodLabel(k));const store=getPerStoreData();
+  destroyChart('chart-orders');
+  const ordersData=pkeys.map(k=>{{const kd=store[k]||{{}};return ids.reduce((s,id)=>s+(kd[id]?kd[id].orders:0),0);}});
+  chartInstances['chart-orders']=new Chart(document.getElementById('chart-orders'),{{type:'bar',data:{{labels,datasets:[{{label:'Замовлення',data:ordersData,backgroundColor:'rgba(239,68,68,.7)',borderColor:'#EF4444',borderWidth:1,borderRadius:6,barPercentage:.6}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{display:false}}}},scales:{{y:{{beginAtZero:true,grid:{{color:'rgba(0,0,0,.05)'}}}},x:{{grid:{{display:false}}}}}}}}}});
+  destroyChart('chart-avg-check');
+  const checkData=pkeys.map(k=>{{const kd=store[k]||{{}};let sum=0,cnt=0;ids.forEach(id=>{{if(kd[id]){{sum+=kd[id].avg_check*kd[id].orders;cnt+=kd[id].orders;}}}});return cnt>0?Math.round(sum/cnt):0;}});
+  chartInstances['chart-avg-check']=new Chart(document.getElementById('chart-avg-check'),{{type:'line',data:{{labels,datasets:[{{label:'Середній чек',data:checkData,borderColor:'#3B82F6',backgroundColor:'rgba(59,130,246,.08)',fill:true,tension:.35,pointRadius:4,pointBackgroundColor:'#3B82F6',borderWidth:2.5}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{display:false}}}},scales:{{y:{{beginAtZero:false,grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>'\₴'+v}}}},x:{{grid:{{display:false}}}}}}}}}});
+}}
+
+function renderOpsCharts() {{
+  const ids=getFilteredStoreIds();const pkeys=getFilteredPeriodKeys();const labels=pkeys.map(k=>getPeriodLabel(k));const opsStore=getOpsData();const store=getPerStoreData();
+  const avgByPeriod=(field)=>pkeys.map(k=>{{const ow=opsStore[k]||{{}};let sum=0,cnt=0;ids.forEach(id=>{{if(ow[id]){{sum+=ow[id][field];cnt++;}}}});return cnt>0?+(sum/cnt).toFixed(1):null;}});
+  const badRates=pkeys.map(k=>{{const kd=store[k]||{{}};let ord=0,bad=0;ids.forEach(id=>{{if(kd[id]){{ord+=kd[id].orders;bad+=kd[id].bad_orders;}}}});return ord>0?+(bad/ord*100).toFixed(1):0;}});
+  destroyChart('chart-ops-rates');
+  chartInstances['chart-ops-rates']=new Chart(document.getElementById('chart-ops-rates'),{{type:'line',data:{{labels,datasets:[{{label:'Доступність',data:avgByPeriod('availability'),borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.08)',fill:true,tension:.35,pointRadius:4,pointBackgroundColor:'#EF4444',borderWidth:2.5}},{{label:'Прийняття',data:avgByPeriod('acceptance'),borderColor:'#3B82F6',backgroundColor:'rgba(59,130,246,.06)',fill:true,tension:.35,pointRadius:4,pointBackgroundColor:'#3B82F6',borderWidth:2.5}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{position:'bottom',labels:{{usePointStyle:true,padding:12,font:{{size:11}}}}}}}},scales:{{y:{{beginAtZero:true,max:100,grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>v+'%'}}}},x:{{grid:{{display:false}}}}}}}}}});
+  destroyChart('chart-bad-orders');
+  chartInstances['chart-bad-orders']=new Chart(document.getElementById('chart-bad-orders'),{{type:'line',data:{{labels,datasets:[{{label:'Погані замовлення',data:badRates,borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.06)',fill:true,tension:.35,pointRadius:4,pointBackgroundColor:'#EF4444',borderWidth:2.5}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{display:false}}}},scales:{{y:{{beginAtZero:true,grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>v+'%'}}}},x:{{grid:{{display:false}}}}}}}}}});
+}}
+
+function renderInsights() {{
+  const ids=getFilteredStoreIds();const store=getPerStoreData();const keys=getPeriodKeys();const selK=getSelectedPeriod();
+  const prevIdx=keys.indexOf(selK)-1;const prevK=prevIdx>=0?keys[prevIdx]:null;const wd=store[selK]||{{}};const pd=prevK?(store[prevK]||{{}}):{{}};
+  const lbl=periodMode==='month'?'MoM':'WoW';
+  let curOrd=0,prevOrd=0;
+  ids.forEach(id=>{{if(wd[id])curOrd+=wd[id].orders;if(pd[id])prevOrd+=pd[id].orders;}});
+  const ordChg=prevOrd>0?((curOrd-prevOrd)/prevOrd*100):null;
+  function cs(chg,dir){{if(chg==null)return'';const good=(dir==='up'&&chg>0)||(dir==='down'&&chg<0);const cls=good?'insight-good':'insight-bad';return'<b class="'+cls+'">'+(chg>0?'+':'')+chg.toFixed(1)+'%</b>';}}
+  let o='<b>'+getPeriodLabel(selK)+'</b>. ';o+='Доставлено <b>'+curOrd+'</b> замовлень ('+cs(ordChg,'up')+' '+lbl+'). ';
+  if(ordChg!=null&&ordChg<-10)o+='<span class="insight-bad">Суттєве падіння замовлень.</span>';
+  else if(ordChg!=null&&ordChg>10)o+='<span class="insight-good">Гарне зростання!</span>';
+  document.getElementById('insight-orders').innerHTML=o;
+  let avgAvail=0,avgAccept=0,aCnt=0,bad=0,ord=0;
+  ids.forEach(id=>{{const lo=D.latest_ops[id];if(lo){{avgAvail+=lo.availability;avgAccept+=lo.acceptance;aCnt++;}}if(wd[id]){{bad+=wd[id].bad_orders;ord+=wd[id].orders;}}}});
+  if(aCnt>0){{avgAvail/=aCnt;avgAccept/=aCnt;}}const badRate=ord>0?(bad/ord*100):0;
+  let ops='<b>'+getPeriodLabel(selK)+'</b>. ';ops+='Доступність \— <b>'+avgAvail.toFixed(1)+'%</b>. Прийняття \— <b>'+avgAccept.toFixed(1)+'%</b>. Погані замовлення \— <b>'+badRate.toFixed(1)+'%</b>. ';
+  if(avgAvail<80)ops+='<span class="insight-bad">Доступність критично низька!</span> ';
+  else if(avgAvail>=95)ops+='<span class="insight-good">Відмінна доступність!</span> ';
+  if(badRate>15)ops+='<span class="insight-bad">Високий рівень поганих замовлень.</span>';
+  document.getElementById('insight-ops').innerHTML=ops;
+}}
+
+function renderStoresTable() {{
+  const ids=getFilteredStoreIds();const store=getPerStoreData();const keys=getPeriodKeys();const selK=getSelectedPeriod();
+  const prevIdx=keys.indexOf(selK)-1;const prevK=prevIdx>=0?keys[prevIdx]:null;const chgLbl=periodMode==='month'?'MoM':'WoW';
+  document.getElementById('stores-week-label').textContent='\— '+getPeriodLabel(selK)+(prevK?' ('+chgLbl+' до '+getPeriodLabel(prevK)+')':'');
+  const wd=store[selK]||{{}};const pd=prevK?(store[prevK]||{{}}):{{}};
+  const rows=ids.filter(id=>wd[id]).map(id=>({{id,...D.stores[id],...wd[id],ops:D.latest_ops[id]||{{}},prev:pd[id]||null}})).sort((a,b)=>b.orders-a.orders);
+  function wBadge(cur,prev,dir){{if(!prev||prev===0)return'';const chg=((cur-prev)/Math.abs(prev))*100;const good=(dir==='up'&&chg>0)||(dir==='down'&&chg<0);const color=good?'var(--pos)':'var(--neg)';const bg=good?'rgba(16,185,129,.1)':'rgba(239,68,68,.08)';const arrow=chg>0?'\↑':'\↓';return' <span style="font-size:10px;font-weight:600;color:'+color+';background:'+bg+';padding:1px 5px;border-radius:10px">'+arrow+Math.abs(chg).toFixed(0)+'%</span>';}}
+  let t='<table class="data-table"><thead><tr><th>#</th><th>Заклад</th><th class="text-right">Замовлення</th><th class="text-right">Сер. чек</th><th class="text-right">Час приг.</th><th class="text-right">Доступність</th><th class="text-right">Прийняття</th><th class="text-right">Фото</th><th class="text-right">Погані зам.</th></tr></thead><tbody>';
+  let totOrd=0,totBad=0;
+  rows.forEach((d,i)=>{{const badRate=d.orders>0?(d.bad_orders/d.orders*100):0;totOrd+=d.orders;totBad+=d.bad_orders;t+='<tr><td>'+(i+1)+'</td><td>'+d.short+'</td>';t+='<td class="text-right">'+d.orders+(d.prev?wBadge(d.orders,d.prev.orders,'up'):'')+'</td>';t+='<td class="text-right">\₴'+d.avg_check+'</td>';t+='<td class="text-right">'+d.avg_cooking+' хв</td>';t+='<td class="text-right">'+(d.ops.availability!=null?d.ops.availability.toFixed(1)+'%':'\—')+'</td>';t+='<td class="text-right">'+(d.ops.acceptance!=null?d.ops.acceptance.toFixed(1)+'%':'\—')+'</td>';t+='<td class="text-right">'+(d.ops.photo_coverage!=null?d.ops.photo_coverage.toFixed(1)+'%':'\—')+'</td>';t+='<td class="text-right">'+badRate.toFixed(1)+'%</td></tr>';}});
+  const totalBadRate=totOrd>0?(totBad/totOrd*100):0;t+='<tr class="total-row"><td></td><td>Всього</td><td class="text-right">'+totOrd+'</td><td colspan="5"></td><td class="text-right">'+totalBadRate.toFixed(1)+'%</td></tr>';
+  t+='</tbody></table>';document.getElementById('stores-table-wrap').innerHTML=t;
+}}
+
+function renderRevenueChart() {{
+  const ids=getFilteredStoreIds();const pkeys=getFilteredPeriodKeys();const labels=pkeys.map(k=>getPeriodLabel(k));const revStore=getRevenueData();const selK=getSelectedPeriod();
+  destroyChart('chart-revenue');
+  const foodData=pkeys.map(k=>{{const rw=revStore[k]||{{}};return ids.reduce((s,id)=>s+((rw[id]&&rw[id].food_revenue)||0),0);}});
+  const feeData=pkeys.map(k=>{{const rw=revStore[k]||{{}};return ids.reduce((s,id)=>s+((rw[id]&&rw[id].total_fee_gross)||0),0);}});
+  const netData=pkeys.map(k=>{{const rw=revStore[k]||{{}};return ids.reduce((s,id)=>s+((rw[id]&&rw[id].net_income)||0),0);}});
+  chartInstances['chart-revenue']=new Chart(document.getElementById('chart-revenue'),{{type:'bar',data:{{labels,datasets:[{{label:'Дохід від їжі',data:foodData,backgroundColor:'rgba(59,130,246,.7)',borderRadius:4,barPercentage:.7}},{{label:'Комісія (брутто)',data:feeData,backgroundColor:'rgba(239,68,68,.6)',borderRadius:4,barPercentage:.7}},{{label:'Чистий дохід',data:netData,backgroundColor:'rgba(16,185,129,.7)',borderRadius:4,barPercentage:.7}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{position:'bottom',labels:{{usePointStyle:true,padding:12,font:{{size:11}}}}}}}},scales:{{x:{{stacked:false,grid:{{display:false}}}},y:{{beginAtZero:true,grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>'\₴'+v.toLocaleString('uk-UA')}}}}}}}}}});
+  let sumHtml='<table class="revenue-summary-table"><thead><tr><th>Заклад</th><th class="text-right">Замовлення</th><th class="text-right">Дохід їжі</th><th class="text-right">Комісія</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th></tr></thead><tbody>';
+  const rw=revStore[selK]||{{}};let tOrd=0,tFood=0,tFee=0,tRef=0,tNet=0;
+  ids.filter(id=>rw[id]).sort((a,b)=>(rw[b].net_income||0)-(rw[a].net_income||0)).forEach(id=>{{const r=rw[id];const s=D.stores[id];tOrd+=r.orders||0;tFood+=r.food_revenue||0;tFee+=r.total_fee_gross||0;tRef+=r.refund||0;tNet+=r.net_income||0;sumHtml+='<tr><td>'+(s?s.short:id)+'</td><td class="text-right">'+(r.orders||0)+'</td><td class="text-right">\₴'+(r.food_revenue||0).toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">\₴'+(r.total_fee_gross||0).toLocaleString('uk-UA')+'</td><td class="text-right">\₴'+(r.refund||0).toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--pos)">\₴'+(r.net_income||0).toLocaleString('uk-UA')+'</td></tr>';}});
+  sumHtml+='<tr class="total-row"><td>Всього</td><td class="text-right">'+tOrd+'</td><td class="text-right">\₴'+tFood.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">\₴'+tFee.toLocaleString('uk-UA')+'</td><td class="text-right">\₴'+tRef.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--pos)">\₴'+tNet.toLocaleString('uk-UA')+'</td></tr>';
+  sumHtml+='</tbody></table>';document.getElementById('revenue-summary').innerHTML=sumHtml;
+}}
+
+function renderCampaignsChart() {{
+  const ids=getFilteredStoreIds();const pkeys=getFilteredPeriodKeys();const labels=pkeys.map(k=>getPeriodLabel(k));const camps=D.campaigns||[];
+  destroyChart('chart-campaign-spend');destroyChart('chart-campaign-bolt');
+  const provSpend=pkeys.map(k=>camps.filter(r=>getCampaignPeriodKey(r)===k&&ids.includes(r.provider_id)).reduce((s,r)=>s+(r.provider_spend||0),0));
+  const boltSpend=pkeys.map(k=>camps.filter(r=>getCampaignPeriodKey(r)===k&&ids.includes(r.provider_id)).reduce((s,r)=>s+(r.bolt_spend||0),0));
+  const campOrders=pkeys.map(k=>camps.filter(r=>getCampaignPeriodKey(r)===k&&ids.includes(r.provider_id)).reduce((s,r)=>s+(r.orders||0),0));
+  chartInstances['chart-campaign-spend']=new Chart(document.getElementById('chart-campaign-spend'),{{type:'bar',data:{{labels,datasets:[{{label:'Витрати закладу \₴',data:provSpend,backgroundColor:'rgba(239,68,68,.7)',borderRadius:4,barPercentage:.6,yAxisID:'y'}},{{label:'Промо-замовлення',data:campOrders,type:'line',borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.08)',pointRadius:3,pointBackgroundColor:'#EF4444',borderWidth:2,tension:.3,fill:false,yAxisID:'y1'}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{position:'bottom',labels:{{usePointStyle:true,padding:12,font:{{size:11}}}}}}}},scales:{{x:{{grid:{{display:false}}}},y:{{beginAtZero:true,position:'left',grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>'\₴'+v.toLocaleString('uk-UA')}}}},y1:{{beginAtZero:true,position:'right',grid:{{display:false}},ticks:{{font:{{size:10}}}}}}}}}}}});
+  chartInstances['chart-campaign-bolt']=new Chart(document.getElementById('chart-campaign-bolt'),{{type:'bar',data:{{labels,datasets:[{{label:'Витрати Bolt \₴',data:boltSpend,backgroundColor:'rgba(59,130,246,.7)',borderRadius:4,barPercentage:.6,yAxisID:'y'}},{{label:'Промо-замовлення',data:campOrders,type:'line',borderColor:'#EF4444',backgroundColor:'rgba(239,68,68,.08)',pointRadius:3,pointBackgroundColor:'#EF4444',borderWidth:2,tension:.3,fill:false,yAxisID:'y1'}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{position:'bottom',labels:{{usePointStyle:true,padding:12,font:{{size:11}}}}}}}},scales:{{x:{{grid:{{display:false}}}},y:{{beginAtZero:true,position:'left',grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>'\₴'+v.toLocaleString('uk-UA')}}}},y1:{{beginAtZero:true,position:'right',grid:{{display:false}},ticks:{{font:{{size:10}}}}}}}}}}}});
+}}
+
+function renderCampaigns() {{
+  const ids=getFilteredStoreIds();const selK=getSelectedPeriod();
+  document.getElementById('campaigns-week-label').textContent='\— '+getPeriodLabel(selK);
+  const rows=(D.campaigns||[]).filter(r=>getCampaignPeriodKey(r)===selK&&ids.includes(r.provider_id));
+  const bycamp={{}};rows.forEach(r=>{{const key=r.campaign_id;if(!bycamp[key])bycamp[key]={{...r,orders:0,total_discount:0,bolt_spend:0,provider_spend:0,providers:new Set()}};bycamp[key].orders+=r.orders;bycamp[key].total_discount+=r.total_discount;bycamp[key].bolt_spend+=r.bolt_spend;bycamp[key].provider_spend+=r.provider_spend;bycamp[key].providers.add(r.provider_short);}});
+  const campList=Object.values(bycamp).sort((a,b)=>b.orders-a.orders);
+  let totOrd=0,totDisc=0,totBolt=0,totProv=0;campList.forEach(c=>{{totOrd+=c.orders;totDisc+=c.total_discount;totBolt+=c.bolt_spend;totProv+=c.provider_spend;}});
+  const summaryEl=document.getElementById('campaigns-summary');
+  if(campList.length===0){{summaryEl.innerHTML='<b>'+getPeriodLabel(selK)+'</b>. Немає активних кампаній для обраних закладів.';}}else{{summaryEl.innerHTML='<b>'+getPeriodLabel(selK)+'</b>. Активних кампаній: <b>'+campList.length+'</b>. Замовлень з кампаніями: <b>'+totOrd+'</b>. Загальна знижка: <b>\₴'+totDisc.toLocaleString('uk-UA')+'</b> (Bolt: \₴'+totBolt.toLocaleString('uk-UA')+', Заклад: \₴'+totProv.toLocaleString('uk-UA')+').';}}
+  let t='<table class="data-table"><thead><tr><th>Кампанія</th><th>Хто платить</th><th>Дати</th><th>Заклади</th><th class="text-right">Зам.</th><th class="text-right">Знижка \₴</th><th class="text-right">Bolt \₴</th><th class="text-right">Заклад \₴</th></tr></thead><tbody>';
+  if(campList.length===0){{t+='<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:24px">Немає кампаній за цей період</td></tr>';}}else{{campList.forEach(c=>{{const provArr=[...c.providers];const provText=provArr.length>3?provArr.slice(0,3).join(', ')+' +'+(provArr.length-3):provArr.join(', ');const payer=c.provider_spend>0&&c.bolt_spend>0?'Спільно':c.provider_spend>0?'Заклад':c.bolt_spend>0?'Bolt':'\—';const payerCls=payer==='Bolt'?'color:var(--blue);font-weight:600':payer==='Заклад'?'color:var(--neg);font-weight:600':payer==='Спільно'?'color:var(--warn);font-weight:600':'';t+='<tr><td style="white-space:normal;min-width:180px;max-width:280px" title="'+(c.full_name||'').replace(/"/g,'&quot;')+'">'+c.name+'</td><td style="'+payerCls+';white-space:nowrap">'+payer+'</td><td style="font-size:11px;white-space:nowrap">'+c.start_date+' \→ '+c.end_date+'</td><td style="font-size:12px">'+provText+'</td><td class="text-right">'+c.orders+'</td><td class="text-right">\₴'+c.total_discount.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--blue)">\₴'+c.bolt_spend.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">\₴'+c.provider_spend.toLocaleString('uk-UA')+'</td></tr>';}});t+='<tr class="total-row"><td colspan="4">Всього</td><td class="text-right">'+totOrd+'</td><td class="text-right">\₴'+totDisc.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--blue)">\₴'+totBolt.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">\₴'+totProv.toLocaleString('uk-UA')+'</td></tr>';}}
+  t+='</tbody></table>';document.getElementById('campaigns-wrap').innerHTML=t;
+}}
+
+function renderSmartPromo() {{
+  const ids = getFilteredStoreIds();
+  const sp = D.smart_promo || {{}};
+  const hasSP = ids.some(id => sp[id] && sp[id] > 0);
+  let html = '';
+  if (!hasSP) {{
+    html += '<div class="alert-box"><h4>\🚫 Smart Promo \— НЕ АКТИВНИЙ на жодній точці</h4><p>За всю історію жоден заклад MA Pizza не використовував Smart Promo. Smart Promo дає в середньому <strong>+20\–30% апліфт замовлень</strong> при активації. Рекомендуємо активувати на всіх 7 точках.</p></div>';
+    html += '<div class="alert-box"><h4>\🚫 Sponsored Listing \— НІКОЛИ не використовувався</h4><p>Жоден заклад MA Pizza не використовував Sponsored Listings. Це інструмент платної видимості у додатку Bolt Food. Рекомендуємо тестувати з бюджетом <strong>400\–600 \₴/тиждень на точку</strong>.</p></div>';
+  }}
+  html += '<div class="section-title" style="margin-top:8px"><span class="section-icon">\📍</span> Статус промо по точках</div>';
+  html += '<div class="promo-status-grid">';
+  ids.forEach(id => {{
+    const s = D.stores[id];
+    if (!s) return;
+    const hasSPStore = sp[id] && sp[id] > 0;
+    html += '<div class="promo-status-card"><div class="ps-name">' + s.short + '</div>';
+    html += '<div class="ps-row"><span class="ps-label">Smart Promo</span><span class="tag ' + (hasSPStore ? 'green' : 'red') + '">' + (hasSPStore ? 'Активний' : 'Не активний') + '</span></div>';
+    html += '<div class="ps-row"><span class="ps-label">Sponsored Listing</span><span class="tag red">Не активний</span></div>';
+    html += '</div>';
+  }});
+  html += '</div>';
+  document.getElementById('smartpromo-content').innerHTML = html;
+}}
+
+function renderBudgetCalc() {{
+  const ids=getFilteredStoreIds();const camps=D.campaigns||[];
+  const periodSel=document.getElementById('calc-period-select');
+  const months=[...new Set(camps.map(c=>c.order_month))].filter(Boolean).sort();
+  const curVal=periodSel.value;
+  periodSel.innerHTML=months.map(m=>{{const[y,mo]=m.split('-');const mNames=['\С\і\ч','\Л\ю\т','\Б\е\р','\К\в\і','\Т\р\а','\Ч\е\р','\Л\и\п','\С\е\р','\В\е\р','\Ж\о\в','\Л\и\с','\Г\р\у'];return'<option value="'+m+'"'+(m===curVal?' selected':'')+'>'+mNames[parseInt(mo)-1]+' '+y+'</option>';}}).join('');
+  if(!curVal&&months.length)periodSel.value=months[months.length-1];
+  const selMonth=periodSel.value;const budget=parseFloat(document.getElementById('calc-budget').value)||0;
+  const storeSpend={{}};camps.forEach(c=>{{if(c.order_month!==selMonth||!ids.includes(c.provider_id))return;if(!storeSpend[c.provider_id])storeSpend[c.provider_id]=0;storeSpend[c.provider_id]+=c.provider_spend||0;}});
+  let html='<div class="calc-store-grid">';let totalSpent=0,totalBudget=0;
+  ids.forEach(id=>{{const s=D.stores[id];if(!s)return;const spent=Math.round(storeSpend[id]||0);totalSpent+=spent;totalBudget+=budget;const pct=budget>0?Math.min((spent/budget)*100,100):0;const left=budget-spent;const barColor=pct>=100?'var(--neg)':pct>=75?'var(--warn)':'var(--pos)';const leftColor=left<0?'color:var(--neg)':'color:var(--pos)';html+='<div class="calc-store"><div class="calc-store-name">'+s.short+'</div><div class="calc-store-city">'+s.city+'</div><div class="calc-bar-wrap"><div class="calc-bar" style="width:'+pct.toFixed(1)+'%;background:'+barColor+'"></div></div><div class="calc-metrics"><span class="calc-spent" style="color:var(--neg)">Витрачено: \₴'+spent.toLocaleString('uk-UA')+'</span><span class="calc-left" style="'+leftColor+'">Залишок: \₴'+left.toLocaleString('uk-UA')+'</span></div></div>';}});
+  html+='</div>';const totalLeft=totalBudget-totalSpent;const totalPct=totalBudget>0?(totalSpent/totalBudget*100):0;
+  html+='<div class="calc-total-row"><div><div class="calc-total-label">Загальний бюджет</div><div class="calc-total-val" style="color:var(--text)">\₴'+totalBudget.toLocaleString('uk-UA')+'</div></div><div><div class="calc-total-label">Витрачено</div><div class="calc-total-val" style="color:var(--neg)">\₴'+totalSpent.toLocaleString('uk-UA')+' <span style="font-size:13px;font-weight:600">('+totalPct.toFixed(1)+'%)</span></div></div><div><div class="calc-total-label">Залишок</div><div class="calc-total-val" style="color:'+(totalLeft>=0?'var(--pos)':'var(--neg)')+'">\₴'+totalLeft.toLocaleString('uk-UA')+'</div></div></div>';
+  document.getElementById('calc-results').innerHTML=html;
+}}
+document.getElementById('calc-budget').addEventListener('input',renderBudgetCalc);
+document.getElementById('calc-period-select').addEventListener('change',renderBudgetCalc);
+
+function fmtDiscount(r) {{
+  const bolt=r.bolt_discount||0;const prov=r.provider_discount||0;const total=r.total_discount||0;
+  if(total<=0)return'\—';const parts=[];if(bolt>0)parts.push('Bolt: '+Math.round(bolt));if(prov>0)parts.push('Заклад: '+Math.round(prov));if(!parts.length)parts.push(Math.round(total));return parts.join(' / ');
+}}
+function fmtFee(net,gross){{const vat=Math.round(gross-net);return Math.round(net)+' + '+vat+' = '+Math.round(gross);}}
+
+function renderOrdersDetail() {{
+  const ids=getFilteredStoreIds();const selK=getSelectedPeriod();document.getElementById('orders-detail-week-label').textContent='\— '+getPeriodLabel(selK);
+  const periodField=periodMode==='month'?'order_month':'order_week';
+  let rows=(D.orders||[]).filter(r=>r[periodField]===selK&&ids.includes(r.provider_id));
+  if(selectedBP==='yes')rows=rows.filter(r=>r.bolt_plus==='Bolt Plus');else if(selectedBP==='no')rows=rows.filter(r=>r.bolt_plus!=='Bolt Plus');
+  if(selectedState==='delivered')rows=rows.filter(r=>r.order_state_raw==='delivered');else if(selectedState==='failed')rows=rows.filter(r=>r.order_state_raw!=='delivered');
+  let t='<table class="data-table"><thead><tr><th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Bolt+</th><th class="text-right">Ціна до знижки</th><th class="text-right">Знижка (за чий рахунок)</th><th class="text-right">Дохід від їжі</th><th class="text-right">Комісія (нетто+ПДВ=брутто)</th><th class="text-right">Bolt Plus комісія</th><th class="text-right">Всього комісія</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th><th>Причина</th></tr></thead><tbody>';
+  let totFood=0,totRev=0,totFee=0,totBpFee=0,totRef=0,totNet=0;
+  rows.forEach(r=>{{const date=r.order_created_date?String(r.order_created_date).substring(0,10):'';totFood+=r.food_before_discount||0;totRev+=r.food_revenue||0;totFee+=r.total_fee_gross||0;totBpFee+=r.bp_fee_gross||0;totRef+=r.refund||0;totNet+=r.net_income||0;const isBp=(r.bp_fee_net||0)>0.5;const bpLabel=r.bolt_plus||'Ні';const bpClass=isBp?' class="bp"':'';const feeNet=r.fee_net||0;const feeGross=r.fee_gross||0;const bpFeeNet=r.bp_fee_net||0;const bpFeeGross=r.bp_fee_gross||0;const bpText=(isBp&&bpFeeNet>0.5)?fmtFee(bpFeeNet,bpFeeGross):'\—';const isFailed=r.order_state_raw!=='delivered';const stateColor=isFailed?' style="color:var(--neg);font-weight:600"':'';const failReason=r.fail_reason||'';const nc=(r.net_income||0)<0?' style="color:var(--neg)"':'';t+='<tr'+(isFailed?' style="background:rgba(239,68,68,.04)"':'')+'><td>'+date+'</td><td>'+(r.order_reference_id||'')+'</td><td>'+(r.provider_short||'')+'</td><td'+stateColor+'>'+(r.order_state||'')+'</td><td'+bpClass+'>'+bpLabel+'</td><td class="text-right">'+(r.food_before_discount||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+fmtDiscount(r)+'</td><td class="text-right">'+(r.food_revenue||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="font-size:11px">'+(isFailed?'\—':fmtFee(feeNet,feeGross))+'</td><td class="text-right" style="font-size:11px">'+(isFailed?'\—':bpText)+'</td><td class="text-right" style="color:var(--neg)">'+(r.total_fee_gross||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+(r.refund||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right"'+nc+'>'+(r.net_income||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="comment-cell"'+(isFailed?' style="color:var(--neg)"':'')+'>'+failReason+'</td></tr>';}});
+  const failedCount=rows.filter(r=>r.order_state_raw!=='delivered').length;const deliveredCount=rows.length-failedCount;
+  t+='<tr class="total-row"><td colspan="5">Всього ('+rows.length+' зам., '+deliveredCount+' дост., '+failedCount+' невдал.)</td><td class="text-right">'+totFood.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td><td class="text-right">'+totRev.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td><td class="text-right">'+totBpFee.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="color:var(--neg)">'+totFee.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+totRef.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+totNet.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td></tr>';
+  t+='</tbody></table>';document.getElementById('orders-detail-wrap').innerHTML=t;
+}}
+
+function renderComplaints() {{
+  const ids=getFilteredStoreIds();const selK=getSelectedPeriod();const periodField=periodMode==='month'?'order_month':'order_week';
+  const rows=(D.complaints||[]).filter(r=>r[periodField]===selK&&ids.includes(r.provider_id));
+  document.getElementById('comp-count').textContent='('+rows.length+' за '+getPeriodLabel(selK)+')';
+  let t='<table class="data-table"><thead><tr><th>Дата</th><th>Order Ref</th><th>Заклад</th><th class="text-right">Сума</th><th>Тип проблеми</th><th>Винний</th><th class="text-center">Рейтинг</th><th>Коментар</th></tr></thead><tbody>';
+  if(rows.length===0){{t+='<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:24px">Немає скарг за цей період</td></tr>';}}else{{rows.forEach(r=>{{const date=r.order_created_date?String(r.order_created_date).substring(0,10):'';const comment=(r.provider_rating_comment||'').substring(0,120);t+='<tr><td>'+date+'</td><td>'+(r.order_reference_id||'')+'</td><td>'+(r.provider_short||'')+'</td><td class="text-right">\₴'+(r.sum_uah||0)+'</td><td>'+(r.bad_order_type||'')+'</td><td>'+(r.fault||'')+'</td><td class="text-center">'+(r.rating!=null?r.rating:'\—')+'</td><td class="comment-cell">'+comment+'</td></tr>';}});}}
+  t+='</tbody></table>';document.getElementById('complaints-wrap').innerHTML=t;
+}}
+
+function renderCancelled() {{
+  const ids=getFilteredStoreIds();const selK=getSelectedPeriod();const periodField=periodMode==='month'?'order_month':'order_week';
+  const rows=(D.cancelled||[]).filter(r=>r[periodField]===selK&&ids.includes(r.provider_id));
+  document.getElementById('canc-count').textContent='('+rows.length+' за '+getPeriodLabel(selK)+')';
+  let t='<table class="data-table"><thead><tr><th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Причина</th><th>Коментар</th></tr></thead><tbody>';
+  if(rows.length===0){{t+='<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:24px">Немає скасованих за цей період</td></tr>';}}else{{rows.forEach(r=>{{const date=r.order_created_date?String(r.order_created_date).substring(0,10):'';const comment=(r.comment||'').substring(0,150);t+='<tr><td>'+date+'</td><td>'+(r.order_reference_id||'')+'</td><td>'+(r.provider_short||'')+'</td><td>'+(r.order_state||'')+'</td><td>'+(r.reason||'')+'</td><td class="comment-cell">'+comment+'</td></tr>';}});}}
+  t+='</tbody></table>';document.getElementById('cancelled-wrap').innerHTML=t;
+}}
+
+function renderTopItems() {{
+  const ids=getFilteredStoreIds();const selK=getSelectedPeriod();const itemsStore=getItemsData();const weekItems=itemsStore[selK]||{{}};
+  document.getElementById('items-week-label').textContent='\— '+getPeriodLabel(selK);
+  let html='';ids.forEach(id=>{{const items=weekItems[id];if(!items||!items.length)return;const s=D.stores[id];html+='<div class="items-card"><h4>'+s.short+'</h4><div class="items-city">'+s.city+'</div><ol>';items.forEach(it=>{{html+='<li>'+it.name+'<span class="item-qty">'+it.qty+' шт</span><span class="item-rev">\₴'+it.revenue.toLocaleString('uk-UA')+'</span></li>';}});html+='</ol></div>';}});
+  document.getElementById('items-grid').innerHTML=html||'<p style="color:var(--text2);padding:24px;text-align:center">Немає даних.</p>';
+}}
+
+function renderAll() {{
+  renderKPIs();renderInsights();renderOrdersCharts();renderOpsCharts();renderStoresTable();
+  renderRevenueChart();renderCampaignsChart();renderCampaigns();renderBudgetCalc();
+  renderSmartPromo();renderOrdersDetail();renderComplaints();renderCancelled();renderTopItems();
+}}
+
+function setupNav() {{
+  const links=document.querySelectorAll('.nav-link');
+  links.forEach(a=>{{a.addEventListener('click',e=>{{e.preventDefault();const id=a.getAttribute('href').substring(1);const el=document.getElementById(id);if(el)el.scrollIntoView({{behavior:'smooth',block:'start'}});links.forEach(l=>l.classList.remove('active'));a.classList.add('active');}});}});
+  const observer=new IntersectionObserver(entries=>{{entries.forEach(en=>{{if(en.isIntersecting){{const id=en.target.id;links.forEach(l=>l.classList.toggle('active',l.getAttribute('href')==='#'+id));}}}});}},{{rootMargin:'-140px 0px -70% 0px'}});
+  document.querySelectorAll('.section').forEach(s=>observer.observe(s));
+}}
+
+document.getElementById('bp-filter').addEventListener('change',function(){{selectedBP=this.value;renderOrdersDetail();}});
+document.getElementById('state-filter').addEventListener('change',function(){{selectedState=this.value;renderOrdersDetail();}});
+
+window.toggleDark=function(){{
+  document.body.classList.toggle('dark');const isDark=document.body.classList.contains('dark');
+  document.getElementById('theme-toggle').textContent=isDark?'\☀\️':'\🌙';
+  try{{localStorage.setItem('ma-pizza-dark',isDark?'1':'0')}}catch(e){{}}
+  Chart.defaults.color=isDark?'#D1D5DB':'#374151';renderAll();
+}};
+(function(){{try{{if(localStorage.getItem('ma-pizza-dark')==='1'){{document.body.classList.add('dark');document.getElementById('theme-toggle').textContent='\☀\️';Chart.defaults.color='#D1D5DB';}}}}catch(e){{}}}})();
+
+document.getElementById('period-select').addEventListener('change',function(){{periodMode=this.value;populateWeekBar();renderAll();}});
+
+initMsToggle('store-btn','store-panel');
+populateStoreFilter();
+populateWeekBar();
+setupNav();
+renderAll();
 </script>
 </body>
-</html>'''
+</html>"""
 
+
+# ── Main ─────────────────────────────────────────────────────────────────
 
 def main():
-    print("=" * 60)
-    print("MA Pizza (Lviv) — Weekly Report Generator")
-    print("=" * 60)
+    generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    print(f"Starting MA Pizza report generation at {generated_at}")
 
     conn = connect()
     try:
-        print("Fetching data from Databricks...")
-        data = fetch_all(conn)
+        print("  Fetching weekly per-store data...")
+        weekly_df = fetch_weekly_per_store(conn)
+        print(f"  -> {len(weekly_df)} rows")
+
+        print("  Fetching operational metrics...")
+        ops_df = fetch_ops_metrics(conn)
+        print(f"  -> {len(ops_df)} rows")
+
+        print("  Fetching top items...")
+        items_df = fetch_top_items(conn)
+        print(f"  -> {len(items_df)} rows")
+
+        print("  Fetching orders detail...")
+        orders_df = fetch_orders_detail(conn)
+        print(f"  -> {len(orders_df)} rows")
+
+        print("  Fetching complaints...")
+        complaints_df = fetch_complaints(conn)
+        print(f"  -> {len(complaints_df)} rows")
+
+        print("  Fetching cancelled orders...")
+        cancelled_df = fetch_cancelled(conn)
+        print(f"  -> {len(cancelled_df)} rows")
+
+        print("  Fetching revenue weekly...")
+        revenue_df = fetch_revenue_weekly(conn)
+        print(f"  -> {len(revenue_df)} rows")
+
+        print("  Fetching campaigns...")
+        campaigns_df = fetch_campaigns(conn)
+        print(f"  -> {len(campaigns_df)} rows")
+
+        print("  Fetching smart promo status...")
+        smart_promo_df = fetch_smart_promo(conn)
+        print(f"  -> {len(smart_promo_df)} rows")
     finally:
         conn.close()
 
-    print("Building HTML report...")
-    html = build_html(data)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df)
+    html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "ma-pizza"
-    out_dir.mkdir(exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "index.html"
-
     out_path.write_text(html, encoding="utf-8")
-    print(f"Report saved to {out_path}")
-    print(f"File size: {len(html)/1024:.0f} KB")
+    print(f"  Saved: {out_path}")
+    print(f"  Size: {len(html)/1024:.0f} KB")
+    print("\nDone!")
 
 
 if __name__ == "__main__":
