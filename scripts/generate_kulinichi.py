@@ -40,6 +40,8 @@ KULINICHI_PROVIDERS = {
     153440: {"name": "Кулиничі вул. Богоявленська", "short": "Богоявленська", "city": "Rivne"},
     153504: {"name": "Галицька перепічка вул. Вол. Великого", "short": "ГП Вол. Великого", "city": "Lviv"},
     153484: {"name": "Кулиничі вул. Мазепи", "short": "Мазепи", "city": "Lviv"},
+    196611: {"name": "ВЖАР", "short": "ВЖАР", "city": "Lviv"},
+    197095: {"name": "HOOD FOOD", "short": "HOOD FOOD", "city": "Lviv"},
 }
 
 PROVIDER_IDS = ",".join(str(k) for k in KULINICHI_PROVIDERS)
