@@ -1990,7 +1990,7 @@ function renderSponsoredListings() {{
 
   const insightEl = document.getElementById('sl-insight');
   if (usedEver === 0) {{
-    insightEl.innerHTML = '<b>Sponsored Listing ніколи не використовувався.</b> Жоден заклад Coffee Lab не мав спонсорованих оголошень. Це означає, що конкуренти можуть з\'являтись вище у пошуку. Рекомендуємо тестовий запуск з бюджетом 400–600 ₴/тиждень.';
+    insightEl.innerHTML = '<b>Sponsored Listing ніколи не використовувався.</b> Жоден заклад Coffee Lab не мав спонсорованих оголошень. Це означає, що конкуренти можуть з\\\'являтись вище у пошуку. Рекомендуємо тестовий запуск з бюджетом 400–600 ₴/тиждень.';
   }} else {{
     insightEl.innerHTML = '<b>Sponsored Listing використовується ' + usedEver + ' із ' + totalStores + ' закладів.</b> Всього ' + totalOrders + ' замовлень через спонсоровані оголошення. Загальні витрати: ₴' + totalSpend.toLocaleString('uk-UA') + '.';
   }}
