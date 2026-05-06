@@ -106,12 +106,14 @@ def month_sort_key(m):
     return (int(parts[0]), int(parts[1]))
 
 def week_to_month(w):
-    """Convert '2026-W17' to '2026-04' (approximate)."""
+    """Convert '2026-W17' to '2026-04' using ISO 8601 Thursday rule."""
     year, wk = w.split("-W")
     from datetime import datetime, timedelta
-    jan1 = datetime(int(year), 1, 1)
-    d = jan1 + timedelta(weeks=int(wk) - 1)
-    return d.strftime("%Y-%m")
+    jan4 = datetime(int(year), 1, 4)
+    start_of_w1 = jan4 - timedelta(days=jan4.weekday())
+    monday = start_of_w1 + timedelta(weeks=int(wk) - 1)
+    thursday = monday + timedelta(days=3)
+    return thursday.strftime("%Y-%m")
 
 
 # ── Queries ──────────────────────────────────────────────────────────────
@@ -133,6 +135,26 @@ def fetch_weekly_per_store(conn):
       AND f.order_state = 'delivered'
     GROUP BY f.provider_id, f.provider_name, f.city_name, f.order_week
     ORDER BY f.order_week, f.provider_id
+    """)
+
+
+def fetch_monthly_per_store(conn):
+    return query(conn, f"""
+    SELECT
+      f.provider_id,
+      f.provider_name,
+      f.city_name,
+      DATE_FORMAT(f.order_created_date, 'yyyy-MM') AS order_month,
+      COUNT(*) AS orders,
+      ROUND(AVG(f.order_gmv), 0) AS avg_check,
+      ROUND(AVG(f.order_actual_cooking_time_minutes), 1) AS avg_cooking,
+      SUM(CASE WHEN f.is_bad_order = true THEN 1 ELSE 0 END) AS bad_orders
+    FROM ng_delivery_spark.fact_order_delivery f
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_state = 'delivered'
+    GROUP BY f.provider_id, f.provider_name, f.city_name, DATE_FORMAT(f.order_created_date, 'yyyy-MM')
+    ORDER BY order_month, f.provider_id
     """)
 
 
@@ -378,7 +400,7 @@ TARGET_UA = {"delivery_price": "Доставка", "item_price": "Знижка �
 # ── Build data for HTML ──────────────────────────────────────────────────
 
 def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df,
-               smart_promo_df=None, smart_promo_orders_df=None, sponsored_df=None):
+               smart_promo_df=None, smart_promo_orders_df=None, sponsored_df=None, monthly_df=None):
     data = {}
 
     stores_map = {}
@@ -408,29 +430,42 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
     weekly = dict(sorted(weekly.items(), key=lambda x: week_sort_key(x[0])))
     data["weekly"] = weekly
 
-    # --- Monthly aggregation from weekly ---
+    # --- Monthly aggregation from direct query (calendar months) ---
     monthly = {}
-    for wk, stores_data in weekly.items():
-        mk = week_to_month(wk)
-        if mk not in monthly:
-            monthly[mk] = {}
-        for pid, vals in stores_data.items():
-            if pid not in monthly[mk]:
-                monthly[mk][pid] = {"orders": 0, "_check_sum": 0, "_cook_sum": 0, "_cook_cnt": 0, "bad_orders": 0}
-            monthly[mk][pid]["orders"] += vals["orders"]
-            monthly[mk][pid]["_check_sum"] += vals["avg_check"] * vals["orders"]
-            if vals["avg_cooking"] and vals["avg_cooking"] > 0:
-                monthly[mk][pid]["_cook_sum"] += vals["avg_cooking"] * vals["orders"]
-                monthly[mk][pid]["_cook_cnt"] += vals["orders"]
-            monthly[mk][pid]["bad_orders"] += vals["bad_orders"]
-    for mk in monthly:
-        for pid in monthly[mk]:
-            d = monthly[mk][pid]
-            d["avg_check"] = round(d["_check_sum"] / d["orders"]) if d["orders"] else 0
-            d["avg_cooking"] = round(d["_cook_sum"] / d["_cook_cnt"], 1) if d["_cook_cnt"] else 0
-            del d["_check_sum"]
-            del d["_cook_sum"]
-            del d["_cook_cnt"]
+    if monthly_df is not None and len(monthly_df):
+        for _, r in monthly_df.iterrows():
+            pid = int(to_native(r["provider_id"]))
+            mk = str(r["order_month"])
+            if mk not in monthly:
+                monthly[mk] = {}
+            monthly[mk][pid] = {
+                "orders": to_native(r["orders"]),
+                "avg_check": to_native(r["avg_check"]),
+                "avg_cooking": to_native(r["avg_cooking"]),
+                "bad_orders": to_native(r["bad_orders"]),
+            }
+    else:
+        for wk, stores_data in weekly.items():
+            mk = week_to_month(wk)
+            if mk not in monthly:
+                monthly[mk] = {}
+            for pid, vals in stores_data.items():
+                if pid not in monthly[mk]:
+                    monthly[mk][pid] = {"orders": 0, "_check_sum": 0, "_cook_sum": 0, "_cook_cnt": 0, "bad_orders": 0}
+                monthly[mk][pid]["orders"] += vals["orders"]
+                monthly[mk][pid]["_check_sum"] += vals["avg_check"] * vals["orders"]
+                if vals["avg_cooking"] and vals["avg_cooking"] > 0:
+                    monthly[mk][pid]["_cook_sum"] += vals["avg_cooking"] * vals["orders"]
+                    monthly[mk][pid]["_cook_cnt"] += vals["orders"]
+                monthly[mk][pid]["bad_orders"] += vals["bad_orders"]
+        for mk in monthly:
+            for pid in monthly[mk]:
+                d = monthly[mk][pid]
+                d["avg_check"] = round(d["_check_sum"] / d["orders"]) if d["orders"] else 0
+                d["avg_cooking"] = round(d["_cook_sum"] / d["_cook_cnt"], 1) if d["_cook_cnt"] else 0
+                del d["_check_sum"]
+                del d["_cook_sum"]
+                del d["_cook_cnt"]
     monthly = dict(sorted(monthly.items(), key=lambda x: month_sort_key(x[0])))
     data["monthly"] = monthly
 
@@ -2141,6 +2176,10 @@ def main():
         campaigns_df = fetch_campaigns(conn)
         print(f"  → {len(campaigns_df)} rows")
 
+        print("  Fetching monthly per-store data…")
+        monthly_df = fetch_monthly_per_store(conn)
+        print(f"  → {len(monthly_df)} rows")
+
         print("  Fetching Smart Promo enrollments…")
         smart_promo_df = fetch_smart_promo(conn)
         print(f"  → {len(smart_promo_df)} rows")
@@ -2157,7 +2196,8 @@ def main():
 
     data = build_data(
         weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df,
-        revenue_df, campaigns_df, smart_promo_df, smart_promo_orders_df, sponsored_df
+        revenue_df, campaigns_df, smart_promo_df, smart_promo_orders_df, sponsored_df,
+        monthly_df=monthly_df
     )
     html = generate_html(data, generated_at)
 
