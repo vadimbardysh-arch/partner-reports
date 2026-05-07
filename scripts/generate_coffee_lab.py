@@ -486,9 +486,9 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             if week_key not in ops_weekly:
                 ops_weekly[week_key] = {}
             ops_weekly[week_key][pid] = {
-                "availability": to_native(r["availability"]),
-                "acceptance": to_native(r["acceptance"]),
-                "photo_coverage": to_native(r["photo_coverage"]),
+                "availability": to_native(r["availability"], default=None),
+                "acceptance": to_native(r["acceptance"], default=None),
+                "photo_coverage": to_native(r["photo_coverage"], default=None),
             }
 
     latest_ops = {}
@@ -497,9 +497,9 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         for _, r in latest.iterrows():
             pid = int(to_native(r["provider_id"]))
             latest_ops[pid] = {
-                "availability": to_native(r["availability"]),
-                "acceptance": to_native(r["acceptance"]),
-                "photo_coverage": to_native(r["photo_coverage"]),
+                "availability": to_native(r["availability"], default=None),
+                "acceptance": to_native(r["acceptance"], default=None),
+                "photo_coverage": to_native(r["photo_coverage"], default=None),
             }
     data["ops_weekly"] = ops_weekly
     data["latest_ops"] = latest_ops
@@ -512,19 +512,27 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             ops_monthly[mk] = {}
         for pid, vals in stores_data.items():
             if pid not in ops_monthly[mk]:
-                ops_monthly[mk][pid] = {"_avail_sum": 0, "_accept_sum": 0, "_photo_sum": 0, "_cnt": 0}
-            ops_monthly[mk][pid]["_avail_sum"] += vals["availability"]
-            ops_monthly[mk][pid]["_accept_sum"] += vals["acceptance"]
-            ops_monthly[mk][pid]["_photo_sum"] += vals["photo_coverage"]
-            ops_monthly[mk][pid]["_cnt"] += 1
+                ops_monthly[mk][pid] = {
+                    "_avail_sum": 0, "_avail_cnt": 0,
+                    "_accept_sum": 0, "_accept_cnt": 0,
+                    "_photo_sum": 0, "_photo_cnt": 0,
+                }
+            if vals.get("availability") is not None:
+                ops_monthly[mk][pid]["_avail_sum"] += vals["availability"]
+                ops_monthly[mk][pid]["_avail_cnt"] += 1
+            if vals.get("acceptance") is not None:
+                ops_monthly[mk][pid]["_accept_sum"] += vals["acceptance"]
+                ops_monthly[mk][pid]["_accept_cnt"] += 1
+            if vals.get("photo_coverage") is not None:
+                ops_monthly[mk][pid]["_photo_sum"] += vals["photo_coverage"]
+                ops_monthly[mk][pid]["_photo_cnt"] += 1
     for mk in ops_monthly:
         for pid in ops_monthly[mk]:
             d = ops_monthly[mk][pid]
-            n = d["_cnt"]
             ops_monthly[mk][pid] = {
-                "availability": round(d["_avail_sum"] / n, 1) if n else 0,
-                "acceptance": round(d["_accept_sum"] / n, 1) if n else 0,
-                "photo_coverage": round(d["_photo_sum"] / n, 1) if n else 0,
+                "availability": round(d["_avail_sum"] / d["_avail_cnt"], 1) if d["_avail_cnt"] else None,
+                "acceptance": round(d["_accept_sum"] / d["_accept_cnt"], 1) if d["_accept_cnt"] else None,
+                "photo_coverage": round(d["_photo_sum"] / d["_photo_cnt"], 1) if d["_photo_cnt"] else None,
             }
     data["ops_monthly"] = ops_monthly
 
@@ -1293,12 +1301,16 @@ function renderKPIs() {{
   const prevBadRate = prevOrders > 0 ? (prevBad / prevOrders * 100) : 0;
   const storeCount = ids.filter(id => wd[id]).length;
 
-  let avgAvail = 0, avgAccept = 0, aCnt = 0;
+  let avgAvail = 0, avgAccept = 0, availCnt = 0, acceptCnt = 0;
   ids.forEach(id => {{
     const lo = D.latest_ops[id];
-    if (lo) {{ avgAvail += lo.availability; avgAccept += lo.acceptance; aCnt++; }}
+    if (lo) {{
+      if (lo.availability != null) {{ avgAvail += lo.availability; availCnt++; }}
+      if (lo.acceptance != null) {{ avgAccept += lo.acceptance; acceptCnt++; }}
+    }}
   }});
-  if (aCnt > 0) {{ avgAvail /= aCnt; avgAccept /= aCnt; }}
+  if (availCnt > 0) avgAvail /= availCnt;
+  if (acceptCnt > 0) avgAccept /= acceptCnt;
 
   const periodLabel = periodMode === 'month' ? 'за обраний місяць' : 'за обраний тиждень';
   const changeLabel = periodMode === 'month' ? 'MoM' : 'WoW';
@@ -1359,7 +1371,7 @@ function renderOpsCharts() {{
   const avgByPeriod = (field) => pkeys.map(k => {{
     const ow = opsStore[k] || {{}};
     let sum = 0, cnt = 0;
-    ids.forEach(id => {{ if (ow[id]) {{ sum += ow[id][field]; cnt++; }} }});
+    ids.forEach(id => {{ if (ow[id] && ow[id][field] != null) {{ sum += ow[id][field]; cnt++; }} }});
     return cnt > 0 ? +(sum / cnt).toFixed(1) : null;
   }});
 
@@ -1425,13 +1437,17 @@ function renderInsights() {{
   else if (ordChg != null && ordChg > 10) o += '<span class="insight-good">Гарне зростання!</span>';
   document.getElementById('insight-orders').innerHTML = o;
 
-  let avgAvail = 0, avgAccept = 0, aCnt = 0, bad = 0, ord = 0;
+  let avgAvail = 0, avgAccept = 0, availCnt2 = 0, acceptCnt2 = 0, bad = 0, ord = 0;
   ids.forEach(id => {{
     const lo = D.latest_ops[id];
-    if (lo) {{ avgAvail += lo.availability; avgAccept += lo.acceptance; aCnt++; }}
+    if (lo) {{
+      if (lo.availability != null) {{ avgAvail += lo.availability; availCnt2++; }}
+      if (lo.acceptance != null) {{ avgAccept += lo.acceptance; acceptCnt2++; }}
+    }}
     if (wd[id]) {{ bad += wd[id].bad_orders; ord += wd[id].orders; }}
   }});
-  if (aCnt > 0) {{ avgAvail /= aCnt; avgAccept /= aCnt; }}
+  if (availCnt2 > 0) avgAvail /= availCnt2;
+  if (acceptCnt2 > 0) avgAccept /= acceptCnt2;
   const badRate = ord > 0 ? (bad / ord * 100) : 0;
 
   let ops = '<b>' + getPeriodLabel(selK) + '</b>. ';
