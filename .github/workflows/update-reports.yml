@@ -22,23 +22,60 @@ jobs:
         with:
           fetch-depth: 10
 
-      - name: Check if reports already updated today
+      - name: Determine what needs to run
         id: check
         run: |
           TODAY=$(date -u +'%Y-%m-%d')
           DOW=$(date -u +'%u')
-          LAST_COMMIT_MSG=$(git log -1 --format='%s')
-          if [[ "$LAST_COMMIT_MSG" == *"Auto-update reports ${TODAY}"* ]]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "✓ Reports already updated today ($TODAY). Skipping."
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "→ Reports not yet updated today ($TODAY). Proceeding."
-          fi
+
+          # Check recent commits today for what already ran
+          DAILY_DONE=false
+          WEEKLY_DONE=false
+          while IFS= read -r msg; do
+            if [[ "$msg" == *"Auto-update smart-promo ${TODAY}"* ]]; then
+              DAILY_DONE=true
+            fi
+            if [[ "$msg" == *"Auto-update weekly reports ${TODAY}"* ]]; then
+              WEEKLY_DONE=true
+            fi
+          done < <(git log --since="$TODAY" --format='%s' 2>/dev/null)
+
+          # Legacy format support: old "Auto-update reports" covers both
+          while IFS= read -r msg; do
+            if [[ "$msg" == *"Auto-update reports ${TODAY}"* ]]; then
+              DAILY_DONE=true
+              WEEKLY_DONE=true
+            fi
+          done < <(git log --since="$TODAY" --format='%s' 2>/dev/null)
+
           if [[ "$DOW" == "1" ]]; then
             echo "is_monday=true" >> "$GITHUB_OUTPUT"
           else
             echo "is_monday=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ "$DAILY_DONE" == "true" ]]; then
+            echo "skip_daily=true" >> "$GITHUB_OUTPUT"
+            echo "✓ Smart Promo already updated today."
+          else
+            echo "skip_daily=false" >> "$GITHUB_OUTPUT"
+            echo "→ Smart Promo needs update."
+          fi
+
+          if [[ "$WEEKLY_DONE" == "true" ]]; then
+            echo "skip_weekly=true" >> "$GITHUB_OUTPUT"
+            echo "✓ Weekly reports already updated today."
+          else
+            echo "skip_weekly=false" >> "$GITHUB_OUTPUT"
+            echo "→ Weekly reports need update."
+          fi
+
+          # Global skip: both daily and weekly are done (or daily done + not Monday)
+          if [[ "$DAILY_DONE" == "true" ]] && { [[ "$WEEKLY_DONE" == "true" ]] || [[ "$DOW" != "1" ]]; }; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "✓ All tasks already completed. Skipping."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/setup-python@v5
@@ -51,55 +88,55 @@ jobs:
         run: pip install -r scripts/requirements.txt
 
       - name: Generate Smart Promo Traits dashboard data
-        if: steps.check.outputs.skip != 'true'
+        if: steps.check.outputs.skip_daily != 'true'
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_smart_promo.py
 
       - name: Generate single-provider reports (Monday / manual only)
-        if: steps.check.outputs.skip != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
+        if: steps.check.outputs.skip_weekly != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_reports.py
 
       - name: Generate BUREK multi-store report (Monday / manual only)
-        if: steps.check.outputs.skip != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
+        if: steps.check.outputs.skip_weekly != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_burek.py
 
       - name: Generate Kulinichi multi-store report (Monday / manual only)
-        if: steps.check.outputs.skip != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
+        if: steps.check.outputs.skip_weekly != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_kulinichi.py
 
       - name: Generate Vash Lavash multi-store report (Monday / manual only)
-        if: steps.check.outputs.skip != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
+        if: steps.check.outputs.skip_weekly != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_vash_lavash.py
 
       - name: Generate Multi-Kitchen multi-store report (Monday / manual only)
-        if: steps.check.outputs.skip != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
+        if: steps.check.outputs.skip_weekly != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_multi_kitchen.py
 
       - name: Generate MA Pizza multi-store report (Monday / manual only)
-        if: steps.check.outputs.skip != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
+        if: steps.check.outputs.skip_weekly != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_ma_pizza.py
 
       - name: Generate Coffee Lab multi-store report (Monday / manual only)
-        if: steps.check.outputs.skip != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
+        if: steps.check.outputs.skip_weekly != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_coffee_lab.py
 
       - name: Generate Sponsored Listings dashboard (Monday / manual only)
-        if: steps.check.outputs.skip != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
+        if: steps.check.outputs.skip_weekly != 'true' && (steps.check.outputs.is_monday == 'true' || github.event_name == 'workflow_dispatch')
         env:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: python scripts/generate_sponsored_listings.py
@@ -110,9 +147,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --staged --quiet || git commit -m "Auto-update reports $(date -u +'%Y-%m-%d %H:%M UTC')"
-          git pull --rebase origin main
-          git push
+          if ! git diff --staged --quiet; then
+            DOW=$(date -u +'%u')
+            if [[ "$DOW" == "1" ]]; then
+              git commit -m "Auto-update weekly reports $(date -u +'%Y-%m-%d %H:%M UTC')"
+            else
+              git commit -m "Auto-update smart-promo $(date -u +'%Y-%m-%d %H:%M UTC')"
+            fi
+            git pull --rebase origin main
+            git push
+          fi
 
   notify-on-failure:
     runs-on: ubuntu-latest
