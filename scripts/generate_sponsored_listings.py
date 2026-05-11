@@ -265,6 +265,8 @@ def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df, 
 
     campaigns = []
     for _, row in campaigns_df.iterrows():
+        if pd.isna(row.get("provider_id")) or pd.isna(row.get("campaign_id")):
+            continue
         price, currency = parse_pricing(row.get("pricing_json"))
         campaigns.append({
             "campaignId": int(row["campaign_id"]),
@@ -276,16 +278,18 @@ def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df, 
             "state": str(row["campaign_state"] or ""),
             "start": to_native(row["campaign_start"]),
             "end": to_native(row["campaign_end"]),
-            "cityId": int(row["city_id"]) if row.get("city_id") else None,
+            "cityId": int(row["city_id"]) if pd.notna(row.get("city_id")) else None,
         })
 
     signups = []
     for _, row in signups_df.iterrows():
+        if pd.isna(row.get("provider_id")) or pd.isna(row.get("campaign_id")):
+            continue
         signups.append({
-            "signupId": int(row["signup_id"]),
+            "signupId": int(row["signup_id"]) if pd.notna(row.get("signup_id")) else 0,
             "providerId": int(row["provider_id"]),
             "campaignId": int(row["campaign_id"]),
-            "cityId": int(row["city_id"]) if row["city_id"] else None,
+            "cityId": int(row["city_id"]) if pd.notna(row.get("city_id")) else None,
             "start": to_native(row["enrollment_start"]),
             "end": to_native(row["enrollment_end"]),
             "state": str(row["enrollment_state"] or ""),
@@ -294,6 +298,8 @@ def process_data(providers_df, campaigns_df, signups_df, billing_df, active_df, 
 
     billing = []
     for _, row in billing_df.iterrows():
+        if pd.isna(row.get("provider_id")) or pd.isna(row.get("campaign_id")):
+            continue
         billing.append({
             "providerId": int(row["provider_id"]),
             "campaignId": int(row["campaign_id"]),
