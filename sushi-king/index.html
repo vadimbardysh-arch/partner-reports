@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bolt Food — Промо-пропозиція для SUSHI KING (Львів)</title>
+    <style>
+        :root {
+            --bolt-green: #34D399;
+            --bolt-dark: #1A1A2E;
+            --bolt-gray: #F3F4F6;
+            --bolt-accent: #6366F1;
+            --bolt-warning: #F59E0B;
+            --bolt-info: #3B82F6;
+            --bolt-red: #EF4444;
+            --text-primary: #111827;
+            --text-secondary: #6B7280;
+            --border: #E5E7EB;
+            --gradient-start: #1A1A2E;
+            --gradient-end: #2D2D5E;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bolt-gray);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        /* Hero */
+        .hero {
+            background: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-end) 50%, #1e3a5f 100%);
+            color: white;
+            padding: 64px 24px 48px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: radial-gradient(circle at 30% 70%, rgba(52, 211, 153, 0.08) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 30%, rgba(99, 102, 241, 0.08) 0%, transparent 50%);
+            animation: float 20s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(-20px, 20px); }
+        }
+        .hero-content { position: relative; z-index: 1; }
+        .hero .logo {
+            font-size: 1rem; font-weight: 700; letter-spacing: 0.15em;
+            text-transform: uppercase; color: var(--bolt-green); margin-bottom: 20px;
+        }
+        .hero h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 12px; line-height: 1.2; }
+        .hero .subtitle { font-size: 1.15rem; opacity: 0.85; max-width: 640px; margin: 0 auto 24px; }
+        .hero .badge-row { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+        .hero .badge {
+            display: inline-block; background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.2); padding: 6px 18px;
+            border-radius: 20px; font-size: 0.85rem; font-weight: 500; backdrop-filter: blur(4px);
+        }
+
+        .container { max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+
+        .section {
+            background: white; border-radius: 16px; padding: 36px;
+            margin-bottom: 28px; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            border: 1px solid var(--border);
+        }
+        .section h2 { font-size: 1.6rem; font-weight: 700; margin-bottom: 8px; color: var(--bolt-dark); }
+        .section .section-desc { color: var(--text-secondary); font-size: 1rem; margin-bottom: 24px; }
+        .section h3 { font-size: 1.2rem; font-weight: 600; margin: 24px 0 12px; color: var(--bolt-dark); }
+        .divider { width: 60px; height: 3px; background: var(--bolt-green); border-radius: 2px; margin-bottom: 20px; }
+
+        /* Partner cards */
+        .partner-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 20px 0; }
+        .partner-card {
+            background: white; border-radius: 14px; padding: 28px 24px;
+            border: 2px solid var(--border); position: relative;
+        }
+        .partner-card .partner-name { font-size: 1.15rem; font-weight: 700; color: var(--bolt-dark); margin-bottom: 4px; }
+        .partner-card .partner-zone { font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 16px; }
+        .partner-card .partner-stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+        .partner-card .partner-stat:last-child { border-bottom: none; }
+        .partner-card .stat-label { font-size: 0.88rem; color: var(--text-secondary); }
+        .partner-card .stat-value { font-size: 0.92rem; font-weight: 600; color: var(--bolt-dark); }
+        .partner-card .rating-badge {
+            position: absolute; top: 16px; right: 16px; background: #FEF3C7;
+            color: #92400E; padding: 4px 12px; border-radius: 8px;
+            font-size: 0.85rem; font-weight: 700;
+        }
+
+        /* Data table */
+        .data-table {
+            width: 100%; border-collapse: separate; border-spacing: 0;
+            margin: 20px 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--border);
+        }
+        .data-table thead th {
+            background: var(--bolt-dark); color: white; padding: 12px 14px;
+            text-align: left; font-weight: 600; font-size: 0.82rem; white-space: nowrap;
+        }
+        .data-table tbody td {
+            padding: 10px 14px; border-bottom: 1px solid var(--border);
+            font-size: 0.85rem; white-space: nowrap;
+        }
+        .data-table tbody tr:last-child td { border-bottom: none; }
+        .data-table tbody tr:nth-child(even) { background: #FAFAFA; }
+        .data-table tbody tr:hover { background: #F0FDF4; }
+        .data-table .trend-up { color: #059669; font-weight: 600; }
+        .data-table .trend-down { color: #DC2626; font-weight: 600; }
+        .data-table .highlight-row { background: #F0FDF4 !important; font-weight: 600; }
+
+        /* Mini bar charts */
+        .bar-chart { display: flex; align-items: flex-end; gap: 3px; height: 80px; margin: 16px 0; }
+        .bar {
+            flex: 1; background: var(--bolt-accent); border-radius: 3px 3px 0 0;
+            position: relative; min-width: 20px; transition: background 0.3s;
+        }
+        .bar:hover { background: var(--bolt-green); }
+        .bar .bar-label {
+            position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%);
+            font-size: 0.65rem; color: var(--text-secondary); white-space: nowrap;
+        }
+        .bar .bar-value {
+            position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
+            font-size: 0.65rem; font-weight: 600; color: var(--bolt-dark); white-space: nowrap;
+        }
+
+        /* Metric grid */
+        .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 20px 0; }
+        .metric-card {
+            background: var(--bolt-gray); border-radius: 12px; padding: 20px 16px;
+            text-align: center; border: 1px solid var(--border);
+        }
+        .metric-card .metric-value { font-size: 1.8rem; font-weight: 800; color: var(--bolt-accent); margin-bottom: 4px; }
+        .metric-card .metric-label { font-size: 0.82rem; color: var(--text-secondary); font-weight: 500; }
+        .metric-card.green .metric-value { color: #059669; }
+        .metric-card.red .metric-value { color: #DC2626; }
+
+        /* Highlight / Info boxes */
+        .highlight-box {
+            background: #F0FDF4; border-left: 4px solid var(--bolt-green);
+            padding: 18px 22px; border-radius: 0 10px 10px 0; margin: 20px 0;
+        }
+        .info-box {
+            background: #EFF6FF; border-left: 4px solid var(--bolt-info);
+            padding: 18px 22px; border-radius: 0 10px 10px 0; margin: 20px 0;
+        }
+        .warning-box {
+            background: #FFF7ED; border-left: 4px solid var(--bolt-warning);
+            padding: 18px 22px; border-radius: 0 10px 10px 0; margin: 20px 0;
+        }
+        .alert-box {
+            background: #FEF2F2; border-left: 4px solid var(--bolt-red);
+            padding: 18px 22px; border-radius: 0 10px 10px 0; margin: 20px 0;
+        }
+
+        /* Tool cards */
+        .tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
+        .tool-card {
+            background: white; border-radius: 14px; padding: 28px 24px;
+            border: 2px solid var(--border); transition: all 0.3s ease; position: relative; overflow: hidden;
+        }
+        .tool-card:hover { border-color: var(--bolt-green); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(52, 211, 153, 0.12); }
+        .tool-card.featured { border-color: var(--bolt-green); background: linear-gradient(135deg, #F0FDF4 0%, white 100%); }
+        .tool-card.featured::before {
+            content: 'Рекомендуємо'; position: absolute; top: 12px; right: 12px;
+            background: var(--bolt-green); color: var(--bolt-dark); padding: 4px 12px;
+            font-size: 0.72rem; font-weight: 700; text-transform: uppercase; border-radius: 6px;
+        }
+        .tool-card .tool-icon {
+            width: 48px; height: 48px; border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; margin-bottom: 16px;
+        }
+        .tool-card .tool-icon.green { background: #D1FAE5; }
+        .tool-card .tool-icon.blue { background: #DBEAFE; }
+        .tool-card .tool-icon.purple { background: #EDE9FE; }
+        .tool-card .tool-icon.amber { background: #FEF3C7; }
+        .tool-card h4 { font-size: 1.15rem; font-weight: 700; margin-bottom: 8px; color: var(--bolt-dark); }
+        .tool-card .tool-desc { color: var(--text-secondary); font-size: 0.92rem; margin-bottom: 16px; line-height: 1.6; }
+        .tool-card .tool-tags { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        .tag { display: inline-block; padding: 3px 12px; border-radius: 12px; font-size: 0.78rem; font-weight: 600; }
+        .tag-green { background: #D1FAE5; color: #065F46; }
+        .tag-blue { background: #DBEAFE; color: #1E40AF; }
+        .tag-amber { background: #FEF3C7; color: #92400E; }
+        .tag-red { background: #FEE2E2; color: #991B1B; }
+        .tag-purple { background: #EDE9FE; color: #5B21B6; }
+
+        /* Comparison table */
+        .comparison-table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 20px 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+        .comparison-table thead th { background: var(--bolt-dark); color: white; padding: 14px 18px; text-align: left; font-weight: 600; font-size: 0.9rem; }
+        .comparison-table tbody td { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 0.92rem; }
+        .comparison-table tbody tr:last-child td { border-bottom: none; }
+        .comparison-table tbody tr:nth-child(even) { background: #FAFAFA; }
+        .comparison-table tbody tr:hover { background: #F0FDF4; }
+        .comparison-table .highlight-row { background: #F0FDF4 !important; font-weight: 600; }
+
+        /* Timeline */
+        .timeline { position: relative; padding-left: 32px; margin: 24px 0; }
+        .timeline::before { content: ''; position: absolute; left: 12px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+        .timeline-item { position: relative; margin-bottom: 24px; }
+        .timeline-item::before {
+            content: ''; position: absolute; left: -26px; top: 6px;
+            width: 12px; height: 12px; border-radius: 50%;
+            background: var(--bolt-accent); border: 2px solid white;
+            box-shadow: 0 0 0 2px var(--bolt-accent);
+        }
+        .timeline-item.month1::before { background: var(--bolt-info); box-shadow: 0 0 0 2px var(--bolt-info); }
+        .timeline-item.month2::before { background: var(--bolt-accent); box-shadow: 0 0 0 2px var(--bolt-accent); }
+        .timeline-item.month3::before { background: var(--bolt-green); box-shadow: 0 0 0 2px var(--bolt-green); }
+        .timeline-item h4 { font-size: 1.05rem; font-weight: 700; color: var(--bolt-dark); margin-bottom: 6px; }
+        .timeline-item p { font-size: 0.92rem; color: var(--text-secondary); line-height: 1.7; }
+        .timeline-item ul { list-style: none; padding: 0; margin-top: 8px; }
+        .timeline-item ul li { padding: 4px 0; font-size: 0.88rem; color: var(--text-primary); display: flex; align-items: flex-start; gap: 8px; }
+        .timeline-item ul li::before { content: '\2713'; color: var(--bolt-green); font-weight: 700; flex-shrink: 0; }
+
+        /* Heatmap */
+        .heatmap-container { overflow-x: auto; margin: 20px 0; }
+        .heatmap { width: 100%; border-collapse: collapse; }
+        .heatmap th { padding: 8px 12px; font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); text-align: center; }
+        .heatmap td { padding: 8px 12px; text-align: center; font-size: 0.82rem; font-weight: 600; border-radius: 6px; }
+        .heat-0 { background: #F9FAFB; color: #9CA3AF; }
+        .heat-1 { background: #DBEAFE; color: #1E40AF; }
+        .heat-2 { background: #93C5FD; color: #1E3A8A; }
+        .heat-3 { background: #60A5FA; color: white; }
+        .heat-4 { background: #3B82F6; color: white; }
+        .heat-5 { background: #2563EB; color: white; }
+
+        /* Bolt Plus section */
+        .bp-calculation { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 20px 0; }
+        .bp-card {
+            background: linear-gradient(135deg, #EFF6FF 0%, white 100%);
+            border: 2px solid #BFDBFE; border-radius: 14px; padding: 24px;
+        }
+        .bp-card h4 { font-size: 1.05rem; font-weight: 700; color: var(--bolt-dark); margin-bottom: 12px; }
+        .bp-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.88rem; }
+        .bp-row .bp-label { color: var(--text-secondary); }
+        .bp-row .bp-value { font-weight: 600; }
+        .bp-total { border-top: 2px solid var(--bolt-info); margin-top: 8px; padding-top: 8px; font-size: 1rem; font-weight: 700; }
+
+        /* Packages */
+        .packages-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 24px 0; }
+        .package-card {
+            border: 2px solid var(--border); border-radius: 14px; padding: 28px 20px;
+            text-align: center; transition: all 0.3s ease; position: relative; background: white;
+        }
+        .package-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
+        .package-card.best { border-color: var(--bolt-green); background: linear-gradient(180deg, #F0FDF4 0%, white 40%); transform: scale(1.03); }
+        .package-card.best:hover { transform: scale(1.03) translateY(-3px); }
+        .package-card .package-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; margin-bottom: 12px; }
+        .package-card .package-label.label-blue { color: var(--bolt-info); }
+        .package-card .package-label.label-green { color: #059669; }
+        .package-card .package-label.label-purple { color: var(--bolt-accent); }
+        .package-card h4 { font-size: 1.1rem; font-weight: 700; margin-bottom: 12px; color: var(--bolt-dark); }
+        .package-card .package-desc { color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 16px; line-height: 1.5; }
+        .package-card ul { list-style: none; padding: 0; text-align: left; margin-bottom: 20px; }
+        .package-card ul li { padding: 5px 0; font-size: 0.85rem; color: var(--text-primary); display: flex; align-items: flex-start; gap: 8px; }
+        .package-card ul li::before { content: '\2713'; color: var(--bolt-green); font-weight: 700; flex-shrink: 0; }
+        .package-card .package-effect { background: var(--bolt-gray); border-radius: 8px; padding: 10px; font-size: 0.85rem; font-weight: 600; }
+
+        /* CTA */
+        .cta-section {
+            background: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-end) 100%);
+            border-radius: 16px; padding: 48px 36px; text-align: center; color: white; margin-bottom: 28px;
+        }
+        .cta-section h2 { color: white; font-size: 1.8rem; margin-bottom: 12px; }
+        .cta-section p { opacity: 0.85; font-size: 1.05rem; max-width: 600px; margin: 0 auto 28px; }
+        .cta-button {
+            display: inline-block; background: var(--bolt-green); color: var(--bolt-dark);
+            padding: 14px 40px; border-radius: 10px; font-size: 1.05rem; font-weight: 700;
+            text-decoration: none; transition: all 0.3s ease; border: none; cursor: pointer;
+        }
+        .cta-button:hover { background: #2CC389; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(52, 211, 153, 0.35); }
+
+        /* Footer */
+        .footer { text-align: center; padding: 32px 20px; color: var(--text-secondary); font-size: 0.85rem; }
+        .footer a { color: var(--bolt-accent); text-decoration: none; font-weight: 600; }
+
+        /* Tabs */
+        .tabs { display: flex; gap: 4px; margin-bottom: 24px; background: var(--bolt-gray); border-radius: 10px; padding: 4px; }
+        .tab {
+            flex: 1; text-align: center; padding: 10px 16px; border-radius: 8px;
+            font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+            color: var(--text-secondary); border: none; background: transparent;
+        }
+        .tab.active { background: white; color: var(--bolt-dark); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .tab:hover:not(.active) { color: var(--text-primary); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Two-col layout */
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+        @media (max-width: 768px) {
+            .partner-cards, .tool-grid, .bp-calculation, .packages-grid, .metrics-grid, .two-col { grid-template-columns: 1fr; }
+            .hero h1 { font-size: 1.8rem; }
+            .data-table { font-size: 0.75rem; }
+        }
+
+        @media print {
+            .hero { padding: 32px 24px; }
+            .section { break-inside: avoid; box-shadow: none; }
+            body { background: white; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="hero">
+    <div class="hero-content">
+        <div class="logo">Bolt Food</div>
+        <h1>Промо-пропозиція<br>SUSHI KING (Львів)</h1>
+        <p class="subtitle">Персональна аналітика та план просування для двох локацій мережі SUSHI KING у Львові</p>
+        <div class="badge-row">
+            <span class="badge">ID 142945 &bull; вул. Стрийська</span>
+            <span class="badge">ID 142948 &bull; вул. Малоголосківська</span>
+            <span class="badge">Дата: 15 травня 2026</span>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+
+    <!-- ====== PARTNER OVERVIEW ====== -->
+    <section class="section">
+        <h2>Огляд закладів на платформі</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Ключова інформація про обидві локації SUSHI KING з першого дня роботи на Bolt Food.</p>
+
+        <div class="partner-cards">
+            <div class="partner-card">
+                <div class="rating-badge">&#9733; 4.65</div>
+                <div class="partner-name">Sushi King &mdash; вул. Стрийська</div>
+                <div class="partner-zone">Зона: Lviv &mdash; Vulka &bull; ID: 142945</div>
+                <div class="partner-stat"><span class="stat-label">На платформі з</span><span class="stat-value">1 травня 2025</span></div>
+                <div class="partner-stat"><span class="stat-label">Всього замовлень</span><span class="stat-value">674</span></div>
+                <div class="partner-stat"><span class="stat-label">Загальний GMV</span><span class="stat-value">&euro;14 281</span></div>
+                <div class="partner-stat"><span class="stat-label">Середній чек</span><span class="stat-value">&euro;21.19</span></div>
+                <div class="partner-stat"><span class="stat-label">Унікальних клієнтів</span><span class="stat-value">464</span></div>
+                <div class="partner-stat"><span class="stat-label">Середньо/міс. замовлень</span><span class="stat-value">51.8</span></div>
+                <div class="partner-stat"><span class="stat-label">У вибраному</span><span class="stat-value">117 користувачів</span></div>
+                <div class="partner-stat"><span class="stat-label">Комісія</span><span class="stat-value">15%</span></div>
+                <div class="partner-stat"><span class="stat-label">Тип доставки</span><span class="stat-value">Власна доставка</span></div>
+                <div class="partner-stat"><span class="stat-label">Bolt Plus</span><span class="stat-value" style="color: var(--bolt-red);">Не підключено</span></div>
+            </div>
+
+            <div class="partner-card">
+                <div class="rating-badge">&#9733; 4.43</div>
+                <div class="partner-name">Sushi King &mdash; вул. Малоголосківська</div>
+                <div class="partner-zone">Зона: Lviv &mdash; North &bull; ID: 142948</div>
+                <div class="partner-stat"><span class="stat-label">На платформі з</span><span class="stat-value">29 квітня 2025</span></div>
+                <div class="partner-stat"><span class="stat-label">Всього замовлень</span><span class="stat-value">405</span></div>
+                <div class="partner-stat"><span class="stat-label">Загальний GMV</span><span class="stat-value">&euro;9 361</span></div>
+                <div class="partner-stat"><span class="stat-label">Середній чек</span><span class="stat-value">&euro;23.11</span></div>
+                <div class="partner-stat"><span class="stat-label">Унікальних клієнтів</span><span class="stat-value">295</span></div>
+                <div class="partner-stat"><span class="stat-label">Середньо/міс. замовлень</span><span class="stat-value">28.9</span></div>
+                <div class="partner-stat"><span class="stat-label">У вибраному</span><span class="stat-value">74 користувачі</span></div>
+                <div class="partner-stat"><span class="stat-label">Комісія</span><span class="stat-value">15%</span></div>
+                <div class="partner-stat"><span class="stat-label">Тип доставки</span><span class="stat-value">Власна доставка</span></div>
+                <div class="partner-stat"><span class="stat-label">Bolt Plus</span><span class="stat-value" style="color: var(--bolt-red);">Не підключено</span></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== PERFORMANCE TRENDS ====== -->
+    <section class="section">
+        <h2>Динаміка замовлень та доходу</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Помісячна аналітика роботи обох локацій з моменту підключення до платформи.</p>
+
+        <div class="tabs" id="perf-tabs">
+            <button class="tab active" data-tab="perf-stryyska">вул. Стрийська (142945)</button>
+            <button class="tab" data-tab="perf-malog">вул. Малоголосківська (142948)</button>
+        </div>
+
+        <div class="tab-content active" id="tab-perf-stryyska">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Місяць</th>
+                        <th>Замовлення</th>
+                        <th>GMV, &euro;</th>
+                        <th>Сер. чек, &euro;</th>
+                        <th>Уніки</th>
+                        <th>Нові</th>
+                        <th>BP замовл.</th>
+                        <th>Знижки, &euro;</th>
+                        <th>Тренд</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>Травень 2025</td><td>55</td><td>926</td><td>16.84</td><td>51</td><td>4</td><td>0</td><td>183</td><td>&mdash;</td></tr>
+                    <tr><td>Червень 2025</td><td>51</td><td>1 212</td><td>23.77</td><td>48</td><td>2</td><td>0</td><td>196</td><td class="trend-down">&darr; -7%</td></tr>
+                    <tr><td>Липень 2025</td><td>61</td><td>1 284</td><td>21.05</td><td>57</td><td>8</td><td>2</td><td>152</td><td class="trend-up">&uarr; +20%</td></tr>
+                    <tr class="highlight-row"><td>Серпень 2025</td><td>79</td><td>1 563</td><td>19.79</td><td>74</td><td>20</td><td>6</td><td>286</td><td class="trend-up">&uarr; +30%</td></tr>
+                    <tr><td>Вересень 2025</td><td>57</td><td>1 300</td><td>22.81</td><td>49</td><td>9</td><td>7</td><td>88</td><td class="trend-down">&darr; -28%</td></tr>
+                    <tr><td>Жовтень 2025</td><td>52</td><td>1 075</td><td>20.68</td><td>45</td><td>3</td><td>3</td><td>22</td><td class="trend-down">&darr; -9%</td></tr>
+                    <tr><td>Листопад 2025</td><td>59</td><td>1 252</td><td>21.23</td><td>50</td><td>7</td><td>5</td><td>52</td><td class="trend-up">&uarr; +13%</td></tr>
+                    <tr><td>Грудень 2025</td><td>42</td><td>994</td><td>23.67</td><td>38</td><td>8</td><td>11</td><td>71</td><td class="trend-down">&darr; -29%</td></tr>
+                    <tr class="highlight-row"><td>Січень 2026</td><td>76</td><td>1 678</td><td>22.08</td><td>64</td><td>13</td><td>5</td><td>121</td><td class="trend-up">&uarr; +81%</td></tr>
+                    <tr><td>Лютий 2026</td><td>47</td><td>965</td><td>20.54</td><td>35</td><td>4</td><td>3</td><td>27</td><td class="trend-down">&darr; -38%</td></tr>
+                    <tr><td>Березень 2026</td><td>40</td><td>751</td><td>18.78</td><td>29</td><td>3</td><td>4</td><td>30</td><td class="trend-down">&darr; -15%</td></tr>
+                    <tr><td>Квітень 2026</td><td>33</td><td>753</td><td>22.81</td><td>30</td><td>2</td><td>5</td><td>21</td><td class="trend-down">&darr; -18%</td></tr>
+                    <tr><td>Травень 2026*</td><td>22</td><td>527</td><td>23.94</td><td>21</td><td>0</td><td>3</td><td>69</td><td>&mdash;</td></tr>
+                </tbody>
+            </table>
+            <p style="font-size:0.78rem; color:var(--text-secondary); margin-top:8px;">* Травень 2026 &mdash; дані за половину місяця (станом на 15.05)</p>
+        </div>
+
+        <div class="tab-content" id="tab-perf-malog">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Місяць</th>
+                        <th>Замовлення</th>
+                        <th>GMV, &euro;</th>
+                        <th>Сер. чек, &euro;</th>
+                        <th>Уніки</th>
+                        <th>Нові</th>
+                        <th>BP замовл.</th>
+                        <th>Знижки, &euro;</th>
+                        <th>Тренд</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>Квітень 2025</td><td>1</td><td>17</td><td>16.90</td><td>1</td><td>0</td><td>0</td><td>0</td><td>&mdash;</td></tr>
+                    <tr><td>Травень 2025</td><td>35</td><td>715</td><td>20.44</td><td>33</td><td>4</td><td>0</td><td>106</td><td>&mdash;</td></tr>
+                    <tr><td>Червень 2025</td><td>40</td><td>864</td><td>21.59</td><td>30</td><td>3</td><td>0</td><td>142</td><td class="trend-up">&uarr; +14%</td></tr>
+                    <tr class="highlight-row"><td>Липень 2025</td><td>45</td><td>972</td><td>21.61</td><td>40</td><td>5</td><td>0</td><td>157</td><td class="trend-up">&uarr; +13%</td></tr>
+                    <tr><td>Серпень 2025</td><td>37</td><td>886</td><td>23.94</td><td>32</td><td>6</td><td>3</td><td>159</td><td class="trend-down">&darr; -18%</td></tr>
+                    <tr><td>Вересень 2025</td><td>36</td><td>817</td><td>22.70</td><td>31</td><td>4</td><td>3</td><td>44</td><td class="trend-down">&darr; -3%</td></tr>
+                    <tr><td>Жовтень 2025</td><td>30</td><td>705</td><td>23.49</td><td>29</td><td>5</td><td>1</td><td>66</td><td class="trend-down">&darr; -17%</td></tr>
+                    <tr><td>Листопад 2025</td><td>36</td><td>836</td><td>23.22</td><td>34</td><td>5</td><td>2</td><td>41</td><td class="trend-up">&uarr; +20%</td></tr>
+                    <tr><td>Грудень 2025</td><td>29</td><td>768</td><td>26.47</td><td>26</td><td>4</td><td>2</td><td>43</td><td class="trend-down">&darr; -19%</td></tr>
+                    <tr class="highlight-row"><td>Січень 2026</td><td>51</td><td>1 434</td><td>28.12</td><td>50</td><td>6</td><td>0</td><td>68</td><td class="trend-up">&uarr; +76%</td></tr>
+                    <tr><td>Лютий 2026</td><td>29</td><td>597</td><td>20.59</td><td>21</td><td>2</td><td>2</td><td>19</td><td class="trend-down">&darr; -43%</td></tr>
+                    <tr><td>Березень 2026</td><td>17</td><td>367</td><td>21.60</td><td>15</td><td>3</td><td>1</td><td>22</td><td class="trend-down">&darr; -41%</td></tr>
+                    <tr><td>Квітень 2026</td><td>9</td><td>170</td><td>18.89</td><td>7</td><td>0</td><td>0</td><td>8</td><td class="trend-down">&darr; -47%</td></tr>
+                    <tr><td>Травень 2026*</td><td>10</td><td>213</td><td>21.30</td><td>9</td><td>1</td><td>1</td><td>36</td><td>&mdash;</td></tr>
+                </tbody>
+            </table>
+            <p style="font-size:0.78rem; color:var(--text-secondary); margin-top:8px;">* Травень 2026 &mdash; дані за половину місяця (станом на 15.05)</p>
+        </div>
+
+        <div class="alert-box" style="margin-top: 20px;">
+            <strong>&#9888; Тренд, що потребує уваги:</strong> Обидві локації показують стійке зниження замовлень у лютому &ndash; квітні 2026 року. Локація на Малоголосківській впала до 9 замовлень у квітні (проти 51 у січні &mdash; падіння на 82%). Локація на Стрийській &mdash; з 76 до 33 (&ndash;57%). <strong>Потрібно терміново активувати маркетингові інструменти для відновлення попиту.</strong>
+        </div>
+    </section>
+
+    <!-- ====== ZONE ANALYSIS ====== -->
+    <section class="section">
+        <h2>Аналіз зон та географії</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Обидві локації працюють у різних зонах Львова з радіусом доставки 9 км кожна.</p>
+
+        <div class="two-col">
+            <div>
+                <h3>&#128205; вул. Стрийська &mdash; Зона Lviv-Vulka</h3>
+                <ul style="padding-left: 18px; margin: 12px 0;">
+                    <li style="margin-bottom: 8px; font-size: 0.92rem;">Південна частина Львова, один з найбільш населених районів</li>
+                    <li style="margin-bottom: 8px; font-size: 0.92rem;">Висока конкуренція &mdash; велика кількість ресторанів та суші-барів</li>
+                    <li style="margin-bottom: 8px; font-size: 0.92rem;">Активна аудиторія: студентські райони, бізнес-центри</li>
+                    <li style="margin-bottom: 8px; font-size: 0.92rem;">Координати: 49.804, 24.020</li>
+                    <li style="font-size: 0.92rem;">Профільна зона: <strong>Profit</strong></li>
+                </ul>
+            </div>
+            <div>
+                <h3>&#128205; вул. Малоголосківська &mdash; Зона Lviv-North</h3>
+                <ul style="padding-left: 18px; margin: 12px 0;">
+                    <li style="margin-bottom: 8px; font-size: 0.92rem;">Північна частина Львова, спальні та промислові райони</li>
+                    <li style="margin-bottom: 8px; font-size: 0.92rem;">Нижча конкуренція, але менший трафік</li>
+                    <li style="margin-bottom: 8px; font-size: 0.92rem;">Потенціал росту через менш насичений ринок</li>
+                    <li style="margin-bottom: 8px; font-size: 0.92rem;">Координати: 49.866, 24.003</li>
+                    <li style="font-size: 0.92rem;">Профільна зона: <strong>Profit</strong></li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="info-box">
+            <strong>Висновок:</strong> Дві локації покривають різні частини Львова. Стрийська працює у більш конкурентній зоні з вищим попитом, Малоголосківська &mdash; у менш конкурентній, але з меншим трафіком. Маркетингові інструменти найбільш критичні для Малоголосківської, де потрібно активно привертати увагу.
+        </div>
+    </section>
+
+    <!-- ====== ORDER PATTERNS ====== -->
+    <section class="section">
+        <h2>Патерни замовлень</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Розподіл замовлень за днями тижня та часом доби допоможе спланувати промо-активності.</p>
+
+        <h3>&#128200; вул. Стрийська (142945)</h3>
+        <table class="data-table" style="margin-bottom:24px;">
+            <thead>
+                <tr><th>День тижня</th><th>Ранок</th><th>Обід</th><th>Вечір</th><th>Ніч</th><th>Всього</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Понеділок</td><td>3</td><td>30</td><td>34</td><td>5</td><td><strong>72</strong></td></tr>
+                <tr><td>Вівторок</td><td>1</td><td>25</td><td>33</td><td>3</td><td><strong>62</strong></td></tr>
+                <tr><td>Середа</td><td>3</td><td>34</td><td>46</td><td>8</td><td><strong>91</strong></td></tr>
+                <tr class="highlight-row"><td>Четвер</td><td>5</td><td>54</td><td>43</td><td>4</td><td><strong>106</strong></td></tr>
+                <tr class="highlight-row"><td>П'ятниця</td><td>10</td><td>44</td><td>56</td><td>8</td><td><strong>118</strong></td></tr>
+                <tr class="highlight-row"><td>Субота</td><td>7</td><td>34</td><td>60</td><td>6</td><td><strong>107</strong></td></tr>
+                <tr class="highlight-row"><td>Неділя</td><td>3</td><td>51</td><td>61</td><td>3</td><td><strong>118</strong></td></tr>
+            </tbody>
+        </table>
+
+        <h3>&#128200; вул. Малоголосківська (142948)</h3>
+        <table class="data-table">
+            <thead>
+                <tr><th>День тижня</th><th>Ранок</th><th>Обід</th><th>Вечір</th><th>Ніч</th><th>Всього</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Понеділок</td><td>1</td><td>17</td><td>31</td><td>2</td><td><strong>51</strong></td></tr>
+                <tr><td>Вівторок</td><td>0</td><td>16</td><td>29</td><td>6</td><td><strong>51</strong></td></tr>
+                <tr><td>Середа</td><td>3</td><td>14</td><td>22</td><td>2</td><td><strong>41</strong></td></tr>
+                <tr class="highlight-row"><td>Четвер</td><td>4</td><td>25</td><td>33</td><td>3</td><td><strong>65</strong></td></tr>
+                <tr class="highlight-row"><td>П'ятниця</td><td>2</td><td>23</td><td>36</td><td>2</td><td><strong>63</strong></td></tr>
+                <tr class="highlight-row"><td>Субота</td><td>4</td><td>21</td><td>31</td><td>7</td><td><strong>63</strong></td></tr>
+                <tr class="highlight-row"><td>Неділя</td><td>2</td><td>27</td><td>37</td><td>5</td><td><strong>71</strong></td></tr>
+            </tbody>
+        </table>
+
+        <div class="highlight-box" style="margin-top: 20px;">
+            <strong>Ключові інсайти:</strong><br>
+            &#8226; <strong>Пікові дні:</strong> Четвер &ndash; Неділя (разом ~66% усіх замовлень)<br>
+            &#8226; <strong>Пікові години:</strong> Обід (12:00&ndash;16:00) та Вечір (16:00&ndash;22:00)<br>
+            &#8226; <strong>Слабкі дні:</strong> Понеділок &ndash; Середа потребують додаткової стимуляції<br>
+            &#8226; <strong>Ранок практично не працює</strong> &mdash; є можливість запустити ланч-промо
+        </div>
+    </section>
+
+    <!-- ====== USER BASE ====== -->
+    <section class="section">
+        <h2>Аналіз клієнтської бази</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Структура клієнтів: нові vs повертаючі користувачі.</p>
+
+        <div class="two-col" style="align-items: start;">
+            <div>
+                <h3>вул. Стрийська</h3>
+                <div class="metrics-grid" style="grid-template-columns: 1fr 1fr;">
+                    <div class="metric-card green" style="min-height: 100px; display:flex; flex-direction:column; justify-content:center;">
+                        <div class="metric-value">591</div>
+                        <div class="metric-label">Повертаючі<br>замовлення (87.7%)</div>
+                    </div>
+                    <div class="metric-card" style="min-height: 100px; display:flex; flex-direction:column; justify-content:center;">
+                        <div class="metric-value">83</div>
+                        <div class="metric-label">Нові<br>користувачі (12.3%)</div>
+                    </div>
+                </div>
+                <p style="font-size:0.88rem; color:var(--text-secondary); margin-top:8px;">Сер. чек нових: &euro;21.97 | Повертаючих: &euro;21.08</p>
+            </div>
+            <div>
+                <h3>вул. Малоголосківська</h3>
+                <div class="metrics-grid" style="grid-template-columns: 1fr 1fr;">
+                    <div class="metric-card green" style="min-height: 100px; display:flex; flex-direction:column; justify-content:center;">
+                        <div class="metric-value">357</div>
+                        <div class="metric-label">Повертаючі<br>замовлення (88.2%)</div>
+                    </div>
+                    <div class="metric-card" style="min-height: 100px; display:flex; flex-direction:column; justify-content:center;">
+                        <div class="metric-value">48</div>
+                        <div class="metric-label">Нові<br>користувачі (11.8%)</div>
+                    </div>
+                </div>
+                <p style="font-size:0.88rem; color:var(--text-secondary); margin-top:8px;">Сер. чек нових: &euro;27.75 | Повертаючих: &euro;22.49</p>
+            </div>
+        </div>
+
+        <div class="warning-box" style="margin-top: 20px;">
+            <strong>&#128161; Зверніть увагу:</strong> Нові користувачі мають вищий середній чек, ніж повертаючі. Це означає, що залучення нових клієнтів через промо окупається вже з першого замовлення. При цьому <strong>приплив нових клієнтів зменшується</strong> (0 нових у квітні на Малоголосківській, 2 на Стрийській). Без активних промо база клієнтів вичерпується.
+        </div>
+    </section>
+
+    <!-- ====== PROMO HISTORY ====== -->
+    <section class="section">
+        <h2>Історія промо-активностей</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Огляд маркетингових кампаній, в яких брали участь заклади.</p>
+
+        <div class="two-col">
+            <div>
+                <h3>Типи кампаній (обидві локації)</h3>
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Тип кампанії</th><th>Кількість</th><th>Опис</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>Provider Group</strong></td><td>324</td><td>Тематичні групові кампанії (Sushi Days, Asian Week, Women's Day та ін.)</td></tr>
+                        <tr><td><strong>Provider Tests</strong></td><td>88</td><td>Smart Promo тестові кампанії &mdash; таргетовані знижки</td></tr>
+                        <tr><td><strong>Portal Promos</strong></td><td>3</td><td>Самостійні акції через Портал ресторану</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div>
+                <h3>Тематичні кампанії</h3>
+                <ul style="padding-left: 18px; margin: 12px 0;">
+                    <li style="margin-bottom: 8px; font-size: 0.88rem;"><span class="tag tag-purple">Sushi Days 2025</span></li>
+                    <li style="margin-bottom: 8px; font-size: 0.88rem;"><span class="tag tag-blue">Asian Week 2026</span></li>
+                    <li style="margin-bottom: 8px; font-size: 0.88rem;"><span class="tag tag-red">Women's Day 2026</span></li>
+                    <li style="margin-bottom: 8px; font-size: 0.88rem;"><span class="tag tag-amber">Smart Promo Tests</span> &mdash; щотижневі</li>
+                </ul>
+            </div>
+        </div>
+
+        <h3 style="margin-top: 24px;">Монетарний аналіз промо-витрат (вул. Стрийська)</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Місяць</th>
+                    <th>GMV, &euro;</th>
+                    <th>Знижки на меню, &euro;</th>
+                    <th>З них Bolt покрив, &euro;</th>
+                    <th>Партнер платив, &euro;</th>
+                    <th>Комісія, &euro;</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>Трав 2025</td><td>926</td><td>147</td><td>147</td><td>0</td><td>153</td></tr>
+                <tr><td>Черв 2025</td><td>1 212</td><td>161</td><td>161</td><td>0</td><td>206</td></tr>
+                <tr><td>Лип 2025</td><td>1 284</td><td>117</td><td>117</td><td>0</td><td>216</td></tr>
+                <tr><td>Серп 2025</td><td>1 563</td><td>227</td><td>227</td><td>0</td><td>262</td></tr>
+                <tr><td>Вер 2025</td><td>1 300</td><td>73</td><td>73</td><td>0</td><td>219</td></tr>
+                <tr><td>Жовт&ndash;Лист 2025</td><td>2 327</td><td>58</td><td>58</td><td>0</td><td>391</td></tr>
+                <tr><td>Груд 2025</td><td>994</td><td>62</td><td>62</td><td>0</td><td>169</td></tr>
+                <tr><td>Січ 2026</td><td>1 678</td><td>105</td><td>105</td><td>0</td><td>284</td></tr>
+                <tr><td>Лют&ndash;Кві 2026</td><td>2 469</td><td>69</td><td>69</td><td>0</td><td>416</td></tr>
+                <tr><td>Трав 2026*</td><td>527</td><td>69</td><td>62</td><td>8</td><td>88</td></tr>
+            </tbody>
+        </table>
+
+        <div class="highlight-box">
+            <strong>&#128178; Bolt покрив 100% вартості знижок</strong> на меню протягом майже всього періоду роботи закладу. Лише у травні 2026 з'явилась часткова оплата партнером (&euro;8). Це означає, що Smart Promo &mdash; фактично безкоштовний інструмент для партнера.
+        </div>
+    </section>
+
+    <!-- ====== BOLT PLUS PROPOSAL ====== -->
+    <section class="section">
+        <h2>&#9889; Bolt Plus &mdash; пропозиція на 2%</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Bolt Plus &mdash; програма лояльності для преміальних користувачів. Підключення дає безкоштовну доставку для підписників, що збільшує конверсію та частоту замовлень.</p>
+
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-value">2%</div>
+                <div class="metric-label">Агентська комісія Bolt Plus</div>
+            </div>
+            <div class="metric-card green">
+                <div class="metric-value">+25%</div>
+                <div class="metric-label">Середній ріст замовлень від BP</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">0 &#8372;</div>
+                <div class="metric-label">Доставка для BP підписників</div>
+            </div>
+            <div class="metric-card green">
+                <div class="metric-value">&#8593;&#8593;</div>
+                <div class="metric-label">Пріоритет у видачі</div>
+            </div>
+        </div>
+
+        <h3>Розрахунок витрат Bolt Plus при 2%</h3>
+
+        <div class="bp-calculation">
+            <div class="bp-card">
+                <h4>вул. Стрийська (142945)</h4>
+                <div class="bp-row"><span class="bp-label">Середній чек</span><span class="bp-value">&euro;21.19 (~943 &#8372;)</span></div>
+                <div class="bp-row"><span class="bp-label">Середньо/міс. замовлень</span><span class="bp-value">51.8</span></div>
+                <div class="bp-row"><span class="bp-label">Поточна частка BP замовлень</span><span class="bp-value">~8%</span></div>
+                <hr style="border:none; border-top:1px dashed #ccc; margin:8px 0;">
+                <div class="bp-row"><span class="bp-label">Якщо BP = 10% замовлень</span><span class="bp-value">~98 &#8372;/міс</span></div>
+                <div class="bp-row"><span class="bp-label">Якщо BP = 15% замовлень</span><span class="bp-value">~147 &#8372;/міс</span></div>
+                <div class="bp-row"><span class="bp-label">Якщо BP = 20% замовлень</span><span class="bp-value">~195 &#8372;/міс</span></div>
+                <div class="bp-total" style="color: #059669;">
+                    &#10003; Максимально ~195 &#8372;/міс (менше вартості однієї знижки)
+                </div>
+            </div>
+
+            <div class="bp-card">
+                <h4>вул. Малоголосківська (142948)</h4>
+                <div class="bp-row"><span class="bp-label">Середній чек</span><span class="bp-value">&euro;23.11 (~1 028 &#8372;)</span></div>
+                <div class="bp-row"><span class="bp-label">Середньо/міс. замовлень</span><span class="bp-value">28.9</span></div>
+                <div class="bp-row"><span class="bp-label">Поточна частка BP замовлень</span><span class="bp-value">~4%</span></div>
+                <hr style="border:none; border-top:1px dashed #ccc; margin:8px 0;">
+                <div class="bp-row"><span class="bp-label">Якщо BP = 10% замовлень</span><span class="bp-value">~59 &#8372;/міс</span></div>
+                <div class="bp-row"><span class="bp-label">Якщо BP = 15% замовлень</span><span class="bp-value">~89 &#8372;/міс</span></div>
+                <div class="bp-row"><span class="bp-label">Якщо BP = 20% замовлень</span><span class="bp-value">~119 &#8372;/міс</span></div>
+                <div class="bp-total" style="color: #059669;">
+                    &#10003; Максимально ~119 &#8372;/міс (менше вартості однієї знижки)
+                </div>
+            </div>
+        </div>
+
+        <div class="highlight-box">
+            <strong>Чому це вигідно:</strong><br>
+            &#8226; Bolt Plus підписники замовляють <strong>у 2&ndash;3 рази частіше</strong>, ніж звичайні користувачі<br>
+            &#8226; Витрати партнера &mdash; мінімальні: від <strong>59 до 195 &#8372;/міс</strong> залежно від локації<br>
+            &#8226; Для порівняння: одна знижка на замовлення коштує ~150&ndash;250 &#8372;<br>
+            &#8226; Bolt Plus дає <strong>пріоритет у видачі</strong> серед BP-користувачів &mdash; це безкоштовна реклама<br>
+            &#8226; Зростання замовлень компенсує витрати вже на 1-2 додаткових замовлення на місяць
+        </div>
+
+        <div class="info-box">
+            <strong>Як розраховується:</strong> Bolt Plus комісія 2% нараховується тільки на замовлення від Bolt Plus підписників. Формула: <em>Кількість BP замовлень &times; Середній чек &times; 2%</em>. При поточних обсягах це еквівалент <strong>менше 1 замовлення на місяць</strong>.
+        </div>
+    </section>
+
+    <!-- ====== MARKETING TOOLS ====== -->
+    <section class="section">
+        <h2>Доступні маркетингові інструменти</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Кожен інструмент вирішує свою задачу. Комбінуйте їх для максимального результату.</p>
+
+        <div class="tool-grid">
+            <div class="tool-card featured">
+                <div class="tool-icon green">&#x1F680;</div>
+                <h4>Sponsored Listings</h4>
+                <p class="tool-desc">Преміальне розміщення закладу на головному екрані та у верхніх позиціях пошуку. Фіксована ціна за день, знижки не потрібні.</p>
+                <div class="tool-tags">
+                    <span class="tag tag-green">Без знижок</span>
+                    <span class="tag tag-blue">Фіксована ціна</span>
+                    <span class="tag tag-purple">Миттєвий старт</span>
+                </div>
+            </div>
+
+            <div class="tool-card">
+                <div class="tool-icon blue">&#x1F3AF;</div>
+                <h4>Smart Promos (Розумні Акції)</h4>
+                <p class="tool-desc">Таргетовані знижки для потрібних сегментів клієнтів. Bolt покриває до 50% вартості знижки. Працює на конверсію з перегляду в замовлення.</p>
+                <div class="tool-tags">
+                    <span class="tag tag-green">Bolt покриває до 50%</span>
+                    <span class="tag tag-amber">Потрібна знижка</span>
+                </div>
+            </div>
+
+            <div class="tool-card">
+                <div class="tool-icon amber">&#x1F381;</div>
+                <h4>Тематичні кампанії</h4>
+                <p class="tool-desc">Знижки на доставку або товари під час тематичних тижнів, свят та спеціальних подій. Участь через акаунт-менеджера.</p>
+                <div class="tool-tags">
+                    <span class="tag tag-amber">Розподіл витрат</span>
+                    <span class="tag tag-blue">Сезонні</span>
+                </div>
+            </div>
+
+            <div class="tool-card">
+                <div class="tool-icon purple">&#x1F4E3;</div>
+                <h4>Регулярні Акції (Promos)</h4>
+                <p class="tool-desc">Класичні знижки для всіх користувачів через Портал ресторану. Ідеально для агресивного залучення нової аудиторії. Доступний варіант кофінансування &mdash; Bolt може частково покривати вартість знижки.</p>
+                <div class="tool-tags">
+                    <span class="tag tag-amber">Можливе кофінансування</span>
+                    <span class="tag tag-purple">Максимальне охоплення</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="tool-card" style="margin-top: 20px; border: 2px solid var(--border); border-radius: 14px; padding: 28px 24px;">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center;">
+                <div>
+                    <div class="tool-icon" style="background:#FEE2E2; width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:1.5rem; margin-bottom:16px;">&#x1F3AC;</div>
+                    <h4 style="font-size:1.15rem; font-weight:700; margin-bottom:8px;">Рекламні банери</h4>
+                    <p class="tool-desc">Яскравий візуальний банер у верхній частині головного екрану. Ідеальний для акцій, нових позицій та іміджевих кампаній.</p>
+                    <div class="tool-tags">
+                        <span class="tag tag-red">Преміальний формат</span>
+                        <span class="tag tag-blue">Максимальна увага</span>
+                    </div>
+                </div>
+                <div>
+                    <div style="background:#FEE2E2; border-radius:12px; padding:20px; text-align:center;">
+                        <div style="font-size:2rem; margin-bottom:8px;">&#127912;</div>
+                        <div style="font-size:0.88rem; color:var(--text-secondary);">Банер з'являється першим при відкритті Bolt Food &mdash; максимальне охоплення</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Comparison -->
+        <h3 style="margin-top: 28px;">Порівняння інструментів</h3>
+        <table class="comparison-table">
+            <thead>
+                <tr><th>Інструмент</th><th>Мета</th><th>Хто платить</th><th>Знижка?</th><th>Ефект</th></tr>
+            </thead>
+            <tbody>
+                <tr class="highlight-row"><td>Sponsored Listings</td><td>Видимість у топі</td><td>Партнер (фікс./день)</td><td><span class="tag tag-green">Ні</span></td><td>Перегляди &#8593;&#8593;</td></tr>
+                <tr><td>Smart Promos</td><td>Конверсія</td><td>Bolt до 50% + партнер</td><td><span class="tag tag-amber">Так</span></td><td>Замовлення &#8593;&#8593;</td></tr>
+                <tr><td>Тематичні кампанії</td><td>Сезонне залучення</td><td>Розподіл витрат</td><td><span class="tag tag-amber">Так</span></td><td>Охоплення &#8593;</td></tr>
+                <tr><td>Регулярні Акції</td><td>Масове залучення</td><td>Партнер / кофінансування</td><td><span class="tag tag-amber">Так</span></td><td>Нові клієнти &#8593;&#8593;</td></tr>
+                <tr><td>Рекламні банери</td><td>Брендинг + трафік</td><td>Партнер</td><td><span class="tag tag-green">Не обов'язково</span></td><td>Впізнаваність &#8593;&#8593;&#8593;</td></tr>
+                <tr class="highlight-row"><td>Bolt Plus (2%)</td><td>Лояльність + частота</td><td>2% від BP замовлень</td><td><span class="tag tag-green">Ні</span></td><td>Частота &#8593;&#8593;, LTV &#8593;</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <!-- ====== 3-MONTH PLAN ====== -->
+    <section class="section">
+        <h2>&#128197; План просування на 3 місяці</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Поетапний план відновлення та зростання замовлень для обох локацій SUSHI KING.</p>
+
+        <div class="timeline">
+            <div class="timeline-item month1">
+                <h4>&#128309; Місяць 1 &mdash; Червень 2026: Перезавантаження</h4>
+                <p>Мета: зупинити падіння, повернути базовий потік замовлень, залучити нових клієнтів.</p>
+                <ul>
+                    <li><strong>Bolt Plus на 2%</strong> &mdash; підключення обох локацій (витрати: ~150&ndash;300 &#8372;/міс разом)</li>
+                    <li><strong>Smart Promos</strong> &mdash; знижка 15&ndash;20% для нових користувачів (Bolt покриває до 50%)</li>
+                    <li><strong>Регулярна акція через Портал</strong> &mdash; знижка 10% на перше замовлення (Пн&ndash;Ср для слабких днів)</li>
+                    <li><strong>Оновлення меню</strong> &mdash; перевірити фото, описи, актуальність позицій</li>
+                    <li>Участь у <strong>тематичній кампанії &laquo;Літній Фест&raquo;</strong> (якщо доступна)</li>
+                </ul>
+                <div class="info-box" style="margin-top: 12px; margin-left: 0;">
+                    <strong>Очікуваний результат:</strong> повернення до 40&ndash;55 замовлень/міс (Стрийська) та 20&ndash;30 замовлень/міс (Малоголосківська)
+                </div>
+            </div>
+
+            <div class="timeline-item month2">
+                <h4>&#128994; Місяць 2 &mdash; Липень 2026: Масштабування</h4>
+                <p>Мета: наростити обсяги, побудувати впізнаваність бренду, збільшити базу клієнтів.</p>
+                <ul>
+                    <li><strong>Sponsored Listings</strong> &mdash; запуск преміального розміщення (обидві локації)</li>
+                    <li><strong>Smart Promos</strong> &mdash; продовження, розширення на churned users (повернення тих, хто не замовляв 28+ днів)</li>
+                    <li><strong>Літня тематична кампанія</strong> &mdash; сезонні позиції, знижки на літнє меню</li>
+                    <li><strong>Bolt Plus</strong> продовжує працювати &mdash; відстеження росту BP замовлень</li>
+                    <li><strong>A/B тестування</strong> знижок: порівняти ефективність % vs фіксованої знижки</li>
+                </ul>
+                <div class="info-box" style="margin-top: 12px; margin-left: 0;">
+                    <strong>Очікуваний результат:</strong> зростання до 55&ndash;70 замовлень/міс (Стрийська) та 30&ndash;40 замовлень/міс (Малоголосківська)
+                </div>
+            </div>
+
+            <div class="timeline-item month3">
+                <h4>&#128154; Місяць 3 &mdash; Серпень 2026: Оптимізація та утримання</h4>
+                <p>Мета: закріпити результати, оптимізувати витрати, зосередитись на retention.</p>
+                <ul>
+                    <li><strong>Sponsored Listings</strong> &mdash; продовження (оцінка ROAS, коригування)</li>
+                    <li><strong>Smart Promos</strong> &mdash; фокус на returning users (знижка для тих, хто не замовляв 14+ днів)</li>
+                    <li><strong>Рекламний банер</strong> &mdash; запуск іміджевого банера &laquo;Back to School&raquo; / літнє меню</li>
+                    <li><strong>Аналіз ефективності</strong> &mdash; повний звіт ROAS по всіх інструментах</li>
+                    <li><strong>Планування осіннього сезону</strong> &mdash; підготовка до нових тематичних кампаній</li>
+                </ul>
+                <div class="info-box" style="margin-top: 12px; margin-left: 0;">
+                    <strong>Очікуваний результат:</strong> стабільні 60&ndash;80 замовлень/міс (Стрийська) та 35&ndash;45 замовлень/міс (Малоголосківська), зростання бази лояльних клієнтів
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary table -->
+        <h3 style="margin-top: 24px;">Зведена таблиця плану</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Інструмент</th>
+                    <th>Червень</th>
+                    <th>Липень</th>
+                    <th>Серпень</th>
+                    <th>Орієнтовні витрати партнера</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="highlight-row"><td>Bolt Plus (2%)</td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td><td>~150&ndash;300 &#8372;/міс (обидві)</td></tr>
+                <tr><td>Smart Promos</td><td>&#10003; Нові</td><td>&#10003; Нові + Churned</td><td>&#10003; Returning</td><td>Bolt покриває до 50%</td></tr>
+                <tr><td>Регулярні Акції (Портал)</td><td>&#10003; Пн&ndash;Ср</td><td>&mdash;</td><td>&mdash;</td><td>Вартість знижки</td></tr>
+                <tr><td>Sponsored Listings</td><td>&mdash;</td><td>&#10003;</td><td>&#10003;</td><td>Фіксована ціна/день</td></tr>
+                <tr><td>Тематичні кампанії</td><td>За наявності</td><td>&#10003; Літо</td><td>&mdash;</td><td>Розподіл витрат</td></tr>
+                <tr><td>Рекламний банер</td><td>&mdash;</td><td>&mdash;</td><td>&#10003;</td><td>За домовленістю</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <!-- ====== RECOMMENDED PACKAGE ====== -->
+    <section class="section">
+        <h2>Рекомендовані пакети</h2>
+        <div class="divider"></div>
+        <p class="section-desc">На основі аналітики ваших закладів ми підготували три варіанти. Обирайте той, що підходить саме вам.</p>
+
+        <div class="packages-grid">
+            <div class="package-card">
+                <div class="package-label label-blue">СТАРТ</div>
+                <h4>Bolt Plus + Smart Promos</h4>
+                <p class="package-desc">Мінімальний бюджет, максимальний ефект</p>
+                <ul>
+                    <li>Bolt Plus на 2% (обидві локації)</li>
+                    <li>Smart Promos для нових клієнтів</li>
+                    <li>Bolt покриває до 50% знижок</li>
+                    <li>Пріоритет для BP підписників</li>
+                </ul>
+                <div class="package-effect">
+                    Витрати: ~150&ndash;300 &#8372;/міс<br>Ефект: замовлення &#8593; 15&ndash;20%
+                </div>
+            </div>
+
+            <div class="package-card best">
+                <div class="package-label label-green">РЕКОМЕНДОВАНИЙ</div>
+                <h4>Bolt Plus + Smart Promos + Sponsored Listings</h4>
+                <p class="package-desc">Комплексний підхід для максимального результату</p>
+                <ul>
+                    <li>Все з пакету &laquo;Старт&raquo;</li>
+                    <li>Sponsored Listings (видимість у топі)</li>
+                    <li>Максимальне охоплення + конверсія</li>
+                    <li>Найвищий ROAS серед комбінацій</li>
+                </ul>
+                <div class="package-effect" style="background:#D1FAE5;">
+                    Видимість &#8593;&#8593; Замовлення &#8593;&#8593;&#8593;<br>Ефект: зростання 30&ndash;50%
+                </div>
+            </div>
+
+            <div class="package-card">
+                <div class="package-label label-purple">МАКСИМУМ</div>
+                <h4>Усі інструменти + Банер</h4>
+                <p class="package-desc">Для агресивного зростання та впізнаваності</p>
+                <ul>
+                    <li>Все з &laquo;Рекомендованого&raquo;</li>
+                    <li>Рекламний банер на головному екрані</li>
+                    <li>Тематичні кампанії</li>
+                    <li>Регулярні акції через Портал</li>
+                </ul>
+                <div class="package-effect">
+                    Впізнаваність &#8593;&#8593;&#8593;<br>Ефект: зростання 50%+
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== CTA ====== -->
+    <div class="cta-section">
+        <h2>Готові відновити зростання?</h2>
+        <p>Обидві локації SUSHI KING мають потенціал для значного зростання. Починаємо з Bolt Plus та Smart Promos &mdash; мінімальні витрати, швидкий результат.</p>
+        <div style="display:flex; justify-content:center; gap:40px; flex-wrap:wrap; margin-bottom:32px;">
+            <div style="text-align:center;">
+                <div style="width:44px; height:44px; background:var(--bolt-green); color:var(--bolt-dark); border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1.1rem; margin:0 auto 10px;">1</div>
+                <div style="font-size:0.9rem; font-weight:500; opacity:0.9;">Підключити Bolt Plus</div>
+            </div>
+            <div style="text-align:center;">
+                <div style="width:44px; height:44px; background:var(--bolt-green); color:var(--bolt-dark); border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1.1rem; margin:0 auto 10px;">2</div>
+                <div style="font-size:0.9rem; font-weight:500; opacity:0.9;">Активувати Smart Promos</div>
+            </div>
+            <div style="text-align:center;">
+                <div style="width:44px; height:44px; background:var(--bolt-green); color:var(--bolt-dark); border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1.1rem; margin:0 auto 10px;">3</div>
+                <div style="font-size:0.9rem; font-weight:500; opacity:0.9;">Отримати результат</div>
+            </div>
+        </div>
+        <a href="https://restaurant.bolt.eu" class="cta-button">Перейти до порталу</a>
+    </div>
+
+
+</div>
+
+<script>
+    document.querySelectorAll('.tabs').forEach(tabGroup => {
+        const tabs = tabGroup.querySelectorAll('.tab');
+        const parent = tabGroup.parentElement;
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                parent.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                const target = parent.querySelector('#tab-' + tab.dataset.tab);
+                if (target) target.classList.add('active');
+            });
+        });
+    });
+</script>
+
+</body>
+</html>
