@@ -159,19 +159,19 @@ def fetch_top_items(conn):
       SELECT
         f.provider_id,
         f.order_week,
-        COALESCE(GET_JSON_OBJECT(b.name_translations, '$.uk-UA'), b.name) AS item_name,
+        COALESCE(GET_JSON_OBJECT(b.basket_item_name_translation, '$.uk-UA'), b.basket_item_name) AS item_name,
         COUNT(*) AS qty,
-        ROUND(SUM(b.total_price), 0) AS revenue,
+        ROUND(SUM(b.item_price_before_discount_with_vat_local), 0) AS revenue,
         ROW_NUMBER() OVER (PARTITION BY f.provider_id, f.order_week ORDER BY COUNT(*) DESC) AS rn
-      FROM ng_delivery_spark.etl_delivery_order_user_basket_item_v2 b
+      FROM ng_delivery_spark.dim_basket_item_delivery b
       JOIN ng_delivery_spark.fact_order_delivery f ON b.order_id = f.order_id
       WHERE f.provider_id IN ({PROVIDER_IDS})
         AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
-        AND b.created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
+        AND b.basket_item_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
         AND f.order_state = 'delivered'
-        AND b.total_price IS NOT NULL
-        AND b.total_price > 0
-      GROUP BY f.provider_id, f.order_week, COALESCE(GET_JSON_OBJECT(b.name_translations, '$.uk-UA'), b.name)
+        AND b.item_price_before_discount_with_vat_local IS NOT NULL
+        AND b.item_price_before_discount_with_vat_local > 0
+      GROUP BY f.provider_id, f.order_week, COALESCE(GET_JSON_OBJECT(b.basket_item_name_translation, '$.uk-UA'), b.basket_item_name)
     )
     SELECT provider_id, order_week, item_name, qty, revenue
     FROM ranked WHERE rn <= 10
