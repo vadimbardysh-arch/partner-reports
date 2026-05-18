@@ -2,12 +2,14 @@ name: Update Partner Reports
 
 on:
   schedule:
-    # Daily 08:00 UTC (11:00 Kyiv) — Smart Promo dashboard + weekly reports on Mondays
-    - cron: '0 8 * * *'
-    # Monday 10:00 UTC (13:00 Kyiv EEST) — Sponsored Listings dashboard
-    - cron: '0 10 * * 1'
-    # Backup Monday: 13:00 UTC (16:00 Kyiv) — runs if primary was skipped
-    - cron: '0 13 * * 1'
+    # Monday early attempts — GitHub delays crons by 1-4 hours, so we start early
+    - cron: '0 5 * * 1'   # Monday 05:00 UTC (08:00 Kyiv)
+    - cron: '0 7 * * 1'   # Monday 07:00 UTC (10:00 Kyiv)
+    - cron: '0 9 * * 1'   # Monday 09:00 UTC (12:00 Kyiv)
+    - cron: '0 10 * * 1'  # Monday 10:00 UTC (13:00 Kyiv) — target time
+    - cron: '0 13 * * 1'  # Monday 13:00 UTC (16:00 Kyiv) — late backup
+    # Daily Smart Promo (Tue-Fri only; on Mon it's handled by above)
+    - cron: '0 8 * * 2-5' # Tue-Fri 08:00 UTC (11:00 Kyiv)
   workflow_dispatch:
 
 permissions:
