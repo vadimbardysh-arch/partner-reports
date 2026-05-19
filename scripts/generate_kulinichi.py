@@ -400,6 +400,42 @@ def fetch_user_metrics(conn):
     """)
 
 
+def fetch_sponsored_listing(conn):
+    """Fetch Sponsored Listing (ads) enrollment and performance data."""
+    enrollments = query(conn, f"""
+    SELECT
+        s.provider_id,
+        s.ad_id,
+        s.state,
+        s.enrollment_type,
+        s.start,
+        s.end,
+        s.stopped_at
+    FROM ng_public_spark.ads_paid_visibility_signup_log s
+    WHERE s.provider_id IN ({PROVIDER_IDS})
+    AND s._deleted_from_source = false
+    ORDER BY s.provider_id, s.start DESC
+    """)
+
+    campaigns = query(conn, f"""
+    SELECT
+        a.external_id AS provider_id,
+        c.name AS campaign_name,
+        c.state AS campaign_state,
+        c.start,
+        c.end,
+        c.stopped_at,
+        c.pricing
+    FROM ng_public_spark.ads_campaign_advertiser a
+    JOIN ng_public_spark.ads_campaign_campaign c ON c.advertiser_id = a.id AND c._deleted_from_source = false
+    WHERE a.external_id IN ({PROVIDER_IDS})
+    AND a._deleted_from_source = false
+    ORDER BY c.start DESC
+    """)
+
+    return enrollments, campaigns
+
+
 # ── Build data for HTML ──────────────────────────────────────────────────
 
 def strip_nda(text):
@@ -413,7 +449,7 @@ def strip_nda(text):
     return text.strip()
 
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df=None):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df=None, listing_enrollments_df=None, listing_campaigns_df=None):
     data = {}
 
     stores_map = {}
@@ -638,6 +674,31 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             }
     data["user_weekly"] = user_weekly
 
+    listing = []
+    if listing_enrollments_df is not None and len(listing_enrollments_df):
+        for _, r in listing_enrollments_df.iterrows():
+            listing.append({
+                "provider_id": int(to_native(r["provider_id"])),
+                "ad_id": to_native(r.get("ad_id")),
+                "state": str(r.get("state", "")),
+                "enrollment_type": str(r.get("enrollment_type", "")),
+                "start": str(r.get("start", "")),
+                "end": str(r.get("end", "")),
+                "stopped_at": str(r.get("stopped_at", "")),
+            })
+    if listing_campaigns_df is not None and len(listing_campaigns_df):
+        for _, r in listing_campaigns_df.iterrows():
+            listing.append({
+                "provider_id": int(to_native(r["provider_id"])),
+                "campaign_name": str(r.get("campaign_name", "")),
+                "campaign_state": str(r.get("campaign_state", "")),
+                "start": str(r.get("start", "")),
+                "end": str(r.get("end", "")),
+                "stopped_at": str(r.get("stopped_at", "")),
+                "pricing": str(r.get("pricing", "")),
+            })
+    data["listing"] = listing
+
     return data
 
 
@@ -840,7 +901,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
  <a href="#sec-complaints" class="nav-link">Скарги</a>
  <a href="#sec-cancelled" class="nav-link">Скасовані</a>
  <a href="#sec-promo" class="nav-link">Промо</a>
- <a href="#sec-plan" class="nav-link">Екшн-план</a>
+ <a href="#sec-listing" class="nav-link">Sponsored Listing</a>
  <a href="#sec-items" class="nav-link">Топ позиції</a>
 </nav>
 
@@ -947,130 +1008,9 @@ body.dark .revenue-summary-table th{{background:#111827}}
  <div id="promo-table-wrap" class="table-wrap"></div>
  </div>
 
- <div class="section" id="sec-plan">
- <div class="section-title"><span class="section-icon">🚀</span> Екшн-план та Промо-стратегія</div>
- <div class="section-insight">Стратегічний план зростання на квітень-травень 2026. Мета: збільшити замовлення з ~37/тиждень до 55+/тиждень.</div>
-
- <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin:20px 0">
-  <div style="background:var(--card);border-radius:12px;padding:20px;border-left:4px solid #ff6600">
-   <h3 style="margin:0 0 12px;font-size:15px;color:var(--text)">📌 Фаза 1 — Запуск (тижні 1-2)</h3>
-   <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--text2);line-height:1.8">
-    <li><strong>Bolt Plus 3%</strong> — безкоштовна доставка для підписників від 350 грн</li>
-    <li><strong>10% Menu Discount (50/50)</strong> — продовжити поточну кампанію</li>
-    <li><strong>Sponsored Listing</strong> — запустити на 5 найсильніших точках</li>
-    <li><strong>Smart Promo</strong> — активувати портал для закладу</li>
-    <li>Fix availability: 153502 (23%), 153492 (55%), 153462 (62%)</li>
-    <li>Fix fail rate: 153507 (50%), 153499 (24%)</li>
-   </ul>
-  </div>
-  <div style="background:var(--card);border-radius:12px;padding:20px;border-left:4px solid #22c55e">
-   <h3 style="margin:0 0 12px;font-size:15px;color:var(--text)">📈 Фаза 2 — Зростання (тижні 3-4)</h3>
-   <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--text2);line-height:1.8">
-    <li>Моніторинг B+ ефекту: очікується +15-25% замовлень</li>
-    <li><strong>Item Discount 10%</strong> на топ-3 позиції (плов, м'ясо по-фр., листкове) — 50/50</li>
-    <li>Time-based промо: знижка на обід Вт-Чт 11:00-14:00</li>
-    <li>Оцінка ефекту Sponsored Listing — ROI по кожній точці</li>
-    <li>Фокус на Рівне: додати Menu Discount окремо</li>
-   </ul>
-  </div>
-  <div style="background:var(--card);border-radius:12px;padding:20px;border-left:4px solid #3b82f6">
-   <h3 style="margin:0 0 12px;font-size:15px;color:var(--text)">🔄 Фаза 3 — Оптимізація (тижні 5-8)</h3>
-   <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--text2);line-height:1.8">
-    <li>Аналіз результатів: відключити неефективні промо</li>
-    <li>Масштабування Listing на всі активні заклади</li>
-    <li>Оптимізація Item Discount — ротація позицій</li>
-    <li>Фокус на топ-10 закладів або розширення мережі</li>
-    <li>Відключити/реструктурувати "мертві" заклади</li>
-   </ul>
-  </div>
- </div>
-
- <div style="margin-top:24px">
-  <h3 style="font-size:15px;color:var(--text);margin-bottom:12px">📅 Промо-план: Квітень — Травень 2026</h3>
-  <div class="table-wrap">
-  <table class="data-table" style="font-size:12px">
-   <thead><tr>
-    <th>Тиждень</th><th>Дати</th><th>Bolt Plus</th><th>Menu Discount</th><th>Item Discount</th><th>Listing</th><th>Інше</th><th>Очікуваний ефект</th>
-   </tr></thead>
-   <tbody>
-    <tr><td><strong>W15</strong></td><td>06-12 квіт</td>
-     <td><span style="background:#ff660020;color:#ff6600;padding:2px 8px;border-radius:4px;font-weight:600">3% запуск</span></td>
-     <td>10% (50/50)</td><td>—</td>
-     <td><span style="background:#3b82f620;color:#3b82f6;padding:2px 8px;border-radius:4px">Запуск 5 точок</span></td>
-     <td>Fix availability + fail rate</td>
-     <td>Базовий ефект: +10%</td>
-    </tr>
-    <tr><td><strong>W16</strong></td><td>13-19 квіт</td>
-     <td>3%</td><td>10% (50/50)</td><td>—</td><td>5 точок</td>
-     <td>Smart Promo активація</td>
-     <td>+15-20% замовлень</td>
-    </tr>
-    <tr><td><strong>W17</strong></td><td>20-26 квіт</td>
-     <td>3%</td><td>10% (50/50)</td>
-     <td><span style="background:#22c55e20;color:#22c55e;padding:2px 8px;border-radius:4px">10% топ-3 (50/50)</span></td>
-     <td>5 точок</td>
-     <td>—</td>
-     <td>+20-25%</td>
-    </tr>
-    <tr><td><strong>W18</strong></td><td>27 квіт — 03 трав</td>
-     <td>3%</td><td>10% (50/50)</td><td>10% топ-3</td><td>5 точок</td>
-     <td>Time-promo Вт-Чт обід</td>
-     <td>+25-30%</td>
-    </tr>
-    <tr style="background:var(--bg)"><td><strong>W19</strong></td><td>04-10 трав</td>
-     <td>3%</td><td>10% (50/50)</td><td>10% топ-3</td><td>Розширення на 8 точок</td>
-     <td>Рівне: окремий Menu Discount</td>
-     <td>Цільова: 50+ замовлень</td>
-    </tr>
-    <tr style="background:var(--bg)"><td><strong>W20</strong></td><td>11-17 трав</td>
-     <td>3%</td><td>10% (50/50)</td><td>Ротація позицій</td><td>8 точок</td>
-     <td>Аналіз ROI по кожному інструменту</td>
-     <td>Стабілізація 50+</td>
-    </tr>
-    <tr style="background:var(--bg)"><td><strong>W21</strong></td><td>18-24 трав</td>
-     <td>3%</td><td>10% (50/50)</td><td>За результатами</td><td>Оптимізація точок</td>
-     <td>Масштабування успішних промо</td>
-     <td>55+ замовлень</td>
-    </tr>
-    <tr style="background:var(--bg)"><td><strong>W22</strong></td><td>25-31 трав</td>
-     <td>3%</td><td>За результатами</td><td>За результатами</td><td>Оптимізація</td>
-     <td>Підсумки 2 місяців, план на червень</td>
-     <td>55+ стабільно</td>
-    </tr>
-   </tbody>
-  </table>
-  </div>
- </div>
-
- <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:24px">
-  <div style="background:var(--card);border-radius:12px;padding:20px">
-   <h4 style="margin:0 0 10px;font-size:14px;color:var(--text)">💰 Економіка B+ 3%</h4>
-   <table style="width:100%;font-size:12px;color:var(--text2)">
-    <tr><td>Типове замовлення</td><td style="text-align:right;font-weight:600">400 грн</td></tr>
-    <tr><td>Знижка B+ 3%</td><td style="text-align:right;color:#ef4444">-12 грн</td></tr>
-    <tr><td>Доставка для клієнта</td><td style="text-align:right;color:#22c55e;font-weight:600">0 грн (економія ~80)</td></tr>
-    <tr><td>Комісія (25% + ПДВ)</td><td style="text-align:right">-116 грн</td></tr>
-    <tr style="border-top:1px solid var(--border)"><td style="font-weight:600;padding-top:8px">Чистий дохід закладу</td><td style="text-align:right;font-weight:600;padding-top:8px;color:#22c55e">272 грн</td></tr>
-    <tr><td style="font-size:11px;color:var(--text2)">vs зараз без B+</td><td style="text-align:right;font-size:11px">280 грн (-3%)</td></tr>
-   </table>
-  </div>
-  <div style="background:var(--card);border-radius:12px;padding:20px">
-   <h4 style="margin:0 0 10px;font-size:14px;color:var(--text)">📊 Прогноз тижневого доходу</h4>
-   <table style="width:100%;font-size:12px;color:var(--text2)">
-    <tr><td>Зараз (без B+)</td><td style="text-align:right">37 зам. × 280</td><td style="text-align:right;font-weight:600">10 360 грн</td></tr>
-    <tr><td>W15-16 (B+3% старт)</td><td style="text-align:right">42 зам. × 272</td><td style="text-align:right;font-weight:600;color:#22c55e">11 424 грн</td></tr>
-    <tr><td>W17-18 (B+ + Item + Listing)</td><td style="text-align:right">48 зам. × 272</td><td style="text-align:right;font-weight:600;color:#22c55e">13 056 грн</td></tr>
-    <tr><td>W21-22 (повний комплекс)</td><td style="text-align:right">55 зам. × 272</td><td style="text-align:right;font-weight:600;color:#22c55e">14 960 грн</td></tr>
-    <tr style="border-top:1px solid var(--border)"><td colspan="2" style="font-weight:600;padding-top:8px">Цільовий ріст доходу</td><td style="text-align:right;font-weight:600;padding-top:8px;color:#22c55e">+44%</td></tr>
-   </table>
-  </div>
- </div>
-
- <div style="margin-top:20px;padding:16px;background:linear-gradient(135deg,#ff660010,#22c55e10);border-radius:12px;border:1px solid var(--border)">
-  <p style="margin:0;font-size:13px;color:var(--text2);line-height:1.7">
-   <strong style="color:var(--text)">Мета:</strong> Збільшити тижневий дохід закладу з <strong>10 360 грн до 14 960+ грн (+44%)</strong> за рахунок комплексної стратегії: Bolt Plus (безкоштовна доставка для підписників), Sponsored Listing (видимість у додатку), Menu та Item Discount (залучення нових клієнтів). Bolt інвестує у доставку та промо — заклад отримує більше замовлень і вищий оборот.
-  </p>
- </div>
+ <div class="section" id="sec-listing">
+ <div class="section-title"><span class="section-icon">📍</span> Sponsored Listing</div>
+ <div id="listing-content"></div>
  </div>
 
  <div class="section" id="sec-items">
@@ -2078,6 +2018,42 @@ function renderTopItems() {{
  document.getElementById('items-grid').innerHTML = html || '<div style="padding:24px;color:var(--text2)">Немає даних.</div>';
 }}
 
+function renderListing() {{
+ const ids = getFilteredStoreIds();
+ const listings = D.listing || [];
+ const active = listings.filter(l => ids.includes(l.provider_id));
+
+ let html = '';
+ if (active.length === 0) {{
+  html += '<div class="section-insight" style="margin-bottom:16px">Sponsored Listing наразі <b>не підключений</b> на жодному закладі.</div>';
+  html += '<table class="data-table"><thead><tr><th>Заклад</th><th>Місто</th><th>Статус Listing</th></tr></thead><tbody>';
+  ids.forEach(id => {{
+   const s = D.stores[id];
+   if (!s) return;
+   html += '<tr><td>' + s.short + '</td><td>' + s.city + '</td>';
+   html += '<td><span style="color:var(--neg);font-weight:600">Не підключено</span></td></tr>';
+  }});
+  html += '</tbody></table>';
+ }} else {{
+  html += '<div class="section-insight" style="margin-bottom:16px">Sponsored Listing активний на <b>' + active.length + '</b> закладах.</div>';
+  html += '<table class="data-table"><thead><tr><th>Заклад</th><th>Кампанія / Тип</th><th>Статус</th><th>Початок</th><th>Кінець</th><th>Ціна</th></tr></thead><tbody>';
+  active.forEach(l => {{
+   const s = D.stores[l.provider_id] || {{ short: String(l.provider_id) }};
+   const name = l.campaign_name || l.enrollment_type || '—';
+   const state = l.campaign_state || l.state || '—';
+   const stateColor = state === 'active' || state === 'running' ? 'var(--pos)' : state === 'stopped' ? 'var(--neg)' : 'var(--text2)';
+   const start = l.start ? String(l.start).substring(0, 10) : '—';
+   const end = l.end ? String(l.end).substring(0, 10) : '—';
+   const pricing = l.pricing || '—';
+   html += '<tr><td>' + s.short + '</td><td>' + name + '</td>';
+   html += '<td style="color:' + stateColor + ';font-weight:600">' + state + '</td>';
+   html += '<td>' + start + '</td><td>' + end + '</td><td>' + pricing + '</td></tr>';
+  }});
+  html += '</tbody></table>';
+ }}
+ document.getElementById('listing-content').innerHTML = html;
+}}
+
 function renderAll() {{
  renderKPIs();
  renderInsights();
@@ -2092,6 +2068,7 @@ function renderAll() {{
  renderComplaints();
  renderCancelled();
  renderPromo();
+ renderListing();
  renderTopItems();
 }}
 
@@ -2549,10 +2526,14 @@ def main():
         print("  Fetching user metrics…")
         user_metrics_df = fetch_user_metrics(conn)
         print(f"  → {len(user_metrics_df)} rows")
+
+        print("  Fetching sponsored listing…")
+        listing_enrollments_df, listing_campaigns_df = fetch_sponsored_listing(conn)
+        print(f"  → {len(listing_enrollments_df)} enrollments, {len(listing_campaigns_df)} campaigns")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df, listing_enrollments_df, listing_campaigns_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "kulinichi"
