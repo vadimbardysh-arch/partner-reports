@@ -402,38 +402,30 @@ def fetch_user_metrics(conn):
 
 def fetch_sponsored_listing(conn):
     """Fetch Sponsored Listing (ads) enrollment and performance data."""
-    enrollments = query(conn, f"""
+    listing_df = query(conn, f"""
     SELECT
         s.provider_id,
         s.ad_id,
+        CASE
+            WHEN c.content_type = 'provider_category' THEN 'Home Screen'
+            WHEN c.content_type = 'provider_search_result' THEN 'Search'
+            ELSE c.content_type
+        END AS placement,
         s.state,
         s.enrollment_type,
         s.start,
         s.end,
-        s.stopped_at
+        s.stopped_at,
+        r.pricing AS cost_uah,
+        r.free_days
     FROM ng_public_spark.ads_paid_visibility_signup_log s
+    JOIN ng_public_spark.ads_content_content c ON c.id = s.ad_id
+    LEFT JOIN ng_public_spark.ads_reporting_provider_reporting r
+        ON r.external_id = s.provider_id AND r.campaign_id = s.ad_id
     WHERE s.provider_id IN ({PROVIDER_IDS})
-    AND s._deleted_from_source = false
     ORDER BY s.provider_id, s.start DESC
     """)
-
-    campaigns = query(conn, f"""
-    SELECT
-        a.external_id AS provider_id,
-        c.name AS campaign_name,
-        c.state AS campaign_state,
-        c.start,
-        c.end,
-        c.stopped_at,
-        c.pricing
-    FROM ng_public_spark.ads_campaign_advertiser a
-    JOIN ng_public_spark.ads_campaign_campaign c ON c.advertiser_id = a.id AND c._deleted_from_source = false
-    WHERE a.external_id IN ({PROVIDER_IDS})
-    AND a._deleted_from_source = false
-    ORDER BY c.start DESC
-    """)
-
-    return enrollments, campaigns
+    return listing_df
 
 
 # ── Build data for HTML ──────────────────────────────────────────────────
@@ -449,7 +441,7 @@ def strip_nda(text):
     return text.strip()
 
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df=None, listing_enrollments_df=None, listing_campaigns_df=None):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df=None, listing_df=None):
     data = {}
 
     stores_map = {}
@@ -675,27 +667,17 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
     data["user_weekly"] = user_weekly
 
     listing = []
-    if listing_enrollments_df is not None and len(listing_enrollments_df):
-        for _, r in listing_enrollments_df.iterrows():
+    if listing_df is not None and len(listing_df):
+        for _, r in listing_df.iterrows():
             listing.append({
                 "provider_id": int(to_native(r["provider_id"])),
-                "ad_id": to_native(r.get("ad_id")),
+                "placement": str(r.get("placement", "")),
                 "state": str(r.get("state", "")),
-                "enrollment_type": str(r.get("enrollment_type", "")),
-                "start": str(r.get("start", "")),
-                "end": str(r.get("end", "")),
-                "stopped_at": str(r.get("stopped_at", "")),
-            })
-    if listing_campaigns_df is not None and len(listing_campaigns_df):
-        for _, r in listing_campaigns_df.iterrows():
-            listing.append({
-                "provider_id": int(to_native(r["provider_id"])),
-                "campaign_name": str(r.get("campaign_name", "")),
-                "campaign_state": str(r.get("campaign_state", "")),
-                "start": str(r.get("start", "")),
-                "end": str(r.get("end", "")),
-                "stopped_at": str(r.get("stopped_at", "")),
-                "pricing": str(r.get("pricing", "")),
+                "start": str(r.get("start", ""))[:10],
+                "end": str(r.get("end", ""))[:10],
+                "stopped_at": str(r.get("stopped_at", ""))[:10] if str(r.get("stopped_at", "")) != "NaT" else "",
+                "cost_uah": to_native(r.get("cost_uah"), default=0),
+                "free_days": to_native(r.get("free_days"), default=0),
             })
     data["listing"] = listing
 
@@ -2021,36 +2003,60 @@ function renderTopItems() {{
 function renderListing() {{
  const ids = getFilteredStoreIds();
  const listings = D.listing || [];
- const active = listings.filter(l => ids.includes(l.provider_id));
+ const filtered = listings.filter(l => ids.includes(l.provider_id));
+
+ const STATE_UA = {{
+  'active': 'Активний',
+  'disabled': 'Вимкнено',
+  'cost_exceeding_revenue_aborted': 'Зупинено (витрати > дохід)',
+  'stopped': 'Зупинено'
+ }};
+
+ const byStore = {{}};
+ filtered.forEach(l => {{
+  if (!byStore[l.provider_id]) byStore[l.provider_id] = [];
+  byStore[l.provider_id].push(l);
+ }});
+
+ const enrolledIds = Object.keys(byStore).map(Number);
+ const activeCount = enrolledIds.length;
+ const totalActive = filtered.filter(l => l.state === 'active').length;
 
  let html = '';
- if (active.length === 0) {{
-  html += '<div class="section-insight" style="margin-bottom:16px">Sponsored Listing наразі <b>не підключений</b> на жодному закладі.</div>';
-  html += '<table class="data-table"><thead><tr><th>Заклад</th><th>Місто</th><th>Статус Listing</th></tr></thead><tbody>';
-  ids.forEach(id => {{
-   const s = D.stores[id];
-   if (!s) return;
-   html += '<tr><td>' + s.short + '</td><td>' + s.city + '</td>';
-   html += '<td><span style="color:var(--neg);font-weight:600">Не підключено</span></td></tr>';
-  }});
-  html += '</tbody></table>';
+ html += '<div class="section-insight" style="margin-bottom:16px">';
+ if (activeCount === 0) {{
+  html += 'Sponsored Listing наразі <b>не підключений</b> на жодному закладі.';
  }} else {{
-  html += '<div class="section-insight" style="margin-bottom:16px">Sponsored Listing активний на <b>' + active.length + '</b> закладах.</div>';
-  html += '<table class="data-table"><thead><tr><th>Заклад</th><th>Кампанія / Тип</th><th>Статус</th><th>Початок</th><th>Кінець</th><th>Ціна</th></tr></thead><tbody>';
-  active.forEach(l => {{
-   const s = D.stores[l.provider_id] || {{ short: String(l.provider_id) }};
-   const name = l.campaign_name || l.enrollment_type || '—';
-   const state = l.campaign_state || l.state || '—';
-   const stateColor = state === 'active' || state === 'running' ? 'var(--pos)' : state === 'stopped' ? 'var(--neg)' : 'var(--text2)';
-   const start = l.start ? String(l.start).substring(0, 10) : '—';
-   const end = l.end ? String(l.end).substring(0, 10) : '—';
-   const pricing = l.pricing || '—';
-   html += '<tr><td>' + s.short + '</td><td>' + name + '</td>';
-   html += '<td style="color:' + stateColor + ';font-weight:600">' + state + '</td>';
-   html += '<td>' + start + '</td><td>' + end + '</td><td>' + pricing + '</td></tr>';
-  }});
-  html += '</tbody></table>';
+  html += 'Sponsored Listing: <b>' + activeCount + '</b> закладів мають/мали підключення. Активних опцій: <b>' + totalActive + '</b>.';
  }}
+ html += '</div>';
+
+ html += '<table class="data-table"><thead><tr><th>Заклад</th><th>Опція</th><th>Статус</th><th>Період</th><th>Витрати (₴)</th></tr></thead><tbody>';
+
+ ids.forEach(id => {{
+  const s = D.stores[id];
+  if (!s) return;
+  const entries = byStore[id];
+  if (!entries || entries.length === 0) {{
+   html += '<tr><td>' + s.short + '</td><td colspan="4" style="color:var(--text2)">Не підключено</td></tr>';
+  }} else {{
+   entries.forEach((l, i) => {{
+    const stateText = STATE_UA[l.state] || l.state;
+    const stateColor = l.state === 'active' ? '#22c55e' : l.state === 'cost_exceeding_revenue_aborted' ? '#ef4444' : '#6b7280';
+    const period = l.start + ' — ' + (l.stopped_at || l.end);
+    const cost = l.cost_uah ? '₴' + Number(l.cost_uah).toFixed(0) : '—';
+    html += '<tr>';
+    html += '<td>' + (i === 0 ? s.short : '') + '</td>';
+    html += '<td><span style="background:' + (l.placement === 'Home Screen' ? '#3b82f620' : '#f9731620') + ';color:' + (l.placement === 'Home Screen' ? '#3b82f6' : '#f97316') + ';padding:2px 8px;border-radius:4px;font-weight:500;font-size:12px">' + l.placement + '</span></td>';
+    html += '<td style="color:' + stateColor + ';font-weight:600;font-size:12px">' + stateText + '</td>';
+    html += '<td style="font-size:12px">' + period + '</td>';
+    html += '<td class="text-right" style="font-size:12px">' + cost + '</td>';
+    html += '</tr>';
+   }});
+  }}
+ }});
+
+ html += '</tbody></table>';
  document.getElementById('listing-content').innerHTML = html;
 }}
 
@@ -2528,12 +2534,12 @@ def main():
         print(f"  → {len(user_metrics_df)} rows")
 
         print("  Fetching sponsored listing…")
-        listing_enrollments_df, listing_campaigns_df = fetch_sponsored_listing(conn)
-        print(f"  → {len(listing_enrollments_df)} enrollments, {len(listing_campaigns_df)} campaigns")
+        listing_df = fetch_sponsored_listing(conn)
+        print(f"  → {len(listing_df)} rows")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df, listing_enrollments_df, listing_campaigns_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df, listing_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "kulinichi"
