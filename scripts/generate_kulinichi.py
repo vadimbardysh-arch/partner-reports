@@ -425,7 +425,27 @@ def fetch_sponsored_listing(conn):
     WHERE s.provider_id IN ({PROVIDER_IDS})
     ORDER BY s.provider_id, s.start DESC
     """)
-    return listing_df
+
+    listing_orders_df = query(conn, f"""
+    SELECT
+        f.order_week,
+        f.provider_id,
+        COUNT(CASE WHEN d.is_sponsor_listed_order = true THEN 1 END) AS listing_orders,
+        COUNT(CASE WHEN d.is_sponsor_listing_placed_on_search_result = true THEN 1 END) AS search_orders,
+        COUNT(CASE WHEN d.is_sponsor_listing_placed_on_home_screen = true THEN 1 END) AS home_screen_orders,
+        COUNT(*) AS total_orders
+    FROM ng_delivery_spark.fact_order_delivery f
+    JOIN ng_delivery_spark.dim_order_delivery d ON f.order_id = d.order_id
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+    AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
+    AND f.order_state = 'delivered'
+    GROUP BY f.order_week, f.provider_id
+    HAVING listing_orders > 0
+    ORDER BY f.order_week DESC, f.provider_id
+    """)
+
+    return listing_df, listing_orders_df
 
 
 # ── Build data for HTML ──────────────────────────────────────────────────
@@ -441,7 +461,7 @@ def strip_nda(text):
     return text.strip()
 
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df=None, listing_df=None):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df=None, listing_df=None, listing_orders_df=None):
     data = {}
 
     stores_map = {}
@@ -680,6 +700,21 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
                 "free_days": to_native(r.get("free_days"), default=0),
             })
     data["listing"] = listing
+
+    listing_orders = {}
+    if listing_orders_df is not None and len(listing_orders_df):
+        for _, r in listing_orders_df.iterrows():
+            week = str(r["order_week"])
+            pid = int(to_native(r["provider_id"]))
+            if week not in listing_orders:
+                listing_orders[week] = {}
+            listing_orders[week][pid] = {
+                "listing_orders": int(to_native(r["listing_orders"])),
+                "search_orders": int(to_native(r["search_orders"])),
+                "home_screen_orders": int(to_native(r["home_screen_orders"])),
+                "total_orders": int(to_native(r["total_orders"])),
+            }
+    data["listing_orders"] = listing_orders
 
     return data
 
@@ -2003,6 +2038,7 @@ function renderTopItems() {{
 function renderListing() {{
  const ids = getFilteredStoreIds();
  const listings = D.listing || [];
+ const listingOrders = D.listing_orders || {{}};
  const filtered = listings.filter(l => ids.includes(l.provider_id));
 
  const STATE_UA = {{
@@ -2031,7 +2067,8 @@ function renderListing() {{
  }}
  html += '</div>';
 
- html += '<table class="data-table"><thead><tr><th>Заклад</th><th>Опція</th><th>Статус</th><th>Період</th><th>Витрати (₴)</th></tr></thead><tbody>';
+ html += '<h4 style="font-size:14px;margin:20px 0 10px;color:var(--text)">Підключені опції</h4>';
+ html += '<table class="data-table"><thead><tr><th>Заклад</th><th>Опція</th><th>Статус</th><th>Період</th><th class="text-right">Витрати (₴)</th></tr></thead><tbody>';
 
  ids.forEach(id => {{
   const s = D.stores[id];
@@ -2055,8 +2092,79 @@ function renderListing() {{
    }});
   }}
  }});
-
  html += '</tbody></table>';
+
+ const periods = getChartPeriods();
+ const hasOrders = periods.some(p => p.weeks.some(w => {{
+  const wo = listingOrders[w];
+  return wo && ids.some(id => wo[id]);
+ }}));
+
+ if (hasOrders) {{
+  html += '<h4 style="font-size:14px;margin:24px 0 10px;color:var(--text)">Замовлення через Listing</h4>';
+  html += '<table class="data-table"><thead><tr><th>Заклад</th>';
+  const dispPeriods = periods.filter(p => p.weeks.some(w => listingOrders[w]));
+  dispPeriods.forEach(p => {{ html += '<th class="text-center" style="min-width:100px">' + p.label + '</th>'; }});
+  html += '<th class="text-center">Всього</th></tr></thead><tbody>';
+
+  let totals = dispPeriods.map(() => ({{ listing: 0, total: 0 }}));
+  let grandListing = 0, grandTotal = 0;
+
+  ids.forEach(id => {{
+   const s = D.stores[id];
+   if (!s) return;
+   let rowListing = 0, rowTotal = 0;
+   let hasAny = false;
+
+   let cells = dispPeriods.map((p, pi) => {{
+    let pListing = 0, pSearch = 0, pHome = 0, pTotal = 0;
+    p.weeks.forEach(w => {{
+     const wo = listingOrders[w];
+     if (wo && wo[id]) {{
+      pListing += wo[id].listing_orders;
+      pSearch += wo[id].search_orders;
+      pHome += wo[id].home_screen_orders;
+      pTotal += wo[id].total_orders;
+     }}
+    }});
+    if (pListing > 0) hasAny = true;
+    rowListing += pListing;
+    rowTotal += pTotal;
+    totals[pi].listing += pListing;
+    totals[pi].total += pTotal;
+    return {{ pListing, pSearch, pHome, pTotal }};
+   }});
+
+   if (!hasAny) return;
+   grandListing += rowListing;
+   grandTotal += rowTotal;
+
+   html += '<tr><td>' + s.short + '</td>';
+   cells.forEach(c => {{
+    if (c.pListing === 0) {{
+     html += '<td class="text-center" style="color:var(--text2)">—</td>';
+    }} else {{
+     const pct = c.pTotal > 0 ? Math.round(c.pListing / c.pTotal * 100) : 0;
+     html += '<td class="text-center"><b>' + c.pListing + '</b><span style="font-size:11px;color:var(--text2)"> / ' + c.pTotal + ' (' + pct + '%)</span>';
+     html += '<br><span style="font-size:10px;color:#3b82f6">HS:' + c.pHome + '</span> <span style="font-size:10px;color:#f97316">S:' + c.pSearch + '</span>';
+     html += '</td>';
+    }}
+   }});
+   const rowPct = rowTotal > 0 ? Math.round(rowListing / rowTotal * 100) : 0;
+   html += '<td class="text-center"><b>' + rowListing + '</b><span style="font-size:11px;color:var(--text2)"> / ' + rowTotal + ' (' + rowPct + '%)</span></td>';
+   html += '</tr>';
+  }});
+
+  html += '<tr class="total-row"><td>Всього</td>';
+  totals.forEach(t => {{
+   const pct = t.total > 0 ? Math.round(t.listing / t.total * 100) : 0;
+   html += '<td class="text-center"><b>' + t.listing + '</b><span style="font-size:11px"> / ' + t.total + ' (' + pct + '%)</span></td>';
+  }});
+  const grandPct = grandTotal > 0 ? Math.round(grandListing / grandTotal * 100) : 0;
+  html += '<td class="text-center"><b>' + grandListing + '</b><span style="font-size:11px"> / ' + grandTotal + ' (' + grandPct + '%)</span></td>';
+  html += '</tr></tbody></table>';
+ }}
+
  document.getElementById('listing-content').innerHTML = html;
 }}
 
@@ -2534,12 +2642,12 @@ def main():
         print(f"  → {len(user_metrics_df)} rows")
 
         print("  Fetching sponsored listing…")
-        listing_df = fetch_sponsored_listing(conn)
-        print(f"  → {len(listing_df)} rows")
+        listing_df, listing_orders_df = fetch_sponsored_listing(conn)
+        print(f"  → {len(listing_df)} enrollments, {len(listing_orders_df)} order rows")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df, listing_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df, listing_df, listing_orders_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "kulinichi"
