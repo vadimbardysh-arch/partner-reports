@@ -2093,75 +2093,58 @@ function renderListing() {{
  }});
  html += '</tbody></table>';
 
- const periods = getChartPeriods();
- const hasOrders = periods.some(p => p.weeks.some(w => {{
-  const wo = listingOrders[w];
-  return wo && ids.some(id => wo[id]);
- }}));
+ const selWeeks = periodMode === 'months' ? getWeeksForMonth(getSelectedMonth()) : [getSelectedWeek()];
+ const label = getPeriodLabel();
 
- if (hasOrders) {{
-  html += '<h4 style="font-size:14px;margin:24px 0 10px;color:var(--text)">Замовлення через Listing</h4>';
-  html += '<table class="data-table"><thead><tr><th>Заклад</th>';
-  const dispPeriods = periods.filter(p => p.weeks.some(w => listingOrders[w]));
-  dispPeriods.forEach(p => {{ html += '<th class="text-center" style="min-width:100px">' + p.label + '</th>'; }});
-  html += '<th class="text-center">Всього</th></tr></thead><tbody>';
+ let tListing = 0, tSearch = 0, tHome = 0, tTotal = 0;
+ const rows = [];
+ ids.forEach(id => {{
+  const s = D.stores[id];
+  if (!s) return;
+  let listing = 0, search = 0, home = 0, total = 0;
+  selWeeks.forEach(w => {{
+   const wo = listingOrders[w];
+   if (wo && wo[id]) {{
+    listing += wo[id].listing_orders;
+    search += wo[id].search_orders;
+    home += wo[id].home_screen_orders;
+    total += wo[id].total_orders;
+   }}
+  }});
+  tListing += listing; tSearch += search; tHome += home; tTotal += total;
+  if (listing > 0) rows.push({{ s, listing, search, home, total }});
+ }});
 
-  let totals = dispPeriods.map(() => ({{ listing: 0, total: 0 }}));
-  let grandListing = 0, grandTotal = 0;
+ html += '<h4 style="font-size:14px;margin:24px 0 10px;color:var(--text)">Замовлення через Listing — ' + label + '</h4>';
 
-  ids.forEach(id => {{
-   const s = D.stores[id];
-   if (!s) return;
-   let rowListing = 0, rowTotal = 0;
-   let hasAny = false;
+ if (tListing === 0) {{
+  html += '<div style="padding:16px;color:var(--text2);font-size:13px">Немає замовлень через Listing за цей період.</div>';
+ }} else {{
+  const tPct = tTotal > 0 ? (tListing / tTotal * 100).toFixed(1) : '0.0';
+  html += '<div class="kpi-grid" style="margin-bottom:16px">';
+  html += '<div class="kpi-card"><div class="kpi-label">Listing замовлення</div><div class="kpi-value">' + tListing + '</div><div class="kpi-change neutral">' + tPct + '% від усіх (' + tTotal + ')</div></div>';
+  html += '<div class="kpi-card"><div class="kpi-label">Home Screen</div><div class="kpi-value" style="color:#3b82f6">' + tHome + '</div></div>';
+  html += '<div class="kpi-card"><div class="kpi-label">Search</div><div class="kpi-value" style="color:#f97316">' + tSearch + '</div></div>';
+  html += '</div>';
 
-   let cells = dispPeriods.map((p, pi) => {{
-    let pListing = 0, pSearch = 0, pHome = 0, pTotal = 0;
-    p.weeks.forEach(w => {{
-     const wo = listingOrders[w];
-     if (wo && wo[id]) {{
-      pListing += wo[id].listing_orders;
-      pSearch += wo[id].search_orders;
-      pHome += wo[id].home_screen_orders;
-      pTotal += wo[id].total_orders;
-     }}
-    }});
-    if (pListing > 0) hasAny = true;
-    rowListing += pListing;
-    rowTotal += pTotal;
-    totals[pi].listing += pListing;
-    totals[pi].total += pTotal;
-    return {{ pListing, pSearch, pHome, pTotal }};
-   }});
-
-   grandListing += rowListing;
-   grandTotal += rowTotal;
-
-   if (!hasAny) return;
-
-   html += '<tr><td>' + s.short + '</td>';
-   cells.forEach(c => {{
-    if (c.pListing === 0) {{
-     html += '<td class="text-center" style="color:var(--text2)">—</td>';
-    }} else {{
-     const pct = c.pTotal > 0 ? Math.round(c.pListing / c.pTotal * 100) : 0;
-     html += '<td class="text-center"><b>' + c.pListing + '</b><span style="font-size:11px;color:var(--text2)"> / ' + c.pTotal + ' (' + pct + '%)</span>';
-     html += '<br><span style="font-size:10px;color:#3b82f6">HS:' + c.pHome + '</span> <span style="font-size:10px;color:#f97316">S:' + c.pSearch + '</span>';
-     html += '</td>';
-    }}
-   }});
-   const rowPct = rowTotal > 0 ? Math.round(rowListing / rowTotal * 100) : 0;
-   html += '<td class="text-center"><b>' + rowListing + '</b><span style="font-size:11px;color:var(--text2)"> / ' + rowTotal + ' (' + rowPct + '%)</span></td>';
+  html += '<table class="data-table"><thead><tr><th>Заклад</th><th class="text-right">Listing</th><th class="text-right"><span style="color:#3b82f6">Home Screen</span></th><th class="text-right"><span style="color:#f97316">Search</span></th><th class="text-right">Всього замовлень</th><th class="text-right">% Listing</th></tr></thead><tbody>';
+  rows.sort((a, b) => b.listing - a.listing).forEach(r => {{
+   const pct = r.total > 0 ? (r.listing / r.total * 100).toFixed(1) : '0.0';
+   const pctColor = parseFloat(pct) >= 30 ? '#22c55e' : parseFloat(pct) >= 15 ? '#f97316' : 'var(--text2)';
+   html += '<tr><td>' + r.s.short + '</td>';
+   html += '<td class="text-right"><b>' + r.listing + '</b></td>';
+   html += '<td class="text-right">' + r.home + '</td>';
+   html += '<td class="text-right">' + r.search + '</td>';
+   html += '<td class="text-right">' + r.total + '</td>';
+   html += '<td class="text-right" style="color:' + pctColor + ';font-weight:600">' + pct + '%</td>';
    html += '</tr>';
   }});
-
   html += '<tr class="total-row"><td>Всього</td>';
-  totals.forEach(t => {{
-   const pct = t.total > 0 ? Math.round(t.listing / t.total * 100) : 0;
-   html += '<td class="text-center"><b>' + t.listing + '</b><span style="font-size:11px"> / ' + t.total + ' (' + pct + '%)</span></td>';
-  }});
-  const grandPct = grandTotal > 0 ? Math.round(grandListing / grandTotal * 100) : 0;
-  html += '<td class="text-center"><b>' + grandListing + '</b><span style="font-size:11px"> / ' + grandTotal + ' (' + grandPct + '%)</span></td>';
+  html += '<td class="text-right"><b>' + tListing + '</b></td>';
+  html += '<td class="text-right">' + tHome + '</td>';
+  html += '<td class="text-right">' + tSearch + '</td>';
+  html += '<td class="text-right">' + tTotal + '</td>';
+  html += '<td class="text-right" style="font-weight:600">' + tPct + '%</td>';
   html += '</tr></tbody></table>';
  }}
 
