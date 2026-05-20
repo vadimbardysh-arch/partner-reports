@@ -441,7 +441,6 @@ def fetch_sponsored_listing(conn):
     AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
     AND f.order_state = 'delivered'
     GROUP BY f.order_week, f.provider_id
-    HAVING listing_orders > 0
     ORDER BY f.order_week DESC, f.provider_id
     """)
 
@@ -2135,9 +2134,10 @@ function renderListing() {{
     return {{ pListing, pSearch, pHome, pTotal }};
    }});
 
-   if (!hasAny) return;
    grandListing += rowListing;
    grandTotal += rowTotal;
+
+   if (!hasAny) return;
 
    html += '<tr><td>' + s.short + '</td>';
    cells.forEach(c => {{
