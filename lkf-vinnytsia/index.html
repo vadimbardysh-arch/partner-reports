@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bolt Food &mdash; Промо-пропозиція для LKF (Вінниця)</title>
+    <style>
+        :root {
+            --bolt-green: #34D399;
+            --bolt-dark: #1A1A2E;
+            --bolt-gray: #F3F4F6;
+            --bolt-accent: #6366F1;
+            --bolt-warning: #F59E0B;
+            --bolt-info: #3B82F6;
+            --bolt-red: #EF4444;
+            --text-primary: #111827;
+            --text-secondary: #6B7280;
+            --border: #E5E7EB;
+            --gradient-start: #1A1A2E;
+            --gradient-end: #2D2D5E;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bolt-gray);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-end) 50%, #1e3a5f 100%);
+            color: white;
+            padding: 64px 24px 48px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: radial-gradient(circle at 30% 70%, rgba(52, 211, 153, 0.08) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 30%, rgba(99, 102, 241, 0.08) 0%, transparent 50%);
+            animation: float 20s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(-20px, 20px); }
+        }
+        .hero-content { position: relative; z-index: 1; }
+        .hero .logo { font-size: 1rem; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--bolt-green); margin-bottom: 20px; }
+        .hero h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 12px; line-height: 1.2; }
+        .hero .subtitle { font-size: 1.15rem; opacity: 0.85; max-width: 640px; margin: 0 auto 24px; }
+        .hero .badge-row { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+        .hero .badge {
+            display: inline-block; background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.2); padding: 6px 18px;
+            border-radius: 20px; font-size: 0.85rem; font-weight: 500; backdrop-filter: blur(4px);
+        }
+
+        .container { max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+
+        .section {
+            background: white; border-radius: 16px; padding: 36px;
+            margin-bottom: 28px; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            border: 1px solid var(--border);
+        }
+        .section h2 { font-size: 1.6rem; font-weight: 700; margin-bottom: 8px; color: var(--bolt-dark); }
+        .section .section-desc { color: var(--text-secondary); font-size: 1rem; margin-bottom: 24px; }
+        .section h3 { font-size: 1.2rem; font-weight: 600; margin: 24px 0 12px; color: var(--bolt-dark); }
+        .divider { width: 60px; height: 3px; background: var(--bolt-green); border-radius: 2px; margin-bottom: 20px; }
+
+        .partner-card-solo {
+            background: white; border-radius: 14px; padding: 28px 24px;
+            border: 2px solid var(--border); position: relative; max-width: 480px;
+        }
+        .partner-card-solo .partner-name { font-size: 1.2rem; font-weight: 700; color: var(--bolt-dark); margin-bottom: 4px; }
+        .partner-card-solo .partner-zone { font-size: 0.88rem; color: var(--text-secondary); margin-bottom: 16px; }
+        .partner-card-solo .partner-stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+        .partner-card-solo .partner-stat:last-child { border-bottom: none; }
+        .partner-card-solo .stat-label { font-size: 0.88rem; color: var(--text-secondary); }
+        .partner-card-solo .stat-value { font-size: 0.92rem; font-weight: 600; color: var(--bolt-dark); }
+        .partner-card-solo .rating-badge {
+            position: absolute; top: 16px; right: 16px; background: #FEF3C7;
+            color: #92400E; padding: 4px 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 700;
+        }
+
+        .data-table {
+            width: 100%; border-collapse: separate; border-spacing: 0;
+            margin: 20px 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--border);
+        }
+        .data-table thead th {
+            background: var(--bolt-dark); color: white; padding: 12px 14px;
+            text-align: left; font-weight: 600; font-size: 0.82rem; white-space: nowrap;
+        }
+        .data-table tbody td {
+            padding: 10px 14px; border-bottom: 1px solid var(--border);
+            font-size: 0.85rem; white-space: nowrap;
+        }
+        .data-table tbody tr:last-child td { border-bottom: none; }
+        .data-table tbody tr:nth-child(even) { background: #FAFAFA; }
+        .data-table tbody tr:hover { background: #F0FDF4; }
+        .data-table .trend-up { color: #059669; font-weight: 600; }
+        .data-table .trend-down { color: #DC2626; font-weight: 600; }
+        .data-table .highlight-row { background: #F0FDF4 !important; font-weight: 600; }
+        .data-table .alert-row { background: #FEF2F2 !important; }
+
+        .metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 20px 0; }
+        .metric-card {
+            background: var(--bolt-gray); border-radius: 12px; padding: 20px 16px;
+            text-align: center; border: 1px solid var(--border);
+        }
+        .metric-card .metric-value { font-size: 1.8rem; font-weight: 800; color: var(--bolt-accent); margin-bottom: 4px; }
+        .metric-card .metric-label { font-size: 0.82rem; color: var(--text-secondary); font-weight: 500; }
+        .metric-card.green .metric-value { color: #059669; }
+        .metric-card.red .metric-value { color: #DC2626; }
+
+        .highlight-box {
+            background: #F0FDF4; border-left: 4px solid var(--bolt-green);
+            padding: 18px 22px; border-radius: 0 10px 10px 0; margin: 20px 0;
+        }
+        .info-box {
+            background: #EFF6FF; border-left: 4px solid var(--bolt-info);
+            padding: 18px 22px; border-radius: 0 10px 10px 0; margin: 20px 0;
+        }
+        .warning-box {
+            background: #FFF7ED; border-left: 4px solid var(--bolt-warning);
+            padding: 18px 22px; border-radius: 0 10px 10px 0; margin: 20px 0;
+        }
+        .alert-box {
+            background: #FEF2F2; border-left: 4px solid var(--bolt-red);
+            padding: 18px 22px; border-radius: 0 10px 10px 0; margin: 20px 0;
+        }
+
+        .tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
+        .tool-card {
+            background: white; border-radius: 14px; padding: 28px 24px;
+            border: 2px solid var(--border); transition: all 0.3s ease; position: relative; overflow: hidden;
+        }
+        .tool-card:hover { border-color: var(--bolt-green); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(52, 211, 153, 0.12); }
+        .tool-card.featured { border-color: var(--bolt-green); background: linear-gradient(135deg, #F0FDF4 0%, white 100%); }
+        .tool-card.featured::before {
+            content: 'TOP'; position: absolute; top: 12px; right: 12px;
+            background: var(--bolt-green); color: var(--bolt-dark); padding: 4px 12px;
+            font-size: 0.72rem; font-weight: 700; text-transform: uppercase; border-radius: 6px;
+        }
+        .tool-card .tool-icon {
+            width: 48px; height: 48px; border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; margin-bottom: 16px;
+        }
+        .tool-card .tool-icon.green { background: #D1FAE5; }
+        .tool-card .tool-icon.blue { background: #DBEAFE; }
+        .tool-card .tool-icon.purple { background: #EDE9FE; }
+        .tool-card .tool-icon.amber { background: #FEF3C7; }
+        .tool-card h4 { font-size: 1.15rem; font-weight: 700; margin-bottom: 8px; color: var(--bolt-dark); }
+        .tool-card .tool-desc { color: var(--text-secondary); font-size: 0.92rem; margin-bottom: 16px; line-height: 1.6; }
+        .tool-card .tool-tags { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        .tag { display: inline-block; padding: 3px 12px; border-radius: 12px; font-size: 0.78rem; font-weight: 600; }
+        .tag-green { background: #D1FAE5; color: #065F46; }
+        .tag-blue { background: #DBEAFE; color: #1E40AF; }
+        .tag-amber { background: #FEF3C7; color: #92400E; }
+        .tag-red { background: #FEE2E2; color: #991B1B; }
+        .tag-purple { background: #EDE9FE; color: #5B21B6; }
+
+        .comparison-table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 20px 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+        .comparison-table thead th { background: var(--bolt-dark); color: white; padding: 14px 18px; text-align: left; font-weight: 600; font-size: 0.9rem; }
+        .comparison-table tbody td { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 0.92rem; }
+        .comparison-table tbody tr:last-child td { border-bottom: none; }
+        .comparison-table tbody tr:nth-child(even) { background: #FAFAFA; }
+        .comparison-table tbody tr:hover { background: #F0FDF4; }
+        .comparison-table .highlight-row { background: #F0FDF4 !important; font-weight: 600; }
+
+        .timeline { position: relative; padding-left: 32px; margin: 24px 0; }
+        .timeline::before { content: ''; position: absolute; left: 12px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+        .timeline-item { position: relative; margin-bottom: 24px; }
+        .timeline-item::before {
+            content: ''; position: absolute; left: -26px; top: 6px;
+            width: 12px; height: 12px; border-radius: 50%;
+            background: var(--bolt-accent); border: 2px solid white;
+            box-shadow: 0 0 0 2px var(--bolt-accent);
+        }
+        .timeline-item.month1::before { background: var(--bolt-info); box-shadow: 0 0 0 2px var(--bolt-info); }
+        .timeline-item.month2::before { background: var(--bolt-accent); box-shadow: 0 0 0 2px var(--bolt-accent); }
+        .timeline-item.month3::before { background: var(--bolt-green); box-shadow: 0 0 0 2px var(--bolt-green); }
+        .timeline-item h4 { font-size: 1.05rem; font-weight: 700; color: var(--bolt-dark); margin-bottom: 6px; }
+        .timeline-item p { font-size: 0.92rem; color: var(--text-secondary); line-height: 1.7; }
+        .timeline-item ul { list-style: none; padding: 0; margin-top: 8px; }
+        .timeline-item ul li { padding: 4px 0; font-size: 0.88rem; color: var(--text-primary); display: flex; align-items: flex-start; gap: 8px; }
+        .timeline-item ul li::before { content: '\2713'; color: var(--bolt-green); font-weight: 700; flex-shrink: 0; }
+
+        .heatmap-container { overflow-x: auto; margin: 20px 0; }
+        .heatmap { width: 100%; border-collapse: collapse; }
+        .heatmap th { padding: 8px 12px; font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); text-align: center; }
+        .heatmap td { padding: 8px 12px; text-align: center; font-size: 0.82rem; font-weight: 600; border-radius: 6px; }
+        .heat-0 { background: #F9FAFB; color: #9CA3AF; }
+        .heat-1 { background: #DBEAFE; color: #1E40AF; }
+        .heat-2 { background: #93C5FD; color: #1E3A8A; }
+        .heat-3 { background: #60A5FA; color: white; }
+        .heat-4 { background: #3B82F6; color: white; }
+        .heat-5 { background: #2563EB; color: white; }
+
+        /* Bolt Plus */
+        .bp-section {
+            background: linear-gradient(135deg, #EFF6FF 0%, #F0FDF4 100%);
+            border: 2px solid #BFDBFE; border-radius: 16px; padding: 36px;
+            margin-bottom: 28px;
+        }
+        .bp-section h2 { font-size: 1.6rem; font-weight: 700; margin-bottom: 8px; color: var(--bolt-dark); }
+        .bp-section .section-desc { color: var(--text-secondary); font-size: 1rem; margin-bottom: 24px; }
+        .bp-card {
+            background: white; border: 2px solid #BFDBFE; border-radius: 14px; padding: 24px;
+        }
+        .bp-card h4 { font-size: 1.05rem; font-weight: 700; color: var(--bolt-dark); margin-bottom: 12px; }
+        .bp-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid #EFF6FF; font-size: 0.88rem; }
+        .bp-row:last-child { border-bottom: none; }
+        .bp-row .bp-label { color: var(--text-secondary); }
+        .bp-row .bp-value { font-weight: 600; }
+        .bp-total { border-top: 2px solid var(--bolt-info) !important; margin-top: 4px; padding-top: 8px; font-size: 1rem; font-weight: 700; }
+        .bp-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 20px 0; }
+        .bp-stat {
+            background: white; border: 1px solid #BFDBFE; border-radius: 12px;
+            padding: 16px; text-align: center;
+        }
+        .bp-stat .bp-stat-value { font-size: 1.6rem; font-weight: 800; color: var(--bolt-info); margin-bottom: 4px; }
+        .bp-stat .bp-stat-label { font-size: 0.78rem; color: var(--text-secondary); }
+
+        .packages-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 24px 0; }
+        .package-card {
+            border: 2px solid var(--border); border-radius: 14px; padding: 28px 20px;
+            text-align: center; transition: all 0.3s ease; position: relative; background: white;
+        }
+        .package-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); }
+        .package-card.best { border-color: var(--bolt-green); background: linear-gradient(180deg, #F0FDF4 0%, white 40%); transform: scale(1.03); }
+        .package-card.best:hover { transform: scale(1.03) translateY(-3px); }
+        .package-card .package-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; margin-bottom: 12px; }
+        .package-card .package-label.label-blue { color: var(--bolt-info); }
+        .package-card .package-label.label-green { color: #059669; }
+        .package-card .package-label.label-purple { color: var(--bolt-accent); }
+        .package-card h4 { font-size: 1.1rem; font-weight: 700; margin-bottom: 12px; color: var(--bolt-dark); }
+        .package-card .package-desc { color: var(--text-secondary); font-size: 0.88rem; margin-bottom: 16px; line-height: 1.5; }
+        .package-card ul { list-style: none; padding: 0; text-align: left; margin-bottom: 20px; }
+        .package-card ul li { padding: 5px 0; font-size: 0.85rem; color: var(--text-primary); display: flex; align-items: flex-start; gap: 8px; }
+        .package-card ul li::before { content: '\2713'; color: var(--bolt-green); font-weight: 700; flex-shrink: 0; }
+        .package-card .package-effect { background: var(--bolt-gray); border-radius: 8px; padding: 10px; font-size: 0.85rem; font-weight: 600; }
+
+        .top-items-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 20px 0; }
+        .top-item {
+            display: flex; align-items: center; gap: 14px;
+            background: var(--bolt-gray); border-radius: 10px; padding: 14px 16px;
+            border: 1px solid var(--border);
+        }
+        .top-item .rank { font-size: 1.3rem; font-weight: 800; color: var(--bolt-accent); width: 28px; flex-shrink: 0; }
+        .top-item .rank.gold { color: #D97706; }
+        .top-item .rank.silver { color: #6B7280; }
+        .top-item .rank.bronze { color: #92400E; }
+        .top-item .item-info { flex: 1; }
+        .top-item .item-name { font-size: 0.88rem; font-weight: 600; color: var(--bolt-dark); }
+        .top-item .item-count { font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px; }
+
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+        @media (max-width: 768px) {
+            .tool-grid, .packages-grid, .metrics-grid, .two-col, .top-items-grid, .bp-stats-grid { grid-template-columns: 1fr; }
+            .hero h1 { font-size: 1.8rem; }
+            .data-table { font-size: 0.75rem; }
+        }
+
+        @media print {
+            .hero { padding: 32px 24px; }
+            .section, .bp-section { break-inside: avoid; box-shadow: none; }
+            body { background: white; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="hero">
+    <div class="hero-content">
+        <div class="logo">Bolt Food</div>
+        <h1>Промо-пропозиція<br>LKF (Вінниця)</h1>
+        <p class="subtitle">Персональна аналітика та план просування для закладу LKF на вул. Замостянській у Вінниці</p>
+        <div class="badge-row">
+            <span class="badge">ID 164301 &bull; вул. Замостянська 27</span>
+            <span class="badge">Вінниця &bull; Central Market Zone 2</span>
+            <span class="badge">Дата: 11 червня 2026</span>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+
+    <!-- ====== PARTNER OVERVIEW ====== -->
+    <section class="section">
+        <h2>Огляд закладу на платформі</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Ключова інформація про LKF з першого дня роботи на Bolt Food.</p>
+
+        <div style="display:flex; gap:24px; flex-wrap:wrap;">
+            <div class="partner-card-solo">
+                <div class="rating-badge">&#9733; 4.72</div>
+                <div class="partner-name">LKF &mdash; вул. Замостянська</div>
+                <div class="partner-zone">Зона: Vinnytsia &mdash; Central Market Zone 2 &bull; ID: 164301</div>
+                <div class="partner-stat"><span class="stat-label">На платформі з</span><span class="stat-value">10 вересня 2025</span></div>
+                <div class="partner-stat"><span class="stat-label">Всього замовлень</span><span class="stat-value">744</span></div>
+                <div class="partner-stat"><span class="stat-label">Загальний GMV</span><span class="stat-value">&euro;11&nbsp;709</span></div>
+                <div class="partner-stat"><span class="stat-label">Середній чек</span><span class="stat-value">&euro;15.74</span></div>
+                <div class="partner-stat"><span class="stat-label">Унікальних клієнтів</span><span class="stat-value">445</span></div>
+                <div class="partner-stat"><span class="stat-label">Середньо/міс. замовлень</span><span class="stat-value">74.4</span></div>
+                <div class="partner-stat"><span class="stat-label">У вибраному</span><span class="stat-value">94 користувачі</span></div>
+                <div class="partner-stat"><span class="stat-label">Комісія</span><span class="stat-value">27%</span></div>
+                <div class="partner-stat"><span class="stat-label">Тип доставки</span><span class="stat-value">Доставка Bolt</span></div>
+                <div class="partner-stat"><span class="stat-label">Bolt Plus</span><span class="stat-value" style="color:var(--bolt-red);">Не підключено</span></div>
+            </div>
+
+            <div style="flex:1; min-width:260px;">
+                <div class="metrics-grid" style="grid-template-columns: repeat(2,1fr);">
+                    <div class="metric-card green">
+                        <div class="metric-value">744</div>
+                        <div class="metric-label">Доставлених замовлень</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">&euro;15.74</div>
+                        <div class="metric-label">Середній чек</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">4.72 &#9733;</div>
+                        <div class="metric-label">Рейтинг закладу</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">445</div>
+                        <div class="metric-label">Унікальних клієнтів</div>
+                    </div>
+                </div>
+                <div class="highlight-box" style="margin-top:0;">
+                    <strong>&#127163; Суші-бургери та хенд-роли &mdash; унікальний формат!</strong><br>
+                    LKF має чіткий фокус на суші-бургерах та хенд-ролах. Висока лояльність (40% повторних замовлень) та стабільний рейтинг 4.72. Час масштабувати охоплення через маркетингові інструменти.
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== PERFORMANCE TRENDS ====== -->
+    <section class="section">
+        <h2>Динаміка замовлень та доходу</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Помісячна аналітика роботи закладу з моменту підключення до платформи.</p>
+
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Місяць</th>
+                    <th>Замовлення</th>
+                    <th>GMV, &euro;</th>
+                    <th>Сер. чек, &euro;</th>
+                    <th>Уніки</th>
+                    <th>Нові</th>
+                    <th>Знижки, &euro;</th>
+                    <th>Тренд</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>Вересень 2025</td><td>78</td><td>1&nbsp;016</td><td>13.02</td><td>70</td><td>70</td><td>288</td><td>&mdash;</td></tr>
+                <tr><td>Жовтень 2025</td><td>78</td><td>1&nbsp;119</td><td>14.35</td><td>59</td><td>47</td><td>267</td><td class="trend-up">&#8594; 0%</td></tr>
+                <tr class="alert-row"><td>Листопад 2025</td><td>48</td><td>834</td><td>17.38</td><td>41</td><td>30</td><td>187</td><td class="trend-down">&darr; -38%</td></tr>
+                <tr class="highlight-row"><td>Грудень 2025</td><td>105</td><td>1&nbsp;656</td><td>15.77</td><td>98</td><td>86</td><td>530</td><td class="trend-up">&uarr; +119%</td></tr>
+                <tr class="highlight-row"><td>Січень 2026</td><td>112</td><td>1&nbsp;768</td><td>15.79</td><td>95</td><td>66</td><td>571</td><td class="trend-up">&uarr; +7%</td></tr>
+                <tr><td>Лютий 2026</td><td>70</td><td>992</td><td>14.18</td><td>54</td><td>33</td><td>273</td><td class="trend-down">&darr; -38%</td></tr>
+                <tr><td>Березень 2026</td><td>84</td><td>1&nbsp;443</td><td>17.17</td><td>63</td><td>41</td><td>431</td><td class="trend-up">&uarr; +20%</td></tr>
+                <tr><td>Квітень 2026</td><td>70</td><td>1&nbsp;147</td><td>16.39</td><td>57</td><td>30</td><td>350</td><td class="trend-down">&darr; -17%</td></tr>
+                <tr><td>Травень 2026</td><td>81</td><td>1&nbsp;436</td><td>17.73</td><td>68</td><td>39</td><td>439</td><td class="trend-up">&uarr; +16%</td></tr>
+                <tr><td>Червень 2026&#42;</td><td>18</td><td>298</td><td>16.53</td><td>14</td><td>3</td><td>52</td><td>&mdash;</td></tr>
+            </tbody>
+        </table>
+        <p style="font-size:0.78rem; color:var(--text-secondary); margin-top:8px;">&#42; Червень 2026 &mdash; неповні дані (станом на 11.06)</p>
+
+        <div class="warning-box">
+            <strong>&#9888; Важливий інсайт щодо знижок:</strong> Заклад активно використовує глибокі знижки (25&ndash;30%). У грудні та січні знижки перевищили &euro;500/міс &mdash; це призвело до <strong>від'ємного чистого доходу</strong> у ці місяці (&minus;&euro;17 та &minus;&euro;60). Рекомендуємо оптимізувати промо-мікс: замінити частину глибоких знижок на Sponsored Listings та Bolt Plus.
+        </div>
+    </section>
+
+    <!-- ====== ZONE ANALYSIS ====== -->
+    <section class="section">
+        <h2>Аналіз зони та географії</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Локація на вул. Замостянській знаходиться в центральній частині Вінниці.</p>
+
+        <div class="two-col">
+            <div>
+                <h3>&#128205; вул. Замостянська &mdash; Central Market Zone 2</h3>
+                <ul style="list-style:none; padding:0;">
+                    <li style="padding:6px 0; font-size:0.9rem; display:flex; gap:8px;"><span style="color:var(--bolt-green); font-weight:700;">&#10003;</span> Центральний район Вінниці &mdash; висока прохідність</li>
+                    <li style="padding:6px 0; font-size:0.9rem; display:flex; gap:8px;"><span style="color:var(--bolt-green); font-weight:700;">&#10003;</span> Близькість до Центрального ринку &mdash; активна аудиторія вдень</li>
+                    <li style="padding:6px 0; font-size:0.9rem; display:flex; gap:8px;"><span style="color:var(--bolt-green); font-weight:700;">&#10003;</span> Офісна та ділова аудиторія, студенти, молодь</li>
+                    <li style="padding:6px 0; font-size:0.9rem; display:flex; gap:8px;"><span style="color:var(--bolt-green); font-weight:700;">&#10003;</span> Координати: 49.240, 28.494</li>
+                    <li style="padding:6px 0; font-size:0.9rem; display:flex; gap:8px;"><span style="color:var(--bolt-info); font-weight:700;">&#9679;</span> Профільна зона: <strong>Profit</strong></li>
+                </ul>
+            </div>
+            <div>
+                <div class="info-box">
+                    <strong>&#128161; Потенціал зони</strong><br><br>
+                    Вінниця &mdash; місто з населенням ~370 тис. осіб. Центральна ринкова зона &mdash; найактивніша з точки зору доставки їжі. Унікальний продукт (суші-бургери) дозволяє LKF виділятись на тлі конкурентів.
+                </div>
+                <div class="highlight-box">
+                    <strong>Рівномірний попит:</strong> На відміну від більшості закладів, LKF має <strong>майже однакову кількість замовлень</strong> у всі дні тижня. Це свідчить про сформовану постійну клієнтуру &mdash; відмінна база для Bolt Plus.
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== ORDER PATTERNS ====== -->
+    <section class="section">
+        <h2>Патерни замовлень</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Розподіл замовлень за днями тижня та часом доби.</p>
+
+        <h3>&#128200; Тепловий аналіз: дні та часи</h3>
+        <div class="heatmap-container">
+            <table class="heatmap">
+                <thead>
+                    <tr>
+                        <th>День тижня</th>
+                        <th>Ранок<br><small>7&ndash;11</small></th>
+                        <th>Обід<br><small>12&ndash;13</small></th>
+                        <th>Вечір<br><small>14&ndash;21</small></th>
+                        <th>Всього</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="font-weight:600; text-align:left; padding-left:12px;">Понеділок</td>
+                        <td class="heat-1">7</td>
+                        <td class="heat-2">18</td>
+                        <td class="heat-5">86</td>
+                        <td style="font-weight:700;">111</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight:600; text-align:left; padding-left:12px;">Вівторок</td>
+                        <td class="heat-1">6</td>
+                        <td class="heat-2">17</td>
+                        <td class="heat-5">78</td>
+                        <td style="font-weight:700;">101</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight:600; text-align:left; padding-left:12px;">Середа</td>
+                        <td class="heat-1">9</td>
+                        <td class="heat-1">10</td>
+                        <td class="heat-4">73</td>
+                        <td style="font-weight:700; color:#DC2626;">92</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight:600; text-align:left; padding-left:12px;">Четвер</td>
+                        <td class="heat-1">12</td>
+                        <td class="heat-2">19</td>
+                        <td class="heat-4">70</td>
+                        <td style="font-weight:700;">101</td>
+                    </tr>
+                    <tr style="background:#F0FDF4;">
+                        <td style="font-weight:700; text-align:left; padding-left:12px; color:#059669;">П&#39;ятниця</td>
+                        <td class="heat-1">10</td>
+                        <td class="heat-3">26</td>
+                        <td class="heat-5">84</td>
+                        <td style="font-weight:800; color:#059669;">120</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight:600; text-align:left; padding-left:12px;">Субота</td>
+                        <td class="heat-1">11</td>
+                        <td class="heat-2">22</td>
+                        <td class="heat-5">77</td>
+                        <td style="font-weight:700;">110</td>
+                    </tr>
+                    <tr>
+                        <td style="font-weight:600; text-align:left; padding-left:12px;">Неділя</td>
+                        <td class="heat-1">9</td>
+                        <td class="heat-2">15</td>
+                        <td class="heat-5">85</td>
+                        <td style="font-weight:700;">109</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="two-col" style="margin-top:20px;">
+            <div class="highlight-box">
+                <strong>&#128200; Рівномірний розподіл &mdash; перевага!</strong><br>
+                Різниця між найбільшим (П&#39;ятниця, 120) та найменшим (Середа, 92) днем — лише 30%. Це означає стабільний попит та передбачуваний виторг щотижня.
+            </div>
+            <div class="info-box">
+                <strong>&#9201; Вечір домінує:</strong> 78% усіх замовлень припадає на вечірній час (14:00&ndash;21:00). Обідня година (12&ndash;13) активна у п&#39;ятницю та суботу. Ранковий слот практично не використовується.
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== TOP ITEMS ====== -->
+    <section class="section">
+        <h2>Топ позиції меню</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Найпопулярніші страви за кількістю замовлень з початку роботи на платформі.</p>
+
+        <div class="top-items-grid">
+            <div class="top-item">
+                <span class="rank gold">1</span>
+                <div class="item-info">
+                    <div class="item-name">Shrimp Sushi Burger</div>
+                    <div class="item-count">267 замовлень</div>
+                </div>
+            </div>
+            <div class="top-item">
+                <span class="rank gold">2</span>
+                <div class="item-info">
+                    <div class="item-name">Sushi Burger with Teriyaki Salmon</div>
+                    <div class="item-count">153 замовлення</div>
+                </div>
+            </div>
+            <div class="top-item">
+                <span class="rank gold">3</span>
+                <div class="item-info">
+                    <div class="item-name">3+1 Sushi Burger</div>
+                    <div class="item-count">108 замовлень</div>
+                </div>
+            </div>
+            <div class="top-item">
+                <span class="rank silver">4</span>
+                <div class="item-info">
+                    <div class="item-name">Chicken Sushi Burger</div>
+                    <div class="item-count">82 замовлення</div>
+                </div>
+            </div>
+            <div class="top-item">
+                <span class="rank silver">5</span>
+                <div class="item-info">
+                    <div class="item-name">3+1 Hand Rolls</div>
+                    <div class="item-count">79 замовлень</div>
+                </div>
+            </div>
+            <div class="top-item">
+                <span class="rank silver">6</span>
+                <div class="item-info">
+                    <div class="item-name">Sushi Burger with Salmon</div>
+                    <div class="item-count">79 замовлень</div>
+                </div>
+            </div>
+            <div class="top-item">
+                <span class="rank bronze">7</span>
+                <div class="item-info">
+                    <div class="item-name">Shrimp Hand Roll</div>
+                    <div class="item-count">76 замовлень</div>
+                </div>
+            </div>
+            <div class="top-item">
+                <span class="rank bronze">8</span>
+                <div class="item-info">
+                    <div class="item-name">Hand Roll with Lightly Salted Salmon</div>
+                    <div class="item-count">73 замовлення</div>
+                </div>
+            </div>
+            <div class="top-item">
+                <span class="rank bronze">9</span>
+                <div class="item-info">
+                    <div class="item-name">Coca Cola 0.33 l</div>
+                    <div class="item-count">77 замовлень</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="info-box">
+            <strong>&#128161; Інсайт:</strong> Суші-бургери з креветками &mdash; абсолютний фаворит (267 замовлень, 36% від топ-9). Позиції &laquo;3+1&raquo; свідчать про популярність сетів та групових замовлень &mdash; це ідеально для промо на бізнес-ланчі та сімейні вечері.
+        </div>
+    </section>
+
+    <!-- ====== PROMO HISTORY ====== -->
+    <section class="section">
+        <h2>Історія промо-активностей</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Огляд маркетингових кампаній та розподіл витрат між Bolt та партнером.</p>
+
+        <h3>Монетарний аналіз промо-витрат</h3>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Місяць</th>
+                    <th>GMV, &euro;</th>
+                    <th>Знижки, &euro;</th>
+                    <th>Bolt покрив, &euro;</th>
+                    <th>Партнер платив, &euro;</th>
+                    <th>Комісія, &euro;</th>
+                    <th>Чистий дохід, &euro;</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>Вер 2025</td><td>1&nbsp;016</td><td>288</td><td>60</td><td>182</td><td>243</td><td>42</td></tr>
+                <tr><td>Жовт 2025</td><td>1&nbsp;119</td><td>267</td><td>124</td><td>111</td><td>297</td><td>22</td></tr>
+                <tr><td>Лист 2025</td><td>834</td><td>187</td><td>0</td><td>187</td><td>190</td><td>116</td></tr>
+                <tr class="alert-row"><td>Груд 2025</td><td>1&nbsp;656</td><td>530</td><td>212</td><td>228</td><td>419</td><td style="color:var(--bolt-red); font-weight:700;">&minus;17</td></tr>
+                <tr class="alert-row"><td>Січ 2026</td><td>1&nbsp;768</td><td>571</td><td>237</td><td>236</td><td>446</td><td style="color:var(--bolt-red); font-weight:700;">&minus;60</td></tr>
+                <tr><td>Лют 2026</td><td>992</td><td>273</td><td>68</td><td>152</td><td>234</td><td>29</td></tr>
+                <tr><td>Бер 2026</td><td>1&nbsp;443</td><td>431</td><td>185</td><td>185</td><td>363</td><td>4</td></tr>
+                <tr><td>Квіт 2026</td><td>1&nbsp;147</td><td>350</td><td>150</td><td>150</td><td>288</td><td>2</td></tr>
+                <tr><td>Трав 2026</td><td>1&nbsp;436</td><td>439</td><td>195</td><td>189</td><td>363</td><td>19</td></tr>
+                <tr><td>Черв 2026&#42;</td><td>298</td><td>52</td><td>31</td><td>14</td><td>63</td><td>12</td></tr>
+            </tbody>
+        </table>
+        <p style="font-size:0.78rem; color:var(--text-secondary); margin-top:8px;">&#42; Червень 2026 &mdash; неповні дані (станом на 11.06)</p>
+
+        <div class="two-col">
+            <div class="info-box">
+                <strong>&#128178; Розподіл витрат на знижки:</strong><br>
+                Bolt покрив <strong>~&euro;1&nbsp;262</strong> (44%)<br>
+                Партнер заплатив <strong>~&euro;1&nbsp;634</strong> (56%)<br><br>
+                На відміну від більшості закладів, LKF сам фінансує більше половини знижок.
+            </div>
+            <div class="alert-box">
+                <strong>&#9888; Ризик глибоких знижок:</strong><br>
+                Грудень та Січень &mdash; <strong>від&#39;ємний чистий дохід</strong> через надмірні знижки. Основна причина &mdash; кампанія &laquo;25% Menu Discount 100% On Provider&raquo;.<br><br>
+                <strong>Рекомендація:</strong> Перейти на Smart Promos (50% покриває Bolt) та знизити глибину partner-funded знижок.
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== BOLT PLUS ====== -->
+    <div class="bp-section">
+        <h2>&#9889; Bolt Plus &mdash; пропозиція на 2%</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Bolt Plus &mdash; програма лояльності для преміальних користувачів. Підключення дає безкоштовну доставку для підписників, що збільшує конверсію та частоту замовлень.</p>
+
+        <div class="bp-stats-grid">
+            <div class="bp-stat">
+                <div class="bp-stat-value">2%</div>
+                <div class="bp-stat-label">Агентська комісія Bolt Plus</div>
+            </div>
+            <div class="bp-stat">
+                <div class="bp-stat-value">+25%</div>
+                <div class="bp-stat-label">Середній ріст замовлень від BP</div>
+            </div>
+            <div class="bp-stat">
+                <div class="bp-stat-value">0 &#8372;</div>
+                <div class="bp-stat-label">Доставка для BP підписників</div>
+            </div>
+            <div class="bp-stat">
+                <div class="bp-stat-value">&#8593;&#8593;</div>
+                <div class="bp-stat-label">Пріоритет у видачі</div>
+            </div>
+        </div>
+
+        <h3>Розрахунок витрат Bolt Plus при 2% для LKF</h3>
+        <div style="max-width:480px;">
+            <div class="bp-card">
+                <h4>LKF &mdash; вул. Замостянська (164301)</h4>
+                <div class="bp-row">
+                    <span class="bp-label">Середній чек</span>
+                    <span class="bp-value">&euro;15.74 (~700 &#8372;)</span>
+                </div>
+                <div class="bp-row">
+                    <span class="bp-label">Середньо/міс. замовлень</span>
+                    <span class="bp-value">74.4</span>
+                </div>
+                <div class="bp-row">
+                    <span class="bp-label">Поточна частка BP замовлень</span>
+                    <span class="bp-value">0% (не підключено)</span>
+                </div>
+                <div class="bp-row" style="margin-top:8px; padding-top:8px; border-top:1px solid #BFDBFE;">
+                    <span class="bp-label">Якщо BP = 10% замовлень</span>
+                    <span class="bp-value">~104 &#8372;/міс</span>
+                </div>
+                <div class="bp-row">
+                    <span class="bp-label">Якщо BP = 15% замовлень</span>
+                    <span class="bp-value">~156 &#8372;/міс</span>
+                </div>
+                <div class="bp-row bp-total">
+                    <span class="bp-label">Якщо BP = 20% замовлень</span>
+                    <span class="bp-value">~208 &#8372;/міс</span>
+                </div>
+                <p style="font-size:0.78rem; color:var(--text-secondary); margin-top:10px;">&#10003; Максимально ~208 &#8372;/міс &mdash; менше вартості однієї знижки</p>
+            </div>
+        </div>
+
+        <div class="two-col" style="margin-top:20px;">
+            <div class="highlight-box">
+                <strong>&#128161; Чому це особливо вигідно для LKF:</strong>
+                <ul style="list-style:none; padding:0; margin-top:8px;">
+                    <li style="padding:4px 0; font-size:0.88rem; display:flex; gap:8px;"><span style="color:var(--bolt-green); font-weight:700;">&#10003;</span> Витрати 104&ndash;208 &#8372;/міс проти поточних partner-funded знижок ~1&nbsp;634 &#8372;/міс</li>
+                    <li style="padding:4px 0; font-size:0.88rem; display:flex; gap:8px;"><span style="color:var(--bolt-green); font-weight:700;">&#10003;</span> BP підписники замовляють у 2&ndash;3 рази частіше &mdash; зростання LTV</li>
+                    <li style="padding:4px 0; font-size:0.88rem; display:flex; gap:8px;"><span style="color:var(--bolt-green); font-weight:700;">&#10003;</span> Пріоритет у видачі серед BP-користувачів &mdash; безкоштовна видимість</li>
+                    <li style="padding:4px 0; font-size:0.88rem; display:flex; gap:8px;"><span style="color:var(--bolt-green); font-weight:700;">&#10003;</span> Рівномірний трафік LKF &mdash; ідеальний профіль для Bolt Plus</li>
+                </ul>
+            </div>
+            <div class="info-box">
+                <strong>Як розраховується:</strong><br><br>
+                Bolt Plus комісія 2% нараховується тільки на замовлення від Bolt Plus підписників.<br><br>
+                Формула: <em>Кількість BP замовлень &times; Середній чек &times; 2%</em><br><br>
+                При поточних обсягах це еквівалент <strong>менше 1 замовлення на місяць</strong> &mdash; при потенційному зростанні замовлень на 25%+.
+            </div>
+        </div>
+    </div>
+
+    <!-- ====== MARKETING TOOLS ====== -->
+    <section class="section">
+        <h2>Доступні маркетингові інструменти</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Кожен інструмент вирішує свою задачу. Комбінуйте їх для максимального результату.</p>
+
+        <div class="tool-grid">
+            <div class="tool-card featured">
+                <div class="tool-icon green">&#128640;</div>
+                <h4>Sponsored Listings</h4>
+                <p class="tool-desc">Преміальне розміщення закладу на головному екрані та у верхніх позиціях пошуку. Фіксована ціна за день, знижки не потрібні &mdash; заощадить на partner-funded кампаніях.</p>
+                <div class="tool-tags">
+                    <span class="tag tag-green">Без знижок</span>
+                    <span class="tag tag-blue">Фіксована ціна</span>
+                    <span class="tag tag-purple">Миттєвий старт</span>
+                </div>
+            </div>
+
+            <div class="tool-card featured">
+                <div class="tool-icon blue">&#127919;</div>
+                <h4>Smart Promos (Розумні Акції)</h4>
+                <p class="tool-desc">Таргетовані знижки для потрібних сегментів клієнтів (нові, неактивні, повертаючі). Bolt покриває до 50% вартості знижки. Запускається на тижневій основі.</p>
+                <div class="tool-tags">
+                    <span class="tag tag-green">Bolt покриває до 50%</span>
+                    <span class="tag tag-amber">Потрібна знижка</span>
+                </div>
+            </div>
+
+            <div class="tool-card">
+                <div class="tool-icon amber">&#127873;</div>
+                <h4>Тематичні кампанії</h4>
+                <p class="tool-desc">Знижки під час тематичних тижнів, свят та спеціальних подій. Участь через акаунт-менеджера.</p>
+                <div class="tool-tags">
+                    <span class="tag tag-blue">Розподіл витрат</span>
+                    <span class="tag tag-purple">Сезонні</span>
+                </div>
+            </div>
+
+            <div class="tool-card">
+                <div class="tool-icon purple">&#128226;</div>
+                <h4>Регулярні Акції (Promos)</h4>
+                <p class="tool-desc">Класичні знижки для всіх користувачів через Портал ресторану. Можливе кофінансування Bolt до 50%. Рекомендуємо переходити від 25% partner-funded до 10&ndash;15% co-funded.</p>
+                <div class="tool-tags">
+                    <span class="tag tag-green">Можливе кофінансування</span>
+                    <span class="tag tag-amber">Максимальне охоплення</span>
+                </div>
+            </div>
+        </div>
+
+        <h3>Порівняння інструментів</h3>
+        <table class="comparison-table">
+            <thead>
+                <tr>
+                    <th>Інструмент</th>
+                    <th>Мета</th>
+                    <th>Хто платить</th>
+                    <th>Знижка?</th>
+                    <th>Ефект</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="highlight-row">
+                    <td><strong>Bolt Plus (2%)</strong></td>
+                    <td>Лояльність + частота</td>
+                    <td>2% від BP замовлень</td>
+                    <td>Ні</td>
+                    <td>Частота &#8593;&#8593;, LTV &#8593;</td>
+                </tr>
+                <tr class="highlight-row">
+                    <td><strong>Sponsored Listings</strong></td>
+                    <td>Видимість у топі</td>
+                    <td>Партнер (фікс./день)</td>
+                    <td>Ні</td>
+                    <td>Перегляди &#8593;&#8593;</td>
+                </tr>
+                <tr>
+                    <td><strong>Smart Promos</strong></td>
+                    <td>Конверсія</td>
+                    <td>Bolt до 50% + партнер</td>
+                    <td>Так</td>
+                    <td>Замовлення &#8593;&#8593;</td>
+                </tr>
+                <tr>
+                    <td><strong>Тематичні кампанії</strong></td>
+                    <td>Сезонне залучення</td>
+                    <td>Розподіл витрат</td>
+                    <td>Так</td>
+                    <td>Охоплення &#8593;</td>
+                </tr>
+                <tr>
+                    <td><strong>Регулярні Акції</strong></td>
+                    <td>Масове залучення</td>
+                    <td>Партнер / кофінансування</td>
+                    <td>Так</td>
+                    <td>Нові клієнти &#8593;&#8593;</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <!-- ====== 3-MONTH PLAN ====== -->
+    <section class="section">
+        <h2>&#128197; План просування на 3 місяці</h2>
+        <div class="divider"></div>
+        <p class="section-desc">Поетапний план оптимізації промо-витрат та зростання замовлень для LKF.</p>
+
+        <div class="timeline">
+            <div class="timeline-item month1">
+                <h4>&#128309; Місяць 1 &mdash; Липень 2026: Підключення Bolt Plus + оптимізація знижок</h4>
+                <p>Мета: підключити Bolt Plus, замінити дорогі partner-funded знижки на ефективніші інструменти.</p>
+                <ul>
+                    <li><strong>Bolt Plus на 2%</strong> &mdash; підключення (витрати ~100&ndash;200 &#8372;/міс, ефект +25% до замовлень)</li>
+                    <li><strong>Smart Promos</strong> &mdash; знижка 10&ndash;15% для нових та неактивних клієнтів (Bolt покриває до 50%)</li>
+                    <li><strong>Скорочення глибоких partner-funded знижок</strong> &mdash; перехід з 25% до 15%</li>
+                    <li>Участь у <strong>тематичній кампанії «Літній Фест»</strong> (якщо доступна)</li>
+                </ul>
+                <p style="margin-top:8px; color:#059669; font-weight:600;">Очікуваний результат: 85&ndash;95 замовлень/міс, скорочення витрат на знижки</p>
+            </div>
+
+            <div class="timeline-item month2">
+                <h4>&#128994; Місяць 2 &mdash; Серпень 2026: Sponsored Listings + масштабування</h4>
+                <p>Мета: збільшити видимість без додаткових знижок, залучити нових клієнтів.</p>
+                <ul>
+                    <li><strong>Sponsored Listings</strong> &mdash; преміальне розміщення (немає необхідності в знижках)</li>
+                    <li><strong>Smart Promos</strong> &mdash; продовження для churned users (не замовляли 21+ дні)</li>
+                    <li><strong>Bolt Plus</strong> продовжує працювати &mdash; відстеження росту BP замовлень</li>
+                    <li><strong>Літня тематична кампанія</strong> &mdash; сезонне просування</li>
+                </ul>
+                <p style="margin-top:8px; color:#059669; font-weight:600;">Очікуваний результат: 95&ndash;110 замовлень/міс, позитивний чистий дохід</p>
+            </div>
+
+            <div class="timeline-item month3">
+                <h4>&#129001; Місяць 3 &mdash; Вересень 2026: Оптимізація та утримання</h4>
+                <p>Мета: закріпити результати, оптимізувати промо-мікс, збільшити LTV клієнтів.</p>
+                <ul>
+                    <li><strong>Sponsored Listings</strong> &mdash; продовження (оцінка ROAS, коригування)</li>
+                    <li><strong>Smart Promos</strong> &mdash; фокус на returning users (не замовляли 14+ днів)</li>
+                    <li><strong>Bolt Plus</strong> &mdash; аналіз зростання BP замовлень, оцінка ROI</li>
+                    <li><strong>Планування зимового сезону</strong> &mdash; уникнути повторення від&#39;ємного доходу (Груд&ndash;Січ)</li>
+                </ul>
+                <p style="margin-top:8px; color:#059669; font-weight:600;">Очікуваний результат: 100&ndash;120 замовлень/міс, стабільний позитивний дохід</p>
+            </div>
+        </div>
+
+        <h3>Зведена таблиця плану</h3>
+        <table class="comparison-table">
+            <thead>
+                <tr>
+                    <th>Інструмент</th>
+                    <th>Липень</th>
+                    <th>Серпень</th>
+                    <th>Вересень</th>
+                    <th>Орієнтовні витрати партнера</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="highlight-row">
+                    <td><strong>Bolt Plus (2%)</strong></td>
+                    <td>&#10003; Підключення</td>
+                    <td>&#10003;</td>
+                    <td>&#10003;</td>
+                    <td>~100&ndash;200 &#8372;/міс</td>
+                </tr>
+                <tr>
+                    <td><strong>Smart Promos</strong></td>
+                    <td>&#10003; Нові + Неактивні</td>
+                    <td>&#10003; Churned</td>
+                    <td>&#10003; Returning</td>
+                    <td>Bolt покриває до 50%</td>
+                </tr>
+                <tr>
+                    <td><strong>Sponsored Listings</strong></td>
+                    <td>&mdash;</td>
+                    <td>&#10003;</td>
+                    <td>&#10003;</td>
+                    <td>Фіксована ціна/день</td>
+                </tr>
+                <tr>
+                    <td><strong>Тематичні кампанії</strong></td>
+                    <td>За наявності</td>
+                    <td>&#10003; Літо</td>
+                    <td>&#10003; Вересень</td>
+                    <td>Розподіл витрат</td>
+                </tr>
+                <tr>
+                    <td><strong>Partner-funded знижки</strong></td>
+                    <td>&#8595; Скорочення</td>
+                    <td>&#8595;&#8595; Мінімум</td>
+                    <td>&#8595;&#8595; Мінімум</td>
+                    <td>Економія ~500&ndash;1&nbsp;000 &#8372;/міс</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <!-- ====== PACKAGES ====== -->
+    <section class="section">
+        <h2>Рекомендовані пакети</h2>
+        <div class="divider"></div>
+        <p class="section-desc">На основі аналітики вашого закладу ми підготували три варіанти. Обирайте той, що підходить саме вам.</p>
+
+        <div class="packages-grid">
+            <div class="package-card">
+                <p class="package-label label-blue">СТАРТ</p>
+                <h4>Bolt Plus + Smart Promos</h4>
+                <p class="package-desc">Мінімальний бюджет, максимальний ефект від лояльності</p>
+                <ul>
+                    <li>Bolt Plus на 2%</li>
+                    <li>Smart Promos для нових клієнтів</li>
+                    <li>Bolt покриває до 50% знижок</li>
+                    <li>Пріоритет для BP підписників</li>
+                </ul>
+                <div class="package-effect">
+                    Витрати: ~200&ndash;400 &#8372;/міс<br>Ефект: замовлення &#8593; 15&ndash;25%
+                </div>
+            </div>
+
+            <div class="package-card best">
+                <p class="package-label label-green">РЕКОМЕНДОВАНИЙ</p>
+                <h4>Bolt Plus + Smart Promos + Sponsored Listings</h4>
+                <p class="package-desc">Комплексний підхід для максимального результату без глибоких знижок</p>
+                <ul>
+                    <li>Все з пакету «Старт»</li>
+                    <li>Sponsored Listings (видимість у топі)</li>
+                    <li>Максимальне охоплення + конверсія</li>
+                    <li>Найвищий ROAS серед комбінацій</li>
+                </ul>
+                <div class="package-effect">
+                    Видимість &#8593;&#8593; &nbsp;|&nbsp; Ефект: зростання 35&ndash;50%
+                </div>
+            </div>
+
+            <div class="package-card">
+                <p class="package-label label-purple">МАКСИМУМ</p>
+                <h4>Усі інструменти</h4>
+                <p class="package-desc">Повна заміна partner-funded знижок на ефективніший промо-мікс</p>
+                <ul>
+                    <li>Все з «Рекомендованого»</li>
+                    <li>Тематичні кампанії (50/50)</li>
+                    <li>Мінімальні partner-funded знижки</li>
+                    <li>Позитивний чистий дохід щомісяця</li>
+                </ul>
+                <div class="package-effect">
+                    Прибутковість &#8593;&#8593;&#8593; &nbsp;|&nbsp; Ефект: зростання 50%+
+                </div>
+            </div>
+        </div>
+    </section>
+
+</div>
+
+</body>
+</html>
