@@ -56,6 +56,9 @@ def safe_list(series):
 
 
 def safe_json(df):
+    # Newer pandas serializes Decimal cells as JSON strings, which breaks
+    # numeric comparisons/formatting downstream. Coerce Decimals to float first.
+    df = df.map(lambda v: float(v) if isinstance(v, Decimal) else v)
     return json.loads(df.to_json(orient="records", date_format="iso"))
 
 
