@@ -319,6 +319,17 @@ def fetch_campaigns(conn):
     """)
 
 
+def fetch_smart_promo_orders(conn):
+    """Order IDs that were part of a Smart Promo campaign (spend_objective 'sp_%')."""
+    return query(conn, f"""
+    SELECT DISTINCT c.order_id
+    FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+    WHERE c.provider_id IN ({PROVIDER_IDS})
+      AND c.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND c.spend_objective LIKE 'sp\\_%'
+    """)
+
+
 SPEND_OBJ_UA = {
     "provider_campaign_obligations_commitments": "Зобов'язання",
     "provider_campaign_portal": "Портал провайдера",
@@ -329,14 +340,28 @@ SPEND_OBJ_UA = {
     "activation": "Активація",
     "marketing_3rd_party_partnership": "Партнерство",
     "retention": "Утримання",
+    "sp_engagement": "Smart Promo — Залучення",
+    "sp_activation": "Smart Promo — Активація",
+    "sp_reactivation": "Smart Promo — Реактивація",
+    "sp_fully_funded": "Smart Promo — Повне фінансування Bolt",
 }
 TARGET_UA = {"delivery_price": "Доставка", "item_price": "Знижка на товар"}
 
 
 # ── Build data for HTML ──────────────────────────────────────────────────
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df=None):
     data = {}
+
+    smart_promo_order_ids = set()
+    if smart_promo_df is not None:
+        for _, r in smart_promo_df.iterrows():
+            oid = r.get("order_id")
+            if oid is not None:
+                try:
+                    smart_promo_order_ids.add(int(oid))
+                except (TypeError, ValueError):
+                    pass
 
     stores_map = {}
     for _, r in weekly_df.iterrows():
@@ -490,6 +515,13 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         raw_state = row.get("order_state", "") or ""
         row["order_state_raw"] = raw_state
         row["order_state"] = ORDER_STATE_UA.get(raw_state, raw_state)
+        oid = row.get("order_id")
+        row["is_smart_promo"] = False
+        if oid is not None:
+            try:
+                row["is_smart_promo"] = int(oid) in smart_promo_order_ids
+            except (TypeError, ValueError):
+                row["is_smart_promo"] = False
         pid = row.get("provider_id")
         if pid and int(pid) in VASH_LAVASH_PROVIDERS:
             row["provider_short"] = VASH_LAVASH_PROVIDERS[int(pid)]["short"]
@@ -569,6 +601,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         disc_pct = to_native(r["discount_pct"])
         target_ua = TARGET_UA.get(raw_target, raw_target)
         obj_ua = SPEND_OBJ_UA.get(raw_obj, raw_obj)
+        is_smart_promo = raw_obj.startswith("sp_")
         if raw_target == "delivery_price":
             friendly = f"Безк. доставка — {obj_ua}"
         else:
@@ -577,6 +610,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             "campaign_id": to_native(r["campaign_id"]),
             "name": friendly,
             "full_name": cname[:120],
+            "is_smart_promo": is_smart_promo,
             "objective": SPEND_OBJ_UA.get(raw_obj, raw_obj),
             "target": TARGET_UA.get(raw_target, raw_target),
             "discount_pct": to_native(r["discount_pct"]),
@@ -1480,8 +1514,9 @@ function renderCampaigns() {{
       const payerCls = payer === 'Bolt' ? 'color:var(--blue);font-weight:600'
         : payer === 'Заклад' ? 'color:var(--neg);font-weight:600'
         : payer === 'Спільно' ? 'color:var(--warn);font-weight:600' : '';
+      const spBadge = c.is_smart_promo ? ' <span style="display:inline-block;background:var(--orange);color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle;letter-spacing:.3px">SMART PROMO</span>' : '';
       t += '<tr>';
-      t += '<td style="white-space:normal;min-width:180px;max-width:280px" title="' + (c.full_name || '').replace(/"/g,'&quot;') + '">' + c.name + '</td>';
+      t += '<td style="white-space:normal;min-width:180px;max-width:280px" title="' + (c.full_name || '').replace(/"/g,'&quot;') + '">' + c.name + spBadge + '</td>';
       t += '<td style="' + payerCls + ';white-space:nowrap">' + payer + '</td>';
       t += '<td style="font-size:11px;white-space:nowrap">' + c.start_date + ' → ' + c.end_date + '</td>';
       t += '<td style="font-size:12px">' + provText + '</td>';
@@ -1563,9 +1598,10 @@ function renderOrdersDetail() {{
     const failReason = r.fail_reason || '';
 
     const nc = (r.net_income || 0) < 0 ? ' style="color:var(--neg)"' : '';
+    const spBadge = r.is_smart_promo ? ' <span style="display:inline-block;background:var(--orange);color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle;letter-spacing:.3px" title="Замовлення в межах Smart Promo кампанії">SMART PROMO</span>' : '';
     t += '<tr' + (isFailed ? ' style="background:rgba(239,68,68,.04)"' : '') + '><td>' + date + '</td>';
     t += '<td>' + (r.order_reference_id || '') + '</td>';
-    t += '<td>' + (r.provider_short || '') + '</td>';
+    t += '<td>' + (r.provider_short || '') + spBadge + '</td>';
     t += '<td' + stateColor + '>' + (r.order_state || '') + '</td>';
     t += '<td' + bpClass + '>' + bpLabel + '</td>';
     t += '<td class="text-right">' + (r.food_before_discount || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
@@ -1844,10 +1880,14 @@ def main():
         print("  Fetching campaigns…")
         campaigns_df = fetch_campaigns(conn)
         print(f"  → {len(campaigns_df)} rows")
+
+        print("  Fetching Smart Promo order ids…")
+        smart_promo_df = fetch_smart_promo_orders(conn)
+        print(f"  → {len(smart_promo_df)} rows")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "vash-lavash"
