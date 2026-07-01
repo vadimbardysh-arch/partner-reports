@@ -10,6 +10,7 @@ PROVIDERS = {
     31505: {"name": "МОРЕ РИБИ", "slug": "more-ryby", "city": "Львів"},
     31502: {"name": "Cukor Red", "slug": "cukor-red", "city": "Львів"},
     31503: {"name": "Cukor Black", "slug": "cukor-black", "city": "Львів"},
+    199279: {"name": "Epic Cheeseburger (Київ)", "slug": "epic-cheeseburger-kyiv", "city": "Київ"},
 }
 
 WEEKS_BACK = 8
