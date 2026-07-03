@@ -24,24 +24,23 @@ WEEKS_BACK = 52
 DETAIL_WEEKS_BACK = 8
 
 KULINICHI_PROVIDERS = {
-    160247: {"name": "Кулиничі просп. Червоної Калини", "short": "Червоної Калини", "city": "Lviv"},
-    153492: {"name": "Галицька перепічка вул. Кавалерідзе", "short": "ГП Кавалерідзе", "city": "Lviv"},
-    153466: {"name": "Кулиничі вул. Стрийська", "short": "Стрийська", "city": "Lviv"},
-    153462: {"name": "Кулиничі вул. Грінченка", "short": "Грінченка", "city": "Lviv"},
-    160241: {"name": "Кулиничі просп. Чорновола", "short": "Чорновола", "city": "Lviv"},
-    153505: {"name": "Кулиничі вул. Полуботка", "short": "Полуботка", "city": "Rivne"},
-    153507: {"name": "Кулиничі вул. Личаківська", "short": "Личаківська", "city": "Lviv"},
-    153431: {"name": "Кулиничі вул. Наукова", "short": "Наукова", "city": "Lviv"},
-    153502: {"name": "Кулиничі вул. Винна Гора", "short": "Винна Гора", "city": "Lviv"},
-    153499: {"name": "Кулиничі вул. Левицького", "short": "Левицького", "city": "Lviv"},
-    153483: {"name": "Кулиничі вул. Липинського", "short": "Липинського", "city": "Lviv"},
-    153509: {"name": "Кулиничі вул. Шевченка", "short": "Шевченка", "city": "Lviv"},
-    160249: {"name": "Кулиничі вул. Пекарська", "short": "Пекарська", "city": "Lviv"},
-    153440: {"name": "Кулиничі вул. Богоявленська", "short": "Богоявленська", "city": "Rivne"},
-    153504: {"name": "Галицька перепічка вул. Вол. Великого", "short": "ГП Вол. Великого", "city": "Lviv"},
-    153484: {"name": "Кулиничі вул. Мазепи", "short": "Мазепи", "city": "Lviv"},
-    196611: {"name": "ВЖАР", "short": "ВЖАР", "city": "Lviv"},
-    197095: {"name": "HOOD FOOD", "short": "HOOD FOOD", "city": "Lviv"},
+    153504: {"name": "Галицька перепічка вул. Вол. Великого", "short": "Вол. Великого", "city": "Lviv"},
+    202559: {"name": "Галицька перепічка просп. Червоної Калини", "short": "Червоної Калини", "city": "Lviv"},
+    202554: {"name": "Галицька перепічка вул. Личаківська", "short": "Личаківська", "city": "Lviv"},
+    196611: {"name": "ВЖАР вул. Симона Петлюри", "short": "ВЖАР", "city": "Lviv"},
+    197095: {"name": "HOOD FOOD вул. Степана Бандери", "short": "HOOD FOOD", "city": "Lviv"},
+    202552: {"name": "Кулиничі вул. Богоявленська", "short": "Богоявленська", "city": "Rivne"},
+    202548: {"name": "Кулиничі вул. Полуботка", "short": "Полуботка", "city": "Rivne"},
+    202558: {"name": "Галицька перепічка вул. Стрийська", "short": "Стрийська", "city": "Lviv"},
+    202557: {"name": "Галицька перепічка вул. Пекарська", "short": "Пекарська", "city": "Lviv"},
+    202553: {"name": "Галицька перепічка вул. Бандери", "short": "Бандери", "city": "Lviv"},
+    202556: {"name": "Галицька перепічка вул. Наукова", "short": "Наукова", "city": "Lviv"},
+    202555: {"name": "Кулиничі вул. Мазепи", "short": "Мазепи", "city": "Lviv"},
+    202665: {"name": "Галицька перепічка вул. Винна Гора", "short": "Винна Гора", "city": "Lviv"},
+    202539: {"name": "Галицька перепічка просп. Чорновола", "short": "Чорновола", "city": "Lviv"},
+    202538: {"name": "Кулиничі вул. Липинського", "short": "Липинського", "city": "Lviv"},
+    202522: {"name": "Галицька перепічка вул. Грінченка", "short": "Грінченка", "city": "Lviv"},
+    202527: {"name": "Галицька перепічка вул. Левицького", "short": "Левицького", "city": "Lviv"},
 }
 
 PROVIDER_IDS = ",".join(str(k) for k in KULINICHI_PROVIDERS)
@@ -403,53 +402,6 @@ def fetch_user_metrics(conn):
     """)
 
 
-def fetch_sponsored_listing(conn):
-    """Fetch Sponsored Listing (ads) enrollment and performance data."""
-    listing_df = query(conn, f"""
-    SELECT
-        s.provider_id,
-        s.ad_id,
-        CASE
-            WHEN c.content_type = 'provider_category' THEN 'Home Screen'
-            WHEN c.content_type = 'provider_search_result' THEN 'Search'
-            ELSE c.content_type
-        END AS placement,
-        s.state,
-        s.enrollment_type,
-        s.start,
-        s.end,
-        s.stopped_at,
-        r.pricing AS cost_uah,
-        r.free_days
-    FROM ng_public_spark.ads_paid_visibility_signup_log s
-    JOIN ng_public_spark.ads_content_content c ON c.id = s.ad_id
-    LEFT JOIN ng_public_spark.ads_reporting_provider_reporting r
-        ON r.external_id = s.provider_id AND r.campaign_id = s.ad_id
-    WHERE s.provider_id IN ({PROVIDER_IDS})
-    ORDER BY s.provider_id, s.start DESC
-    """)
-
-    listing_orders_df = query(conn, f"""
-    SELECT
-        f.order_week,
-        f.provider_id,
-        COUNT(CASE WHEN d.is_sponsor_listed_order = true THEN 1 END) AS listing_orders,
-        COUNT(CASE WHEN d.is_sponsor_listing_placed_on_search_result = true THEN 1 END) AS search_orders,
-        COUNT(CASE WHEN d.is_sponsor_listing_placed_on_home_screen = true THEN 1 END) AS home_screen_orders,
-        COUNT(*) AS total_orders
-    FROM ng_delivery_spark.fact_order_delivery f
-    JOIN ng_delivery_spark.dim_order_delivery d ON f.order_id = d.order_id
-    WHERE f.provider_id IN ({PROVIDER_IDS})
-    AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
-    AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
-    AND f.order_state = 'delivered'
-    GROUP BY f.order_week, f.provider_id
-    ORDER BY f.order_week DESC, f.provider_id
-    """)
-
-    return listing_df, listing_orders_df
-
-
 # ── Build data for HTML ──────────────────────────────────────────────────
 
 def strip_nda(text):
@@ -463,7 +415,7 @@ def strip_nda(text):
     return text.strip()
 
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df=None, listing_df=None, listing_orders_df=None):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df=None):
     data = {}
 
     stores_map = {}
@@ -688,36 +640,6 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             }
     data["user_weekly"] = user_weekly
 
-    listing = []
-    if listing_df is not None and len(listing_df):
-        for _, r in listing_df.iterrows():
-            listing.append({
-                "provider_id": int(to_native(r["provider_id"])),
-                "placement": str(r.get("placement", "")),
-                "state": str(r.get("state", "")),
-                "start": str(r.get("start", ""))[:10],
-                "end": str(r.get("end", ""))[:10],
-                "stopped_at": str(r.get("stopped_at", ""))[:10] if str(r.get("stopped_at", "")) != "NaT" else "",
-                "cost_uah": to_native(r.get("cost_uah"), default=0),
-                "free_days": to_native(r.get("free_days"), default=0),
-            })
-    data["listing"] = listing
-
-    listing_orders = {}
-    if listing_orders_df is not None and len(listing_orders_df):
-        for _, r in listing_orders_df.iterrows():
-            week = str(r["order_week"])
-            pid = int(to_native(r["provider_id"]))
-            if week not in listing_orders:
-                listing_orders[week] = {}
-            listing_orders[week][pid] = {
-                "listing_orders": int(to_native(r["listing_orders"])),
-                "search_orders": int(to_native(r["search_orders"])),
-                "home_screen_orders": int(to_native(r["home_screen_orders"])),
-                "total_orders": int(to_native(r["total_orders"])),
-            }
-    data["listing_orders"] = listing_orders
-
     return data
 
 
@@ -920,7 +842,6 @@ body.dark .revenue-summary-table th{{background:#111827}}
  <a href="#sec-complaints" class="nav-link">Скарги</a>
  <a href="#sec-cancelled" class="nav-link">Скасовані</a>
  <a href="#sec-promo" class="nav-link">Промо</a>
- <a href="#sec-listing" class="nav-link">Sponsored Listing</a>
  <a href="#sec-items" class="nav-link">Топ позиції</a>
 </nav>
 
@@ -1025,11 +946,6 @@ body.dark .revenue-summary-table th{{background:#111827}}
  <div class="section-title"><span class="section-icon">🎯</span> Промо-аналітика <span id="promo-week-label" style="font-size:13px;font-weight:400;color:var(--text2)"></span></div>
  <div id="promo-kpi" class="kpi-grid" style="margin-bottom:16px"></div>
  <div id="promo-table-wrap" class="table-wrap"></div>
- </div>
-
- <div class="section" id="sec-listing">
- <div class="section-title"><span class="section-icon">📍</span> Sponsored Listing</div>
- <div id="listing-content"></div>
  </div>
 
  <div class="section" id="sec-items">
@@ -2037,123 +1953,6 @@ function renderTopItems() {{
  document.getElementById('items-grid').innerHTML = html || '<div style="padding:24px;color:var(--text2)">Немає даних.</div>';
 }}
 
-function renderListing() {{
- const ids = getFilteredStoreIds();
- const listings = D.listing || [];
- const listingOrders = D.listing_orders || {{}};
- const filtered = listings.filter(l => ids.includes(l.provider_id));
-
- const STATE_UA = {{
-  'active': 'Активний',
-  'disabled': 'Вимкнено',
-  'cost_exceeding_revenue_aborted': 'Зупинено (витрати > дохід)',
-  'stopped': 'Зупинено'
- }};
-
- const byStore = {{}};
- filtered.forEach(l => {{
-  if (!byStore[l.provider_id]) byStore[l.provider_id] = [];
-  byStore[l.provider_id].push(l);
- }});
-
- const enrolledIds = Object.keys(byStore).map(Number);
- const activeCount = enrolledIds.length;
- const totalActive = filtered.filter(l => l.state === 'active').length;
-
- let html = '';
- html += '<div class="section-insight" style="margin-bottom:16px">';
- if (activeCount === 0) {{
-  html += 'Sponsored Listing наразі <b>не підключений</b> на жодному закладі.';
- }} else {{
-  html += 'Sponsored Listing: <b>' + activeCount + '</b> закладів мають/мали підключення. Активних опцій: <b>' + totalActive + '</b>.';
- }}
- html += '</div>';
-
- html += '<h4 style="font-size:14px;margin:20px 0 10px;color:var(--text)">Підключені опції</h4>';
- html += '<table class="data-table"><thead><tr><th>Заклад</th><th>Опція</th><th>Статус</th><th>Період</th><th class="text-right">Витрати (₴)</th></tr></thead><tbody>';
-
- ids.forEach(id => {{
-  const s = D.stores[id];
-  if (!s) return;
-  const entries = byStore[id];
-  if (!entries || entries.length === 0) {{
-   html += '<tr><td>' + s.short + '</td><td colspan="4" style="color:var(--text2)">Не підключено</td></tr>';
-  }} else {{
-   entries.forEach((l, i) => {{
-    const stateText = STATE_UA[l.state] || l.state;
-    const stateColor = l.state === 'active' ? '#22c55e' : l.state === 'cost_exceeding_revenue_aborted' ? '#ef4444' : '#6b7280';
-    const period = l.start + ' — ' + (l.stopped_at || l.end);
-    const cost = l.cost_uah ? '₴' + Number(l.cost_uah).toFixed(0) : '—';
-    html += '<tr>';
-    html += '<td>' + (i === 0 ? s.short : '') + '</td>';
-    html += '<td><span style="background:' + (l.placement === 'Home Screen' ? '#3b82f620' : '#f9731620') + ';color:' + (l.placement === 'Home Screen' ? '#3b82f6' : '#f97316') + ';padding:2px 8px;border-radius:4px;font-weight:500;font-size:12px">' + l.placement + '</span></td>';
-    html += '<td style="color:' + stateColor + ';font-weight:600;font-size:12px">' + stateText + '</td>';
-    html += '<td style="font-size:12px">' + period + '</td>';
-    html += '<td class="text-right" style="font-size:12px">' + cost + '</td>';
-    html += '</tr>';
-   }});
-  }}
- }});
- html += '</tbody></table>';
-
- const selWeeks = periodMode === 'months' ? getWeeksForMonth(getSelectedMonth()) : [getSelectedWeek()];
- const label = getPeriodLabel();
-
- let tListing = 0, tSearch = 0, tHome = 0, tTotal = 0;
- const rows = [];
- ids.forEach(id => {{
-  const s = D.stores[id];
-  if (!s) return;
-  let listing = 0, search = 0, home = 0, total = 0;
-  selWeeks.forEach(w => {{
-   const wo = listingOrders[w];
-   if (wo && wo[id]) {{
-    listing += wo[id].listing_orders;
-    search += wo[id].search_orders;
-    home += wo[id].home_screen_orders;
-    total += wo[id].total_orders;
-   }}
-  }});
-  tListing += listing; tSearch += search; tHome += home; tTotal += total;
-  if (listing > 0) rows.push({{ s, listing, search, home, total }});
- }});
-
- html += '<h4 style="font-size:14px;margin:24px 0 10px;color:var(--text)">Замовлення через Listing — ' + label + '</h4>';
-
- if (tListing === 0) {{
-  html += '<div style="padding:16px;color:var(--text2);font-size:13px">Немає замовлень через Listing за цей період.</div>';
- }} else {{
-  const tPct = tTotal > 0 ? (tListing / tTotal * 100).toFixed(1) : '0.0';
-  html += '<div class="kpi-grid" style="margin-bottom:16px">';
-  html += '<div class="kpi-card"><div class="kpi-label">Listing замовлення</div><div class="kpi-value">' + tListing + '</div><div class="kpi-change neutral">' + tPct + '% від усіх (' + tTotal + ')</div></div>';
-  html += '<div class="kpi-card"><div class="kpi-label">Home Screen</div><div class="kpi-value" style="color:#3b82f6">' + tHome + '</div></div>';
-  html += '<div class="kpi-card"><div class="kpi-label">Search</div><div class="kpi-value" style="color:#f97316">' + tSearch + '</div></div>';
-  html += '</div>';
-
-  html += '<table class="data-table"><thead><tr><th>Заклад</th><th class="text-right">Listing</th><th class="text-right"><span style="color:#3b82f6">Home Screen</span></th><th class="text-right"><span style="color:#f97316">Search</span></th><th class="text-right">Всього замовлень</th><th class="text-right">% Listing</th></tr></thead><tbody>';
-  rows.sort((a, b) => b.listing - a.listing).forEach(r => {{
-   const pct = r.total > 0 ? (r.listing / r.total * 100).toFixed(1) : '0.0';
-   const pctColor = parseFloat(pct) >= 30 ? '#22c55e' : parseFloat(pct) >= 15 ? '#f97316' : 'var(--text2)';
-   html += '<tr><td>' + r.s.short + '</td>';
-   html += '<td class="text-right"><b>' + r.listing + '</b></td>';
-   html += '<td class="text-right">' + r.home + '</td>';
-   html += '<td class="text-right">' + r.search + '</td>';
-   html += '<td class="text-right">' + r.total + '</td>';
-   html += '<td class="text-right" style="color:' + pctColor + ';font-weight:600">' + pct + '%</td>';
-   html += '</tr>';
-  }});
-  html += '<tr class="total-row"><td>Всього</td>';
-  html += '<td class="text-right"><b>' + tListing + '</b></td>';
-  html += '<td class="text-right">' + tHome + '</td>';
-  html += '<td class="text-right">' + tSearch + '</td>';
-  html += '<td class="text-right">' + tTotal + '</td>';
-  html += '<td class="text-right" style="font-weight:600">' + tPct + '%</td>';
-  html += '</tr></tbody></table>';
- }}
-
- document.getElementById('listing-content').innerHTML = html;
-}}
-
 function renderAll() {{
  renderKPIs();
  renderInsights();
@@ -2168,7 +1967,6 @@ function renderAll() {{
  renderComplaints();
  renderCancelled();
  renderPromo();
- renderListing();
  renderTopItems();
 }}
 
@@ -2626,14 +2424,10 @@ def main():
         print("  Fetching user metrics…")
         user_metrics_df = fetch_user_metrics(conn)
         print(f"  → {len(user_metrics_df)} rows")
-
-        print("  Fetching sponsored listing…")
-        listing_df, listing_orders_df = fetch_sponsored_listing(conn)
-        print(f"  → {len(listing_df)} enrollments, {len(listing_orders_df)} order rows")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df, listing_df, listing_orders_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "kulinichi"
