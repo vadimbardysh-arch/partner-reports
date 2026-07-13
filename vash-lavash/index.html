@@ -510,12 +510,17 @@ function renderKPIs() {
   const prevBadRate = prevOrders > 0 ? (prevBad / prevOrders * 100) : 0;
   const storeCount = ids.filter(id => wd[id]).length;
 
-  let avgAvail = 0, avgAccept = 0, aCnt = 0;
+  const opsSel = getOpsData()[selK] || {};
+  let avgAvail = 0, avgAccept = 0, avCnt = 0, acCnt = 0;
   ids.forEach(id => {
-    const lo = D.latest_ops[id];
-    if (lo) { avgAvail += lo.availability; avgAccept += lo.acceptance; aCnt++; }
+    const lo = opsSel[id] || (Object.keys(opsSel).length === 0 ? D.latest_ops[id] : null);
+    if (lo) {
+      if (lo.availability != null) { avgAvail += lo.availability; avCnt++; }
+      if (lo.acceptance != null) { avgAccept += lo.acceptance; acCnt++; }
+    }
   });
-  if (aCnt > 0) { avgAvail /= aCnt; avgAccept /= aCnt; }
+  avgAvail = avCnt > 0 ? avgAvail / avCnt : 0;
+  avgAccept = acCnt > 0 ? avgAccept / acCnt : 0;
 
   const periodLabel = periodMode === 'month' ? 'за обраний місяць' : 'за обраний тиждень';
   const changeLabel = periodMode === 'month' ? 'MoM' : 'WoW';
@@ -642,13 +647,18 @@ function renderInsights() {
   else if (ordChg != null && ordChg > 10) o += '<span class="insight-good">Гарне зростання!</span>';
   document.getElementById('insight-orders').innerHTML = o;
 
-  let avgAvail = 0, avgAccept = 0, aCnt = 0, bad = 0, ord = 0;
+  const opsSel2 = getOpsData()[selK] || {};
+  let avgAvail = 0, avgAccept = 0, avCnt = 0, acCnt = 0, bad = 0, ord = 0;
   ids.forEach(id => {
-    const lo = D.latest_ops[id];
-    if (lo) { avgAvail += lo.availability; avgAccept += lo.acceptance; aCnt++; }
+    const lo = opsSel2[id] || (Object.keys(opsSel2).length === 0 ? D.latest_ops[id] : null);
+    if (lo) {
+      if (lo.availability != null) { avgAvail += lo.availability; avCnt++; }
+      if (lo.acceptance != null) { avgAccept += lo.acceptance; acCnt++; }
+    }
     if (wd[id]) { bad += wd[id].bad_orders; ord += wd[id].orders; }
   });
-  if (aCnt > 0) { avgAvail /= aCnt; avgAccept /= aCnt; }
+  avgAvail = avCnt > 0 ? avgAvail / avCnt : 0;
+  avgAccept = acCnt > 0 ? avgAccept / acCnt : 0;
   const badRate = ord > 0 ? (bad / ord * 100) : 0;
 
   let ops = '<b>' + getPeriodLabel(selK) + '</b>. ';
@@ -671,9 +681,10 @@ function renderStoresTable() {
   const wd = store[selK] || {};
   const pd = prevK ? (store[prevK] || {}) : {};
 
+  const opsSelT = getOpsData()[selK] || {};
   const rows = ids.filter(id => wd[id]).map(id => ({
     id, ...D.stores[id], ...wd[id],
-    ops: D.latest_ops[id] || {},
+    ops: opsSelT[id] || {},
     prev: pd[id] || null
   })).sort((a, b) => b.orders - a.orders);
 
