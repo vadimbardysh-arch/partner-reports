@@ -912,6 +912,8 @@ body.dark .revenue-summary-table th{{background:#111827}}
       <select id="bp-filter"><option value="__all__">Всі</option><option value="yes">Bolt Plus</option><option value="no">Без Bolt Plus</option></select>
       <label style="margin-left:12px">Статус:</label>
       <select id="state-filter"><option value="__all__">Всі</option><option value="delivered">Доставлені</option><option value="failed">Невдалі / Скасовані</option></select>
+      <label style="margin-left:12px">Smart Promo:</label>
+      <select id="sp-filter"><option value="__all__">Всі</option><option value="yes">Smart Promo</option><option value="no">Без Smart Promo</option></select>
     </div>
     <div class="table-wrap scroll-table" id="orders-detail-wrap"></div>
   </section>
@@ -950,6 +952,7 @@ let selectedCities = new Set();
 let selectedStores = new Set();
 let selectedBP = '__all__';
 let selectedState = '__all__';
+let selectedSP = '__all__';
 let chartInstances = {{}};
 
 function weekSortCmp(a, b) {{
@@ -1576,6 +1579,8 @@ function renderOrdersDetail() {{
   else if (selectedBP === 'no') rows = rows.filter(r => r.bolt_plus !== 'Bolt Plus');
   if (selectedState === 'delivered') rows = rows.filter(r => r.order_state_raw === 'delivered');
   else if (selectedState === 'failed') rows = rows.filter(r => r.order_state_raw !== 'delivered');
+  if (selectedSP === 'yes') rows = rows.filter(r => r.is_smart_promo);
+  else if (selectedSP === 'no') rows = rows.filter(r => !r.is_smart_promo);
 
   let t = '<table class="data-table"><thead><tr>';
   t += '<th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Bolt+</th>';
@@ -1821,6 +1826,11 @@ document.getElementById('bp-filter').addEventListener('change', function() {{
 
 document.getElementById('state-filter').addEventListener('change', function() {{
   selectedState = this.value;
+  renderOrdersDetail();
+}});
+
+document.getElementById('sp-filter').addEventListener('change', function() {{
+  selectedSP = this.value;
   renderOrdersDetail();
 }});
 
