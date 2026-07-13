@@ -68,7 +68,7 @@ tr.hidden { display:none; }
 <div class="header">
   <h1>МОРЕ РИБИ</h1>
   <div class="sub">Львів — Останні 8 тижнів</div>
-  <div class="updated">Оновлено: 2026-07-13 12:12 UTC</div>
+  <div class="updated">Оновлено: 2026-07-13 15:44 UTC</div>
 </div>
 
 <div class="week-filter" id="weekFilter">
@@ -272,16 +272,16 @@ tr.hidden { display:none; }
 </div>
 
 <script>
-const W = {"2026-W21": {"delivered": 25.0, "avg_check": 2081.0, "cooking": 34.9, "bad": 8.0, "food_rev": 38663.0, "fees": 17125.0, "net_income": 19526.0, "refund": 2012.0, "cancelled": 1, "complaints": 9}, "2026-W22": {"delivered": 11.0, "avg_check": 2064.0, "cooking": 27.2, "bad": 0.0, "food_rev": 17160.0, "fees": 7405.0, "net_income": 9755.0, "refund": 0.0}, "2026-W23": {"delivered": 16.0, "avg_check": 1648.0, "cooking": 25.5, "bad": 1.0, "food_rev": 19625.0, "fees": 8521.0, "net_income": 11104.0, "refund": 0.0, "complaints": 1}, "2026-W24": {"delivered": 20.0, "avg_check": 1634.0, "cooking": 27.8, "bad": 2.0, "food_rev": 26425.0, "fees": 10545.0, "net_income": 15879.0, "refund": 0.0, "complaints": 2}, "2026-W25": {"delivered": 5.0, "avg_check": 1855.0, "cooking": 29.4, "bad": 0.0, "food_rev": 7855.0, "fees": 3012.0, "net_income": 4843.0, "refund": 0.0}, "2026-W26": {"delivered": 14.0, "avg_check": 2069.0, "cooking": 32.0, "bad": 1.0, "food_rev": 24382.0, "fees": 9465.0, "net_income": 14917.0, "refund": 0.0, "complaints": 1}, "2026-W27": {"delivered": 13.0, "avg_check": 1664.0, "cooking": 23.8, "bad": 2.0, "food_rev": 18258.0, "fees": 6924.0, "net_income": 10566.0, "refund": 768.0, "complaints": 2}, "2026-W28": {"delivered": 20.0, "avg_check": 1929.0, "cooking": 23.1, "bad": 0.0, "food_rev": 31789.0, "fees": 12615.0, "net_income": 19175.0, "refund": 0.0}};
-const allWeeks = ["2026-W21", "2026-W22", "2026-W23", "2026-W24", "2026-W25", "2026-W26", "2026-W27", "2026-W28"];
-const weeks = ["2026-W21", "2026-W22", "2026-W23", "2026-W24", "2026-W25", "2026-W26", "2026-W27", "2026-W28"];
-const delivered = [25.0, 11.0, 16.0, 20.0, 5.0, 14.0, 13.0, 20.0];
-const avgCheck = [2081.0, 2064.0, 1648.0, 1634.0, 1855.0, 2069.0, 1664.0, 1929.0];
-const cookingTime = [34.9, 27.2, 25.5, 27.8, 29.4, 32.0, 23.8, 23.1];
-const revWeeks = ["2026-W21", "2026-W22", "2026-W23", "2026-W24", "2026-W25", "2026-W26", "2026-W27", "2026-W28"];
-const netIncome = [19526.0, 9755.0, 11104.0, 15879.0, 4843.0, 14917.0, 10566.0, 19175.0];
-const foodRev = [38663.0, 17160.0, 19625.0, 26425.0, 7855.0, 24382.0, 18258.0, 31789.0];
-const feesData = [17125.0, 7405.0, 8521.0, 10545.0, 3012.0, 9465.0, 6924.0, 12615.0];
+const W = {"2026-W21": {"delivered": 25.0, "avg_check": 2081.0, "cooking": 34.9, "bad": 8.0, "food_rev": 38663.0, "fees": 17125.0, "net_income": 19526.0, "refund": 2012.0, "cancelled": 1, "complaints": 9}, "2026-W22": {"delivered": 11.0, "avg_check": 2064.0, "cooking": 27.2, "bad": 0.0, "food_rev": 17160.0, "fees": 7405.0, "net_income": 9755.0, "refund": 0.0}, "2026-W23": {"delivered": 16.0, "avg_check": 1648.0, "cooking": 25.5, "bad": 1.0, "food_rev": 19625.0, "fees": 8521.0, "net_income": 11104.0, "refund": 0.0, "complaints": 1}, "2026-W24": {"delivered": 20.0, "avg_check": 1634.0, "cooking": 27.8, "bad": 2.0, "food_rev": 26425.0, "fees": 10545.0, "net_income": 15879.0, "refund": 0.0, "complaints": 2}, "2026-W25": {"delivered": 5.0, "avg_check": 1855.0, "cooking": 29.4, "bad": 0.0, "food_rev": 7855.0, "fees": 3012.0, "net_income": 4843.0, "refund": 0.0}, "2026-W26": {"delivered": 14.0, "avg_check": 2069.0, "cooking": 32.0, "bad": 1.0, "food_rev": 24382.0, "fees": 9465.0, "net_income": 14917.0, "refund": 0.0, "complaints": 1}, "2026-W27": {"delivered": 13.0, "avg_check": 1664.0, "cooking": 23.8, "bad": 2.0, "food_rev": 18258.0, "fees": 6924.0, "net_income": 10566.0, "refund": 768.0, "complaints": 2}, "2026-W28": {"delivered": 20.0, "avg_check": 1929.0, "cooking": 23.1, "bad": 0.0, "food_rev": 31789.0, "fees": 12615.0, "net_income": 19175.0, "refund": 0.0}, "2026-W29": {"delivered": 1.0, "avg_check": 0, "cooking": 25.5, "bad": 0.0, "food_rev": 0, "fees": 0, "net_income": 0, "refund": 0.0}};
+const allWeeks = ["2026-W21", "2026-W22", "2026-W23", "2026-W24", "2026-W25", "2026-W26", "2026-W27", "2026-W28", "2026-W29"];
+const weeks = ["2026-W21", "2026-W22", "2026-W23", "2026-W24", "2026-W25", "2026-W26", "2026-W27", "2026-W28", "2026-W29"];
+const delivered = [25.0, 11.0, 16.0, 20.0, 5.0, 14.0, 13.0, 20.0, 1.0];
+const avgCheck = [2081.0, 2064.0, 1648.0, 1634.0, 1855.0, 2069.0, 1664.0, 1929.0, 0];
+const cookingTime = [34.9, 27.2, 25.5, 27.8, 29.4, 32.0, 23.8, 23.1, 25.5];
+const revWeeks = ["2026-W21", "2026-W22", "2026-W23", "2026-W24", "2026-W25", "2026-W26", "2026-W27", "2026-W28", "2026-W29"];
+const netIncome = [19526.0, 9755.0, 11104.0, 15879.0, 4843.0, 14917.0, 10566.0, 19175.0, 0];
+const foodRev = [38663.0, 17160.0, 19625.0, 26425.0, 7855.0, 24382.0, 18258.0, 31789.0, 0];
+const feesData = [17125.0, 7405.0, 8521.0, 10545.0, 3012.0, 9465.0, 6924.0, 12615.0, 0];
 
 // Build week filter buttons
 const filterEl = document.getElementById('weekFilter');
