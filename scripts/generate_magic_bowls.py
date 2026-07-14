@@ -1,6 +1,6 @@
 """
-Generate a multi-store weekly HTML report for Стумарі by querying Databricks.
-Produces stumari/index.html — identical structure to the Ваш Лаваш dashboard.
+Generate a multi-store weekly HTML report for Magic Bowls by querying Databricks.
+Produces magic-bowls/index.html — identical structure to the Стумарі dashboard.
 """
 
 import os
@@ -21,24 +21,15 @@ from config import SERVER_HOSTNAME, HTTP_PATH
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEEKS_BACK = 52
 
-STUMARI_PROVIDERS = {
-    134078: {"name": "Стумарі вул. Гната Чекірди", "short": "Стумарі Хмельницький", "city": "Khmelnytskyi"},
-    134071: {"name": "Стумарі вул. Лазарєва", "short": "Стумарі Черкаси", "city": "Cherkasy"},
-    134073: {"name": "Стумарі вул. Словацького", "short": "Стумарі Рівне", "city": "Rivne"},
-    134069: {"name": "Стумарі вул. Воскресенська", "short": "Стумарі Суми", "city": "Sumy"},
-    134220: {"name": "American Bar&Grill вул. Київська", "short": "American Bar&Grill", "city": "Vinnytsia"},
-    134072: {"name": "Стумарі Медіваль вул. Лесі Українки", "short": "Стумарі Медіваль", "city": "Lviv"},
-    141939: {"name": "Primavera вул. Петра Могили", "short": "Primavera", "city": "Rivne"},
+MAGIC_BOWLS_PROVIDERS = {
+    33205:  {"name": "Magic Bowls Крива Липа", "short": "Крива Липа", "city": "Lviv"},
+    62502:  {"name": "Magic Bowls Fabrik", "short": "Fabrik", "city": "Lviv"},
+    176417: {"name": "Magic Bowls Федьковича", "short": "Федьковича", "city": "Lviv"},
 }
 
-PROVIDER_IDS = ",".join(str(k) for k in STUMARI_PROVIDERS)
+PROVIDER_IDS = ",".join(str(k) for k in MAGIC_BOWLS_PROVIDERS)
 
 CITY_UA = {
-    "Khmelnytskyi": "Хмельницький",
-    "Cherkasy": "Черкаси",
-    "Rivne": "Рівне",
-    "Sumy": "Суми",
-    "Vinnytsia": "Вінниця",
     "Lviv": "Львів",
 }
 
@@ -346,7 +337,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
     stores_map = {}
     for _, r in weekly_df.iterrows():
         pid = to_native(r["provider_id"])
-        info = STUMARI_PROVIDERS.get(int(pid), {})
+        info = MAGIC_BOWLS_PROVIDERS.get(int(pid), {})
         stores_map[int(pid)] = {
             "name": info.get("name", r["provider_name"]),
             "short": info.get("short", r["provider_name"]),
@@ -503,8 +494,8 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             except (TypeError, ValueError):
                 row["is_smart_promo"] = False
         pid = row.get("provider_id")
-        if pid and int(pid) in STUMARI_PROVIDERS:
-            row["provider_short"] = STUMARI_PROVIDERS[int(pid)]["short"]
+        if pid and int(pid) in MAGIC_BOWLS_PROVIDERS:
+            row["provider_short"] = MAGIC_BOWLS_PROVIDERS[int(pid)]["short"]
         else:
             row["provider_short"] = row.get("provider_name", "")
         ow = row.get("order_week", "")
@@ -519,8 +510,8 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         raw_fault = row.get("fault", "") or ""
         row["fault"] = FAULT_UA.get(str(raw_fault).lower(), raw_fault)
         pid = row.get("provider_id")
-        if pid and int(pid) in STUMARI_PROVIDERS:
-            row["provider_short"] = STUMARI_PROVIDERS[int(pid)]["short"]
+        if pid and int(pid) in MAGIC_BOWLS_PROVIDERS:
+            row["provider_short"] = MAGIC_BOWLS_PROVIDERS[int(pid)]["short"]
         else:
             row["provider_short"] = row.get("provider_name", "")
         ow = row.get("order_week", "")
@@ -533,8 +524,8 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         raw_state = row.get("order_state", "") or ""
         row["order_state"] = ORDER_STATE_UA.get(raw_state, raw_state)
         pid = row.get("provider_id")
-        if pid and int(pid) in STUMARI_PROVIDERS:
-            row["provider_short"] = STUMARI_PROVIDERS[int(pid)]["short"]
+        if pid and int(pid) in MAGIC_BOWLS_PROVIDERS:
+            row["provider_short"] = MAGIC_BOWLS_PROVIDERS[int(pid)]["short"]
         else:
             row["provider_short"] = row.get("provider_name", "")
         ow = row.get("order_week", "")
@@ -598,7 +589,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             "start_date": str(r["start_date"]),
             "end_date": str(r["end_date"]),
             "provider_id": pid,
-            "provider_short": STUMARI_PROVIDERS.get(pid, {}).get("short", str(pid)),
+            "provider_short": MAGIC_BOWLS_PROVIDERS.get(pid, {}).get("short", str(pid)),
             "order_week": str(r["order_week"]),
             "order_month": week_to_month(str(r["order_week"])),
             "orders": to_native(r["orders"]),
@@ -621,7 +612,7 @@ def generate_html(data, generated_at):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>СТУМАРІ | тижневий звіт</title>
+<title>MAGIC BOWLS | тижневий звіт</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -654,24 +645,6 @@ a{{text-decoration:none;color:inherit}}
 .ms-count{{display:inline-block;background:var(--orange);color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;margin-left:4px}}
 .reset-btn{{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 11px;font-size:14px;cursor:pointer;transition:all .15s;line-height:1}}
 .reset-btn:hover{{background:var(--neg);color:#fff;border-color:var(--neg)}}
-.calc-card{{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 24px;margin-top:20px}}
-.calc-title{{font-size:15px;font-weight:700;color:var(--text);margin:0 0 16px}}
-.calc-controls{{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}}
-.calc-field label{{display:block;font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}}
-.calc-field input,.calc-field select{{padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;background:var(--bg);color:var(--text);min-width:160px}}
-.calc-field input:focus,.calc-field select:focus{{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(249,115,22,.12)}}
-.calc-store-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}}
-.calc-store{{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px}}
-.calc-store-name{{font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px}}
-.calc-store-city{{font-size:11px;color:var(--text2);margin-bottom:10px}}
-.calc-bar-wrap{{height:8px;background:rgba(0,0,0,.06);border-radius:4px;overflow:hidden;margin-bottom:8px}}
-.calc-bar{{height:100%;border-radius:4px;transition:width .3s}}
-.calc-metrics{{display:flex;justify-content:space-between;font-size:12px}}
-.calc-spent{{font-weight:700}}
-.calc-left{{font-weight:600}}
-.calc-total-row{{margin-top:16px;padding:14px 16px;background:var(--card);border:2px solid var(--orange);border-radius:10px;display:flex;flex-wrap:wrap;gap:24px;align-items:center}}
-.calc-total-label{{font-size:13px;font-weight:700;color:var(--text)}}
-.calc-total-val{{font-size:18px;font-weight:800}}
 .period-toggle-wrap{{display:flex;align-items:center;padding:0 20px;margin-top:-4px}}
 .period-select{{padding:6px 32px 6px 14px;font-size:13px;font-weight:600;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;border-radius:8px;font-family:inherit;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;transition:all .15s}}
 .period-select:hover{{border-color:var(--orange)}}
@@ -790,7 +763,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
 <header class="header">
   <div class="header-left">
     <span class="brand-dot"></span>
-    <h1>СТУМАРІ | тижневий звіт</h1>
+    <h1>MAGIC BOWLS | тижневий звіт</h1>
   </div>
   <div class="header-right">
     <div class="ms-wrap" id="city-ms"><button class="ms-btn" id="city-btn">Всі міста</button><div class="ms-panel" id="city-panel"></div></div>
@@ -868,21 +841,6 @@ body.dark .revenue-summary-table th{{background:#111827}}
       <div class="chart-card"><h3>Витрати Bolt на кампанії по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-bolt"></canvas></div></div>
     </div>
     <div class="table-wrap scroll-table" id="campaigns-wrap"></div>
-
-    <div class="calc-card" id="budget-calc">
-      <h3 class="calc-title">💰 Калькулятор бюджету на кампанії</h3>
-      <div class="calc-controls">
-        <div class="calc-field">
-          <label for="calc-budget">Бюджет на точку / міс. (₴)</label>
-          <input type="number" id="calc-budget" value="2500" min="0" step="100">
-        </div>
-        <div class="calc-field">
-          <label for="calc-period-select">Період</label>
-          <select id="calc-period-select"></select>
-        </div>
-      </div>
-      <div id="calc-results"></div>
-    </div>
   </section>
 
   <section id="orders-detail-section" class="section">
@@ -1677,68 +1635,6 @@ function renderCancelled() {{
   document.getElementById('cancelled-wrap').innerHTML = t;
 }}
 
-function renderBudgetCalc() {{
-  const ids = getFilteredStoreIds();
-  const camps = D.campaigns || [];
-
-  const periodSel = document.getElementById('calc-period-select');
-  const months = [...new Set(camps.map(c => c.order_month))].filter(Boolean).sort();
-  const curVal = periodSel.value;
-  periodSel.innerHTML = months.map(m => {{
-    const [y, mo] = m.split('-');
-    const mNames = ['Січ','Лют','Бер','Кві','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру'];
-    return '<option value="' + m + '"' + (m === curVal ? ' selected' : '') + '>' + mNames[parseInt(mo) - 1] + ' ' + y + '</option>';
-  }}).join('');
-  if (!curVal && months.length) periodSel.value = months[months.length - 1];
-
-  const selMonth = periodSel.value;
-  const budget = parseFloat(document.getElementById('calc-budget').value) || 0;
-
-  const storeSpend = {{}};
-  camps.forEach(c => {{
-    if (c.order_month !== selMonth || !ids.includes(c.provider_id)) return;
-    if (!storeSpend[c.provider_id]) storeSpend[c.provider_id] = 0;
-    storeSpend[c.provider_id] += c.provider_spend || 0;
-  }});
-
-  let html = '<div class="calc-store-grid">';
-  let totalSpent = 0, totalBudget = 0, storeCount = 0;
-
-  ids.forEach(id => {{
-    const s = D.stores[id];
-    if (!s) return;
-    const spent = Math.round(storeSpend[id] || 0);
-    totalSpent += spent;
-    totalBudget += budget;
-    storeCount++;
-    const pct = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
-    const left = budget - spent;
-    const barColor = pct >= 100 ? 'var(--neg)' : pct >= 75 ? 'var(--warn)' : 'var(--pos)';
-    const leftColor = left < 0 ? 'color:var(--neg)' : 'color:var(--pos)';
-    html += '<div class="calc-store">';
-    html += '<div class="calc-store-name">' + s.short + '</div>';
-    html += '<div class="calc-store-city">' + s.city + '</div>';
-    html += '<div class="calc-bar-wrap"><div class="calc-bar" style="width:' + pct.toFixed(1) + '%;background:' + barColor + '"></div></div>';
-    html += '<div class="calc-metrics">';
-    html += '<span class="calc-spent" style="color:var(--neg)">Витрачено: ₴' + spent.toLocaleString('uk-UA') + '</span>';
-    html += '<span class="calc-left" style="' + leftColor + '">Залишок: ₴' + left.toLocaleString('uk-UA') + '</span>';
-    html += '</div></div>';
-  }});
-  html += '</div>';
-
-  const totalLeft = totalBudget - totalSpent;
-  const totalPct = totalBudget > 0 ? (totalSpent / totalBudget * 100) : 0;
-  html += '<div class="calc-total-row">';
-  html += '<div><div class="calc-total-label">Загальний бюджет</div><div class="calc-total-val" style="color:var(--text)">₴' + totalBudget.toLocaleString('uk-UA') + '</div></div>';
-  html += '<div><div class="calc-total-label">Витрачено</div><div class="calc-total-val" style="color:var(--neg)">₴' + totalSpent.toLocaleString('uk-UA') + ' <span style="font-size:13px;font-weight:600">(' + totalPct.toFixed(1) + '%)</span></div></div>';
-  html += '<div><div class="calc-total-label">Залишок</div><div class="calc-total-val" style="color:' + (totalLeft >= 0 ? 'var(--pos)' : 'var(--neg)') + '">₴' + totalLeft.toLocaleString('uk-UA') + '</div></div>';
-  html += '</div>';
-
-  document.getElementById('calc-results').innerHTML = html;
-}}
-
-document.getElementById('calc-budget').addEventListener('input', renderBudgetCalc);
-document.getElementById('calc-period-select').addEventListener('change', renderBudgetCalc);
 
 function renderTopItems() {{
   const ids = getFilteredStoreIds();
@@ -1769,7 +1665,6 @@ function renderAll() {{
   renderRevenueChart();
   renderCampaignsChart();
   renderCampaigns();
-  renderBudgetCalc();
   renderOrdersDetail();
   renderComplaints();
   renderCancelled();
@@ -1818,11 +1713,11 @@ window.toggleDark = function() {{
   document.body.classList.toggle('dark');
   const isDark = document.body.classList.contains('dark');
   document.getElementById('theme-toggle').textContent = isDark ? '☀️' : '🌙';
-  try {{ localStorage.setItem('stumari-dark', isDark ? '1' : '0') }} catch(e) {{}}
+  try {{ localStorage.setItem('magic-bowls-dark', isDark ? '1' : '0') }} catch(e) {{}}
   Chart.defaults.color = isDark ? '#D1D5DB' : '#374151';
   renderAll();
 }};
-(function() {{ try {{ if (localStorage.getItem('stumari-dark') === '1') {{ document.body.classList.add('dark'); document.getElementById('theme-toggle').textContent = '☀️'; Chart.defaults.color = '#D1D5DB'; }} }} catch(e) {{}} }})();
+(function() {{ try {{ if (localStorage.getItem('magic-bowls-dark') === '1') {{ document.body.classList.add('dark'); document.getElementById('theme-toggle').textContent = '☀️'; Chart.defaults.color = '#D1D5DB'; }} }} catch(e) {{}} }})();
 
 document.getElementById('period-select').addEventListener('change', function() {{
   periodMode = this.value;
@@ -1846,7 +1741,7 @@ renderAll();
 
 def main():
     generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    print(f"Starting Стумарі report generation at {generated_at}")
+    print(f"Starting Magic Bowls report generation at {generated_at}")
 
     conn = connect()
     try:
@@ -1891,16 +1786,11 @@ def main():
     data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df)
     html = generate_html(data, generated_at)
 
-    out_dir = REPO_ROOT / "stumari"
+    out_dir = REPO_ROOT / "magic-bowls"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "index.html"
     out_path.write_text(html, encoding="utf-8")
     print(f"  Saved: {out_path}")
-    # Chained: generate Magic Bowls after Стумарі
-    import subprocess
-    print("\nRunning generate_magic_bowls.py...")
-    subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "generate_magic_bowls.py")], check=True)
-
     print("\nDone!")
 
 
