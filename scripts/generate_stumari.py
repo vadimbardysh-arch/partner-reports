@@ -270,6 +270,47 @@ def fetch_revenue_weekly(conn):
     """)
 
 
+
+def fetch_monthly_per_store(conn):
+    return query(conn, f"""
+    SELECT
+      f.provider_id,
+      f.provider_name,
+      f.city_name,
+      DATE_FORMAT(f.order_created_date, 'yyyy-MM') AS order_month,
+      COUNT(*) AS orders,
+      ROUND(AVG(f.order_gmv), 0) AS avg_check,
+      ROUND(AVG(f.order_actual_cooking_time_minutes), 1) AS avg_cooking,
+      SUM(CASE WHEN f.is_bad_order = true THEN 1 ELSE 0 END) AS bad_orders
+    FROM ng_delivery_spark.fact_order_delivery f
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_created_date < DATE_FORMAT(DATE_TRUNC('MONTH', CURRENT_DATE()), 'yyyy-MM-dd')
+      AND f.order_state = 'delivered'
+    GROUP BY f.provider_id, f.provider_name, f.city_name, DATE_FORMAT(f.order_created_date, 'yyyy-MM')
+    ORDER BY order_month, f.provider_id
+    """)
+
+
+def fetch_monthly_revenue(conn):
+    return query(conn, f"""
+    SELECT
+      DATE_FORMAT(f.order_created_date, 'yyyy-MM') AS order_month,
+      f.provider_id,
+      COUNT(*) AS orders,
+      ROUND(SUM(f.provider_price_after_discount), 0) AS food_revenue,
+      ROUND(SUM(f.commission_local * 1.2), 0) AS total_fee_gross,
+      ROUND(SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS refund,
+      ROUND(SUM(f.provider_price_after_discount) - SUM(f.commission_local * 1.2) - SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS net_income
+    FROM ng_delivery_spark.fact_order_delivery f
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_created_date < DATE_FORMAT(DATE_TRUNC('MONTH', CURRENT_DATE()), 'yyyy-MM-dd')
+      AND f.order_state = 'delivered'
+    GROUP BY DATE_FORMAT(f.order_created_date, 'yyyy-MM'), f.provider_id
+    ORDER BY order_month, f.provider_id
+    """)
+
 def fetch_campaigns(conn):
     return query(conn, f"""
     SELECT
@@ -330,7 +371,7 @@ TARGET_UA = {"delivery_price": "Доставка", "item_price": "Знижка �
 
 # ── Build data for HTML ──────────────────────────────────────────────────
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df=None):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df=None, monthly_df=None, monthly_revenue_df=None):
     data = {}
 
     smart_promo_order_ids = set()
@@ -370,29 +411,42 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
     weekly = dict(sorted(weekly.items(), key=lambda x: week_sort_key(x[0])))
     data["weekly"] = weekly
 
-    # --- Monthly aggregation from weekly ---
+    # --- Monthly orders (direct DB query for accuracy) ---
     monthly = {}
-    for wk, stores_data in weekly.items():
-        mk = week_to_month(wk)
-        if mk not in monthly:
-            monthly[mk] = {}
-        for pid, vals in stores_data.items():
-            if pid not in monthly[mk]:
-                monthly[mk][pid] = {"orders": 0, "_check_sum": 0, "_cook_sum": 0, "_cook_cnt": 0, "bad_orders": 0}
-            monthly[mk][pid]["orders"] += vals["orders"]
-            monthly[mk][pid]["_check_sum"] += vals["avg_check"] * vals["orders"]
-            if vals["avg_cooking"] and vals["avg_cooking"] > 0:
-                monthly[mk][pid]["_cook_sum"] += vals["avg_cooking"] * vals["orders"]
-                monthly[mk][pid]["_cook_cnt"] += vals["orders"]
-            monthly[mk][pid]["bad_orders"] += vals["bad_orders"]
-    for mk in monthly:
-        for pid in monthly[mk]:
-            d = monthly[mk][pid]
-            d["avg_check"] = round(d["_check_sum"] / d["orders"]) if d["orders"] else 0
-            d["avg_cooking"] = round(d["_cook_sum"] / d["_cook_cnt"], 1) if d["_cook_cnt"] else 0
-            del d["_check_sum"]
-            del d["_cook_sum"]
-            del d["_cook_cnt"]
+    if monthly_df is not None and len(monthly_df):
+        for _, r in monthly_df.iterrows():
+            pid = int(to_native(r["provider_id"]))
+            mk = str(r["order_month"])
+            if mk not in monthly:
+                monthly[mk] = {}
+            monthly[mk][pid] = {
+                "orders": to_native(r["orders"]),
+                "avg_check": to_native(r["avg_check"]),
+                "avg_cooking": to_native(r["avg_cooking"]),
+                "bad_orders": to_native(r["bad_orders"]),
+            }
+    else:
+        for wk, stores_data in weekly.items():
+            mk = week_to_month(wk)
+            if mk not in monthly:
+                monthly[mk] = {}
+            for pid, vals in stores_data.items():
+                if pid not in monthly[mk]:
+                    monthly[mk][pid] = {"orders": 0, "_check_sum": 0, "_cook_sum": 0, "_cook_cnt": 0, "bad_orders": 0}
+                monthly[mk][pid]["orders"] += vals["orders"]
+                monthly[mk][pid]["_check_sum"] += vals["avg_check"] * vals["orders"]
+                if vals["avg_cooking"] and vals["avg_cooking"] > 0:
+                    monthly[mk][pid]["_cook_sum"] += vals["avg_cooking"] * vals["orders"]
+                    monthly[mk][pid]["_cook_cnt"] += vals["orders"]
+                monthly[mk][pid]["bad_orders"] += vals["bad_orders"]
+        for mk in monthly:
+            for pid in monthly[mk]:
+                d = monthly[mk][pid]
+                d["avg_check"] = round(d["_check_sum"] / d["orders"]) if d["orders"] else 0
+                d["avg_cooking"] = round(d["_cook_sum"] / d["_cook_cnt"], 1) if d["_cook_cnt"] else 0
+                del d["_check_sum"]
+                del d["_cook_sum"]
+                del d["_cook_cnt"]
     monthly = dict(sorted(monthly.items(), key=lambda x: month_sort_key(x[0])))
     data["monthly"] = monthly
 
@@ -558,17 +612,31 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
     revenue = dict(sorted(revenue.items(), key=lambda x: week_sort_key(x[0])))
     data["revenue"] = revenue
 
-    # --- Monthly revenue ---
+    # --- Monthly revenue (direct DB query for accuracy) ---
     monthly_revenue = {}
-    for wk, stores_data in revenue.items():
-        mk = week_to_month(wk)
-        if mk not in monthly_revenue:
-            monthly_revenue[mk] = {}
-        for pid, vals in stores_data.items():
-            if pid not in monthly_revenue[mk]:
-                monthly_revenue[mk][pid] = {"orders": 0, "food_revenue": 0, "total_fee_gross": 0, "refund": 0, "net_income": 0}
-            for k in ("orders", "food_revenue", "total_fee_gross", "refund", "net_income"):
-                monthly_revenue[mk][pid][k] += vals.get(k, 0)
+    if monthly_revenue_df is not None and len(monthly_revenue_df):
+        for _, r in monthly_revenue_df.iterrows():
+            mk = str(r["order_month"])
+            pid = int(to_native(r["provider_id"]))
+            if mk not in monthly_revenue:
+                monthly_revenue[mk] = {}
+            monthly_revenue[mk][pid] = {
+                "orders": to_native(r["orders"]),
+                "food_revenue": to_native(r["food_revenue"]),
+                "total_fee_gross": to_native(r["total_fee_gross"]),
+                "refund": to_native(r["refund"]),
+                "net_income": to_native(r["net_income"]),
+            }
+    else:
+        for wk, stores_data in revenue.items():
+            mk = week_to_month(wk)
+            if mk not in monthly_revenue:
+                monthly_revenue[mk] = {}
+            for pid, vals in stores_data.items():
+                if pid not in monthly_revenue[mk]:
+                    monthly_revenue[mk][pid] = {"orders": 0, "food_revenue": 0, "total_fee_gross": 0, "refund": 0, "net_income": 0}
+                for k in ("orders", "food_revenue", "total_fee_gross", "refund", "net_income"):
+                    monthly_revenue[mk][pid][k] += vals.get(k, 0)
     monthly_revenue = dict(sorted(monthly_revenue.items(), key=lambda x: month_sort_key(x[0])))
     data["monthly_revenue"] = monthly_revenue
 
@@ -1878,6 +1946,14 @@ def main():
         revenue_df = fetch_revenue_weekly(conn)
         print(f"  → {len(revenue_df)} rows")
 
+        print("  Fetching monthly per-store data…")
+        monthly_df = fetch_monthly_per_store(conn)
+        print(f"  → {len(monthly_df)} rows")
+
+        print("  Fetching monthly revenue…")
+        monthly_revenue_df = fetch_monthly_revenue(conn)
+        print(f"  → {len(monthly_revenue_df)} rows")
+
         print("  Fetching campaigns…")
         campaigns_df = fetch_campaigns(conn)
         print(f"  → {len(campaigns_df)} rows")
@@ -1888,7 +1964,7 @@ def main():
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df, monthly_df=monthly_df, monthly_revenue_df=monthly_revenue_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "stumari"
