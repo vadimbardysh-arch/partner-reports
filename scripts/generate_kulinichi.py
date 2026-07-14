@@ -2448,6 +2448,7 @@ def update_root_index():
         all_partners[info["slug"]] = {"name": info["name"], "city": info["city"]}
     all_partners["burek"] = {"name": "BUREK", "city": "Львів / Ужгород"}
     all_partners["kulinichi"] = {"name": "Кулиничі", "city": "Львів / Рівне"}
+    all_partners["stumari"] = {"name": "Стумарі", "city": "Хмельницький / Черкаси / Рівне / Суми / Вінниця / Львів"}
 
     cards = ""
     for slug in sorted(all_partners, key=lambda s: all_partners[s]["name"]):

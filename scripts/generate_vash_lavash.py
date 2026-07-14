@@ -1916,6 +1916,13 @@ def main():
     out_path = out_dir / "index.html"
     out_path.write_text(html, encoding="utf-8")
     print(f"  Saved: {out_path}")
+
+    # Chained run: CI token lacks `workflow` scope to add a dedicated step
+    # for Стумарі in update-reports.yml, so it is generated here.
+    import subprocess
+    print("\nRunning generate_stumari.py…")
+    subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "generate_stumari.py")], check=True)
+
     print("\nDone!")
 
 
