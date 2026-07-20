@@ -124,7 +124,6 @@ def fetch_orders_detail(conn, provider_id):
             f.order_created_date,
             f.order_week,
             f.order_state,
-            CASE WHEN f.is_bolt_plus_order THEN 'Так' ELSE 'Ні' END AS bolt_plus,
             f.is_bolt_plus_order,
             ROUND(f.provider_price_before_discount, 2) AS food_before_discount,
             ROUND(f.total_order_item_discount, 2) AS total_discount,
@@ -146,6 +145,20 @@ def fetch_orders_detail(conn, provider_id):
           AND f.order_state = 'delivered'
         ORDER BY f.order_created_date DESC, f.order_id DESC
     """)
+
+
+def fetch_smart_promo_order_ids(conn, provider_id):
+    """Return set of order_ids that are part of a Smart Promo campaign (spend_objective LIKE 'sp_%')."""
+    df = query(conn, f"""
+        SELECT DISTINCT c.order_id
+        FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+        WHERE c.provider_id = {provider_id}
+          AND c.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+          AND c.spend_objective LIKE 'sp\\_%'
+    """)
+    if df.empty:
+        return set()
+    return set(int(x) for x in df["order_id"].dropna().tolist())
 
 
 def fetch_cancelled(conn, provider_id):
@@ -321,7 +334,10 @@ def esc(val):
 # ── HTML Generation ─────────────────────────────────────────────────────
 
 def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
-                  cancelled, complaints, generated_at, has_bp_campaign=False):
+                  cancelled, complaints, generated_at,
+                  has_bp_campaign=False, sp_order_ids=None):
+    if sp_order_ids is None:
+        sp_order_ids = set()
     if len(weekly):
         weekly = weekly.iloc[sorted(range(len(weekly)),
                                     key=lambda i: week_sort_key(weekly.iloc[i]["order_week"]))]
@@ -395,13 +411,10 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
         else:
             disc_text = "—"
 
-        if has_bp_campaign:
-            order_bp_fee = (r.get('bp_fee_net') or 0) > 0.5
-            bp_label = "Bolt Plus" if order_bp_fee else "Ні"
-            bp_class = " class='bp'" if order_bp_fee else ""
-        else:
-            bp_label = "Ні"
-            bp_class = ""
+        # Bolt Plus: use is_bolt_plus_order (customer subscription) for label
+        is_bp_customer = bool(r.get('is_bolt_plus_order'))
+        bp_label = "Bolt Plus" if is_bp_customer else "Ні"
+        bp_class = " class='bp'" if is_bp_customer else ""
 
         fee_net = r.get('fee_net', 0) or 0
         fee_gross = r.get('fee_gross', 0) or 0
@@ -412,14 +425,19 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
         total_fee = r.get('total_fee_gross', 0) or 0
 
         fee_text = f"{fee_net:,.0f} + {fee_vat:,.0f} = {fee_gross:,.0f}"
-        bp_text = f"{bp_fee_net:,.0f} + {bp_fee_vat:,.0f} = {bp_fee_gross:,.0f}" if (has_bp_campaign and bp_fee_net > 0.5) else "—"
+        bp_text = f"{bp_fee_net:,.0f} + {bp_fee_vat:,.0f} = {bp_fee_gross:,.0f}" if bp_fee_net > 0.5 else "—"
 
         state_raw = r.get('order_state', 'delivered') or 'delivered'
         state_ua = ORDER_STATE_UA.get(state_raw, state_raw)
         row_week = str(r.get('order_week', ''))
 
+        order_id = r.get('order_id')
+        is_sp = order_id is not None and int(order_id) in sp_order_ids
+        sp_badge = "<span class='sp-badge'>SMART PROMO</span>" if is_sp else ""
+        sp_attr = " data-sp='1'" if is_sp else ""
+
         orders_rows += (
-            f"<tr data-week='{esc(row_week)}'>"
+            f"<tr data-week='{esc(row_week)}'{sp_attr}>"
             f"<td>{esc(r.get('order_created_date',''))}</td>"
             f"<td>{esc(r.get('order_reference_id',''))}</td>"
             f"<td>{state_ua}</td>"
@@ -431,7 +449,7 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
             f"<td class='num sm'>{bp_text}</td>"
             f"<td class='num'>{total_fee:,.2f}</td>"
             f"<td class='num'>{r.get('refund',''):,.2f}</td>"
-            f"<td class='num highlight'>{r.get('net_income',''):,.2f}</td>"
+            f"<td class='num highlight'>{r.get('net_income',''):,.2f}{sp_badge}</td>"
             f"</tr>\n"
         )
 
@@ -474,51 +492,69 @@ def generate_html(provider_id, info, weekly, rev_weekly, orders_detail,
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
 * {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }}
+
+:root {{
+  --bg:#0f172a; --card:#1e293b; --card2:#162032; --border:#334155;
+  --text:#e2e8f0; --text2:#94a3b8; --text3:#64748b;
+  --th-bg:#334155; --th-col:#94a3b8; --td-sep:#293548;
+  --pos:#34d399; --neg:#f87171; --bp-col:#a78bfa;
+}}
+body.light {{
+  --bg:#f8fafc; --card:#ffffff; --card2:#f1f5f9; --border:#e2e8f0;
+  --text:#0f172a; --text2:#475569; --text3:#94a3b8;
+  --th-bg:#f1f5f9; --th-col:#475569; --td-sep:#f1f5f9;
+  --pos:#16a34a; --neg:#dc2626; --bp-col:#7c3aed;
+}}
+
+body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--text); padding:24px; transition:background .2s,color .2s; }}
 .header {{ text-align:center; margin-bottom:24px; }}
-.header h1 {{ font-size:26px; font-weight:700; }}
-.header .sub {{ color:#94a3b8; font-size:14px; margin-top:4px; }}
-.header .updated {{ color:#64748b; font-size:12px; margin-top:8px; }}
+.header h1 {{ font-size:26px; font-weight:700; color:var(--text); }}
+.header .sub {{ color:var(--text2); font-size:14px; margin-top:4px; }}
+.header .updated {{ color:var(--text3); font-size:12px; margin-top:8px; }}
+
+.theme-btn {{ position:fixed; top:16px; right:16px; z-index:999; background:var(--card); border:1px solid var(--border); color:var(--text2); padding:7px 14px; border-radius:8px; font-size:12px; cursor:pointer; font-family:inherit; transition:all .2s; }}
+.theme-btn:hover {{ border-color:#60a5fa; color:var(--text); }}
 
 .week-filter {{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:24px; }}
-.week-btn {{ background:#1e293b; border:1px solid #334155; color:#94a3b8; border-radius:8px; padding:8px 16px; cursor:pointer; font-size:13px; transition:all .2s; }}
-.week-btn:hover {{ border-color:#60a5fa; color:#e2e8f0; }}
+.week-btn {{ background:var(--card); border:1px solid var(--border); color:var(--text2); border-radius:8px; padding:8px 16px; cursor:pointer; font-size:13px; transition:all .2s; }}
+.week-btn:hover {{ border-color:#60a5fa; color:var(--text); }}
 .week-btn.active {{ background:#1d4ed8; border-color:#3b82f6; color:#fff; font-weight:600; }}
 
 .kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:28px; }}
-.kpi {{ background:#1e293b; border:1px solid #334155; border-radius:10px; padding:16px; text-align:center; position:relative; }}
-.kpi .value {{ font-size:26px; font-weight:700; color:#f8fafc; }}
-.kpi .label {{ font-size:11px; color:#94a3b8; margin-top:4px; }}
-.kpi.alert .value {{ color:#f87171; }}
-.kpi.green .value {{ color:#34d399; }}
+.kpi {{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; text-align:center; position:relative; }}
+.kpi .value {{ font-size:26px; font-weight:700; color:var(--text); }}
+.kpi .label {{ font-size:11px; color:var(--text2); margin-top:4px; }}
+.kpi.alert .value {{ color:var(--neg); }}
+.kpi.green .value {{ color:var(--pos); }}
 .kpi.blue .value {{ color:#60a5fa; }}
 .wow {{ display:inline-block; font-size:12px; font-weight:600; margin-left:6px; vertical-align:middle; }}
-.wow.up {{ color:#34d399; }}
-.wow.down {{ color:#f87171; }}
-.wow.neutral {{ color:#94a3b8; }}
+.wow.up {{ color:var(--pos); }}
+.wow.down {{ color:var(--neg); }}
+.wow.neutral {{ color:var(--text2); }}
 
 .charts {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:16px; margin-bottom:28px; }}
-.chart-card {{ background:#1e293b; border:1px solid #334155; border-radius:10px; padding:16px; }}
-.chart-card h3 {{ font-size:14px; color:#94a3b8; margin-bottom:12px; }}
+.chart-card {{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; }}
+.chart-card h3 {{ font-size:14px; color:var(--text2); margin-bottom:12px; }}
 canvas {{ max-height:260px; }}
 
 .section {{ margin-bottom:28px; }}
-.section h2 {{ font-size:18px; margin-bottom:12px; color:#e2e8f0; }}
-.section .count {{ color:#64748b; font-size:14px; font-weight:normal; }}
+.section h2 {{ font-size:18px; margin-bottom:12px; color:var(--text); }}
+.section .count {{ color:var(--text3); font-size:14px; font-weight:normal; }}
 
-.tbl-wrap {{ overflow-x:auto; border-radius:10px; border:1px solid #334155; }}
-table {{ width:100%; border-collapse:collapse; background:#1e293b; white-space:nowrap; }}
-th {{ background:#334155; color:#94a3b8; font-size:11px; text-transform:uppercase; padding:10px 12px; text-align:left; position:sticky; top:0; z-index:1; }}
-td {{ padding:8px 12px; border-top:1px solid #293548; font-size:13px; }}
+.tbl-wrap {{ overflow-x:auto; border-radius:10px; border:1px solid var(--border); }}
+table {{ width:100%; border-collapse:collapse; background:var(--card); white-space:nowrap; }}
+th {{ background:var(--th-bg); color:var(--th-col); font-size:11px; text-transform:uppercase; padding:10px 12px; text-align:left; position:sticky; top:0; z-index:1; }}
+td {{ padding:8px 12px; border-top:1px solid var(--td-sep); font-size:13px; color:var(--text); }}
 td.num {{ text-align:right; font-variant-numeric:tabular-nums; }}
-td.highlight {{ color:#34d399; font-weight:600; }}
-td.comment-cell {{ white-space:normal; max-width:400px; font-size:12px; color:#cbd5e1; }}
-td.bp {{ color:#a78bfa; font-weight:600; }}
-td.sm {{ font-size:11px; color:#94a3b8; }}
-tr:nth-child(even) {{ background:#1e293b; }}
-tr:nth-child(odd) {{ background:#162032; }}
+td.highlight {{ color:var(--pos); font-weight:600; }}
+td.comment-cell {{ white-space:normal; max-width:400px; font-size:12px; color:var(--text2); }}
+td.bp {{ color:var(--bp-col); font-weight:600; }}
+td.sm {{ font-size:11px; color:var(--text2); }}
+tr:nth-child(even) {{ background:var(--card); }}
+tr:nth-child(odd) {{ background:var(--card2); }}
 tr.hidden {{ display:none; }}
-.empty {{ text-align:center; color:#64748b; padding:24px; }}
+.empty {{ text-align:center; color:var(--text3); padding:24px; }}
+.sp-badge {{ display:inline-block; background:#f97316; color:#fff; font-size:9px; font-weight:700; border-radius:4px; padding:1px 5px; vertical-align:middle; letter-spacing:.3px; margin-left:4px; }}
 
 .scroll-table {{ max-height:600px; overflow-y:auto; }}
 
@@ -532,6 +568,7 @@ tr.hidden {{ display:none; }}
 </style>
 </head>
 <body>
+<button class="theme-btn" id="themeBtn" onclick="toggleTheme()">☀️ Світла тема</button>
 <div class="header">
   <h1>{info['name']}</h1>
   <div class="sub">{info['city']} — Останні {WEEKS_BACK} тижнів</div>
@@ -562,7 +599,7 @@ tr.hidden {{ display:none; }}
 
 <div class="section">
   <h2>Дохідність по замовленнях <span class="count" id="ordersCount"></span></h2>
-  <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
     <div style="display:flex;align-items:center;gap:8px">
       <label for="bp-filter" style="font-size:12px;font-weight:600;color:#94a3b8;white-space:nowrap">Bolt Plus:</label>
       <select id="bp-filter" style="padding:6px 12px;border:1px solid #334155;border-radius:8px;font-size:12px;font-family:inherit;background:#1e293b;color:#e2e8f0;cursor:pointer">
@@ -585,6 +622,14 @@ tr.hidden {{ display:none; }}
         <option value="__all__">Всі</option>
         <option value="yes">Зі знижкою</option>
         <option value="no">Без знижки</option>
+      </select>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <label for="sp-filter" style="font-size:12px;font-weight:600;color:#94a3b8;white-space:nowrap">Smart Promo:</label>
+      <select id="sp-filter" style="padding:6px 12px;border:1px solid #334155;border-radius:8px;font-size:12px;font-family:inherit;background:#1e293b;color:#e2e8f0;cursor:pointer">
+        <option value="__all__">Всі</option>
+        <option value="yes">Smart Promo</option>
+        <option value="no">Без Smart Promo</option>
       </select>
     </div>
   </div>
@@ -704,6 +749,7 @@ function avgWeighted(valKey, weightKey) {{
 let filterBP = '__all__';
 let filterState = '__all__';
 let filterDisc = '__all__';
+let filterSP = '__all__';
 
 function filterRows(tableId, week) {{
   const rows = document.querySelectorAll(`#${{tableId}} tbody tr`);
@@ -726,6 +772,11 @@ function filterRows(tableId, week) {{
         const discText = cells[5] ? cells[5].textContent.trim() : '';
         if (filterDisc === 'yes' && discText === '\u2014') show = false;
         if (filterDisc === 'no' && discText !== '\u2014') show = false;
+      }}
+      if (filterSP !== '__all__') {{
+        const isSP = r.dataset.sp === '1';
+        if (filterSP === 'yes' && !isSP) show = false;
+        if (filterSP === 'no' && isSP) show = false;
       }}
     }}
     if (show) {{
@@ -876,6 +927,33 @@ document.getElementById('disc-filter').addEventListener('change', function() {{
   document.getElementById('ordersCount').textContent = `(${{oVis}} замовлень, всі суми в \u20b4)`;
 }});
 
+document.getElementById('sp-filter').addEventListener('change', function() {{
+  filterSP = this.value;
+  const oVis = filterRows('ordersTable', getActiveWeek());
+  document.getElementById('ordersCount').textContent = `(${{oVis}} замовлень, всі суми в \u20b4)`;
+}});
+
+function toggleTheme() {{
+  const isLight = document.body.classList.toggle('light');
+  document.getElementById('themeBtn').textContent = isLight ? '\ud83c\udf19 Темна тема' : '\u2600\ufe0f Світла тема';
+  localStorage.setItem('theme_pref', isLight ? 'light' : 'dark');
+  const lightColor = '#475569'; const darkColor = '#94a3b8';
+  const lightBorder = '#e2e8f0'; const darkBorder = '#334155';
+  Chart.defaults.color = isLight ? lightColor : darkColor;
+  Chart.defaults.borderColor = isLight ? lightBorder : darkBorder;
+  [ordersChart, checkChart, cookingChart, revenueChart].forEach(c => c && c.update());
+}}
+
+(function() {{
+  const saved = localStorage.getItem('theme_pref');
+  if (saved === 'light') {{
+    document.body.classList.add('light');
+    document.getElementById('themeBtn').textContent = '\ud83c\udf19 Темна тема';
+    Chart.defaults.color = '#475569';
+    Chart.defaults.borderColor = '#e2e8f0';
+  }}
+}})();
+
 // Initial render
 updateView('all');
 </script>
@@ -899,6 +977,9 @@ def main():
             has_bp = fetch_has_bolt_plus_campaign(conn, pid)
             print(f"  Bolt Plus campaign: {'Yes' if has_bp else 'No'}")
 
+            sp_ids = fetch_smart_promo_order_ids(conn, pid)
+            print(f"  Smart Promo orders: {len(sp_ids)}")
+
             weekly = fetch_weekly_summary(conn, pid)
             print(f"  Weekly summary: {len(weekly)} weeks")
 
@@ -916,7 +997,7 @@ def main():
 
             html = generate_html(pid, info, weekly, rev_weekly, orders_detail,
                                  cancelled, complaints, generated_at,
-                                 has_bp_campaign=has_bp)
+                                 has_bp_campaign=has_bp, sp_order_ids=sp_ids)
             out_path = folder / "index.html"
             out_path.write_text(html, encoding="utf-8")
             print(f"  Saved: {out_path}")

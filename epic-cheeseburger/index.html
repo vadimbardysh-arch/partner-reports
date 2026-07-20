@@ -62,9 +62,56 @@ tr.hidden { display:none; }
   .week-filter { gap:4px; }
   .week-btn { padding:6px 10px; font-size:12px; }
 }
+
+:root {
+  --bg:#0f172a; --card:#1e293b; --card2:#162032; --border:#334155;
+  --text:#e2e8f0; --text2:#94a3b8; --text3:#64748b;
+  --th-bg:#334155; --th-col:#94a3b8; --td-sep:#293548;
+  --pos:#34d399; --neg:#f87171; --bp-col:#a78bfa;
+}
+body.light {
+  --bg:#f8fafc; --card:#ffffff; --card2:#f1f5f9; --border:#e2e8f0;
+  --text:#0f172a; --text2:#475569; --text3:#94a3b8;
+  --th-bg:#f1f5f9; --th-col:#475569; --td-sep:#f1f5f9;
+  --pos:#16a34a; --neg:#dc2626; --bp-col:#7c3aed;
+}
+body { background:var(--bg); color:var(--text); transition:background .2s,color .2s; }
+.theme-btn { position:fixed; top:16px; right:16px; z-index:999; background:var(--card); border:1px solid var(--border); color:var(--text2); padding:7px 14px; border-radius:8px; font-size:12px; cursor:pointer; font-family:inherit; transition:all .2s; }
+.theme-btn:hover { border-color:#60a5fa; color:var(--text); }
+.week-btn { background:var(--card) !important; border-color:var(--border) !important; color:var(--text2) !important; }
+.week-btn.active { background:#1d4ed8 !important; border-color:#3b82f6 !important; color:#fff !important; }
+.kpi { background:var(--card) !important; border-color:var(--border) !important; }
+.kpi .value { color:var(--text) !important; }
+.kpi.alert .value { color:var(--neg) !important; }
+.kpi.green .value { color:var(--pos) !important; }
+.kpi.blue .value { color:#60a5fa !important; }
+.kpi .label { color:var(--text2) !important; }
+.chart-card { background:var(--card) !important; border-color:var(--border) !important; }
+.chart-card h3 { color:var(--text2) !important; }
+.tbl-wrap { border-color:var(--border) !important; }
+table { background:var(--card) !important; }
+th { background:var(--th-bg) !important; color:var(--th-col) !important; }
+td { color:var(--text) !important; border-color:var(--td-sep) !important; }
+td.highlight { color:var(--pos) !important; }
+td.bp { color:var(--bp-col) !important; }
+td.sm { color:var(--text2) !important; }
+td.comment-cell { color:var(--text2) !important; }
+tr:nth-child(even) { background:var(--card) !important; }
+tr:nth-child(odd) { background:var(--card2) !important; }
+.section h2 { color:var(--text) !important; }
+.section .count { color:var(--text3) !important; }
+.header h1 { color:var(--text) !important; }
+.header .sub { color:var(--text2) !important; }
+.header .updated { color:var(--text3) !important; }
+.wow.up { color:var(--pos) !important; }
+.wow.down { color:var(--neg) !important; }
+.wow.neutral { color:var(--text2) !important; }
+.sp-badge { display:inline-block; background:#f97316; color:#fff; font-size:9px; font-weight:700; border-radius:4px; padding:1px 5px; vertical-align:middle; letter-spacing:.3px; margin-left:4px; }
+
 </style>
 </head>
 <body>
+<button class="theme-btn" id="themeBtn" onclick="toggleTheme()">☀️ Світла тема</button>
 <div class="header">
   <h1>Epic Cheeseburger</h1>
   <div class="sub">Львів — Останні 8 тижнів</div>
@@ -118,6 +165,13 @@ tr.hidden { display:none; }
         <option value="__all__">Всі</option>
         <option value="yes">Зі знижкою</option>
         <option value="no">Без знижки</option>
+      </select>
+    <div style="display:flex;align-items:center;gap:8px">
+      <label for="sp-filter" style="font-size:12px;font-weight:600;color:#94a3b8;white-space:nowrap">Smart Promo:</label>
+      <select id="sp-filter" style="padding:6px 12px;border:1px solid #334155;border-radius:8px;font-size:12px;font-family:inherit;background:#1e293b;color:#e2e8f0;cursor:pointer">
+        <option value="__all__">Всі</option>
+        <option value="yes">Smart Promo</option>
+        <option value="no">Без Smart Promo</option>
       </select>
     </div>
   </div>
@@ -842,6 +896,7 @@ function avgWeighted(valKey, weightKey) {
 let filterBP = '__all__';
 let filterState = '__all__';
 let filterDisc = '__all__';
+let filterSP = '__all__';
 
 function filterRows(tableId, week) {
   const rows = document.querySelectorAll(`#${tableId} tbody tr`);
@@ -864,6 +919,11 @@ function filterRows(tableId, week) {
         const discText = cells[5] ? cells[5].textContent.trim() : '';
         if (filterDisc === 'yes' && discText === '—') show = false;
         if (filterDisc === 'no' && discText !== '—') show = false;
+      }
+      if (filterSP !== '__all__') {
+        const isSP = r.dataset.sp === '1';
+        if (filterSP === 'yes' && !isSP) show = false;
+        if (filterSP === 'no' && isSP) show = false;
       }
     }
     if (show) {
@@ -1013,6 +1073,33 @@ document.getElementById('disc-filter').addEventListener('change', function() {
   const oVis = filterRows('ordersTable', getActiveWeek());
   document.getElementById('ordersCount').textContent = `(${oVis} замовлень, всі суми в ₴)`;
 });
+
+document.getElementById('sp-filter').addEventListener('change', function() {
+  filterSP = this.value;
+  const oVis = filterRows('ordersTable', getActiveWeek());
+  document.getElementById('ordersCount').textContent = `(${oVis} замовлень, всі суми в ₴)`;
+});
+
+function toggleTheme() {
+  const isLight = document.body.classList.toggle('light');
+  const btn = document.getElementById('themeBtn');
+  btn.textContent = isLight ? '\u2600\uFE0F Темна тема' : '\ud83c\udf19 Світла тема';
+  localStorage.setItem('theme_pref', isLight ? 'light' : 'dark');
+  Chart.defaults.color = isLight ? '#475569' : '#94a3b8';
+  Chart.defaults.borderColor = isLight ? '#e2e8f0' : '#334155';
+  [ordersChart, checkChart, cookingChart, revenueChart].forEach(c => { try { c.update(); } catch(e) {} });
+}
+
+(function() {
+  const saved = localStorage.getItem('theme_pref');
+  if (saved === 'light') {
+    document.body.classList.add('light');
+    const btn = document.getElementById('themeBtn');
+    if (btn) btn.textContent = '\u2600\uFE0F Темна тема';
+    Chart.defaults.color = '#475569';
+    Chart.defaults.borderColor = '#e2e8f0';
+  }
+})();
 
 // Initial render
 updateView('all');
