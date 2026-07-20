@@ -444,16 +444,14 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
     ops_weekly = {}
     if len(ops_df):
         ops_df["date_str"] = ops_df["date"].astype(str)
-        ops_df["dow"] = pd.to_datetime(ops_df["date"]).dt.dayofweek
-        mondays = ops_df[ops_df["dow"] == 0].copy()
-        if len(mondays) == 0:
-            mondays = ops_df.sort_values("date").drop_duplicates(subset=["provider_id"], keep="last")
-
-        for _, r in mondays.iterrows():
+        ops_df_sorted = ops_df.sort_values("date")
+        for _, r in ops_df_sorted.iterrows():
             pid = int(to_native(r["provider_id"]))
             ds = str(r["date_str"])
-            year = int(ds[:4])
-            iso_week = pd.Timestamp(ds).isocalendar().week
+            ts = pd.Timestamp(ds)
+            iso_cal = ts.isocalendar()
+            year = int(iso_cal.year)
+            iso_week = int(iso_cal.week)
             week_key = f"{year}-W{iso_week}"
             if week_key not in ops_weekly:
                 ops_weekly[week_key] = {}
