@@ -935,7 +935,7 @@ document.getElementById('sp-filter').addEventListener('change', function() {{
 
 function toggleTheme() {{
   const isLight = document.body.classList.toggle('light');
-  document.getElementById('themeBtn').textContent = isLight ? '\ud83c\udf19 Темна тема' : '\u2600\ufe0f Світла тема';
+  document.getElementById('themeBtn').textContent = isLight ? '\U0001F319 Темна тема' : '\u2600\ufe0f Світла тема';
   localStorage.setItem('theme_pref', isLight ? 'light' : 'dark');
   const lightColor = '#475569'; const darkColor = '#94a3b8';
   const lightBorder = '#e2e8f0'; const darkBorder = '#334155';
@@ -948,7 +948,7 @@ function toggleTheme() {{
   const saved = localStorage.getItem('theme_pref');
   if (saved === 'light') {{
     document.body.classList.add('light');
-    document.getElementById('themeBtn').textContent = '\ud83c\udf19 Темна тема';
+    document.getElementById('themeBtn').textContent = '\U0001F319 Темна тема';
     Chart.defaults.color = '#475569';
     Chart.defaults.borderColor = '#e2e8f0';
   }}
