@@ -7,61 +7,6 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f172a; color:#e2e8f0; padding:24px; }
-.header { text-align:center; margin-bottom:24px; }
-.header h1 { font-size:26px; font-weight:700; }
-.header .sub { color:#94a3b8; font-size:14px; margin-top:4px; }
-.header .updated { color:#64748b; font-size:12px; margin-top:8px; }
-
-.week-filter { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:24px; }
-.week-btn { background:#1e293b; border:1px solid #334155; color:#94a3b8; border-radius:8px; padding:8px 16px; cursor:pointer; font-size:13px; transition:all .2s; }
-.week-btn:hover { border-color:#60a5fa; color:#e2e8f0; }
-.week-btn.active { background:#1d4ed8; border-color:#3b82f6; color:#fff; font-weight:600; }
-
-.kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:28px; }
-.kpi { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:16px; text-align:center; position:relative; }
-.kpi .value { font-size:26px; font-weight:700; color:#f8fafc; }
-.kpi .label { font-size:11px; color:#94a3b8; margin-top:4px; }
-.kpi.alert .value { color:#f87171; }
-.kpi.green .value { color:#34d399; }
-.kpi.blue .value { color:#60a5fa; }
-.wow { display:inline-block; font-size:12px; font-weight:600; margin-left:6px; vertical-align:middle; }
-.wow.up { color:#34d399; }
-.wow.down { color:#f87171; }
-.wow.neutral { color:#94a3b8; }
-
-.charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:16px; margin-bottom:28px; }
-.chart-card { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:16px; }
-.chart-card h3 { font-size:14px; color:#94a3b8; margin-bottom:12px; }
-canvas { max-height:260px; }
-
-.section { margin-bottom:28px; }
-.section h2 { font-size:18px; margin-bottom:12px; color:#e2e8f0; }
-.section .count { color:#64748b; font-size:14px; font-weight:normal; }
-
-.tbl-wrap { overflow-x:auto; border-radius:10px; border:1px solid #334155; }
-table { width:100%; border-collapse:collapse; background:#1e293b; white-space:nowrap; }
-th { background:#334155; color:#94a3b8; font-size:11px; text-transform:uppercase; padding:10px 12px; text-align:left; position:sticky; top:0; z-index:1; }
-td { padding:8px 12px; border-top:1px solid #293548; font-size:13px; }
-td.num { text-align:right; font-variant-numeric:tabular-nums; }
-td.highlight { color:#34d399; font-weight:600; }
-td.comment-cell { white-space:normal; max-width:400px; font-size:12px; color:#cbd5e1; }
-td.bp { color:#a78bfa; font-weight:600; }
-td.sm { font-size:11px; color:#94a3b8; }
-tr:nth-child(even) { background:#1e293b; }
-tr:nth-child(odd) { background:#162032; }
-tr.hidden { display:none; }
-.empty { text-align:center; color:#64748b; padding:24px; }
-
-.scroll-table { max-height:600px; overflow-y:auto; }
-
-@media(max-width:600px) {
-  .charts { grid-template-columns:1fr; }
-  .kpi-grid { grid-template-columns:repeat(2,1fr); }
-  body { padding:12px; }
-  .week-filter { gap:4px; }
-  .week-btn { padding:6px 10px; font-size:12px; }
-}
 
 :root {
   --bg:#0f172a; --card:#1e293b; --card2:#162032; --border:#334155;
@@ -75,39 +20,66 @@ body.light {
   --th-bg:#f1f5f9; --th-col:#475569; --td-sep:#f1f5f9;
   --pos:#16a34a; --neg:#dc2626; --bp-col:#7c3aed;
 }
-body { background:var(--bg); color:var(--text); transition:background .2s,color .2s; }
+
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--text); padding:24px; transition:background .2s,color .2s; }
+.header { text-align:center; margin-bottom:24px; }
+.header h1 { font-size:26px; font-weight:700; color:var(--text); }
+.header .sub { color:var(--text2); font-size:14px; margin-top:4px; }
+.header .updated { color:var(--text3); font-size:12px; margin-top:8px; }
+
 .theme-btn { position:fixed; top:16px; right:16px; z-index:999; background:var(--card); border:1px solid var(--border); color:var(--text2); padding:7px 14px; border-radius:8px; font-size:12px; cursor:pointer; font-family:inherit; transition:all .2s; }
 .theme-btn:hover { border-color:#60a5fa; color:var(--text); }
-.week-btn { background:var(--card) !important; border-color:var(--border) !important; color:var(--text2) !important; }
-.week-btn.active { background:#1d4ed8 !important; border-color:#3b82f6 !important; color:#fff !important; }
-.kpi { background:var(--card) !important; border-color:var(--border) !important; }
-.kpi .value { color:var(--text) !important; }
-.kpi.alert .value { color:var(--neg) !important; }
-.kpi.green .value { color:var(--pos) !important; }
-.kpi.blue .value { color:#60a5fa !important; }
-.kpi .label { color:var(--text2) !important; }
-.chart-card { background:var(--card) !important; border-color:var(--border) !important; }
-.chart-card h3 { color:var(--text2) !important; }
-.tbl-wrap { border-color:var(--border) !important; }
-table { background:var(--card) !important; }
-th { background:var(--th-bg) !important; color:var(--th-col) !important; }
-td { color:var(--text) !important; border-color:var(--td-sep) !important; }
-td.highlight { color:var(--pos) !important; }
-td.bp { color:var(--bp-col) !important; }
-td.sm { color:var(--text2) !important; }
-td.comment-cell { color:var(--text2) !important; }
-tr:nth-child(even) { background:var(--card) !important; }
-tr:nth-child(odd) { background:var(--card2) !important; }
-.section h2 { color:var(--text) !important; }
-.section .count { color:var(--text3) !important; }
-.header h1 { color:var(--text) !important; }
-.header .sub { color:var(--text2) !important; }
-.header .updated { color:var(--text3) !important; }
-.wow.up { color:var(--pos) !important; }
-.wow.down { color:var(--neg) !important; }
-.wow.neutral { color:var(--text2) !important; }
+
+.week-filter { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:24px; }
+.week-btn { background:var(--card); border:1px solid var(--border); color:var(--text2); border-radius:8px; padding:8px 16px; cursor:pointer; font-size:13px; transition:all .2s; }
+.week-btn:hover { border-color:#60a5fa; color:var(--text); }
+.week-btn.active { background:#1d4ed8; border-color:#3b82f6; color:#fff; font-weight:600; }
+
+.kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:28px; }
+.kpi { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; text-align:center; position:relative; }
+.kpi .value { font-size:26px; font-weight:700; color:var(--text); }
+.kpi .label { font-size:11px; color:var(--text2); margin-top:4px; }
+.kpi.alert .value { color:var(--neg); }
+.kpi.green .value { color:var(--pos); }
+.kpi.blue .value { color:#60a5fa; }
+.wow { display:inline-block; font-size:12px; font-weight:600; margin-left:6px; vertical-align:middle; }
+.wow.up { color:var(--pos); }
+.wow.down { color:var(--neg); }
+.wow.neutral { color:var(--text2); }
+
+.charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:16px; margin-bottom:28px; }
+.chart-card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; }
+.chart-card h3 { font-size:14px; color:var(--text2); margin-bottom:12px; }
+canvas { max-height:260px; }
+
+.section { margin-bottom:28px; }
+.section h2 { font-size:18px; margin-bottom:12px; color:var(--text); }
+.section .count { color:var(--text3); font-size:14px; font-weight:normal; }
+
+.tbl-wrap { overflow-x:auto; border-radius:10px; border:1px solid var(--border); }
+table { width:100%; border-collapse:collapse; background:var(--card); white-space:nowrap; }
+th { background:var(--th-bg); color:var(--th-col); font-size:11px; text-transform:uppercase; padding:10px 12px; text-align:left; position:sticky; top:0; z-index:1; }
+td { padding:8px 12px; border-top:1px solid var(--td-sep); font-size:13px; color:var(--text); }
+td.num { text-align:right; font-variant-numeric:tabular-nums; }
+td.highlight { color:var(--pos); font-weight:600; }
+td.comment-cell { white-space:normal; max-width:400px; font-size:12px; color:var(--text2); }
+td.bp { color:var(--bp-col); font-weight:600; }
+td.sm { font-size:11px; color:var(--text2); }
+tr:nth-child(even) { background:var(--card); }
+tr:nth-child(odd) { background:var(--card2); }
+tr.hidden { display:none; }
+.empty { text-align:center; color:var(--text3); padding:24px; }
 .sp-badge { display:inline-block; background:#f97316; color:#fff; font-size:9px; font-weight:700; border-radius:4px; padding:1px 5px; vertical-align:middle; letter-spacing:.3px; margin-left:4px; }
 
+.scroll-table { max-height:600px; overflow-y:auto; }
+
+@media(max-width:600px) {
+  .charts { grid-template-columns:1fr; }
+  .kpi-grid { grid-template-columns:repeat(2,1fr); }
+  body { padding:12px; }
+  .week-filter { gap:4px; }
+  .week-btn { padding:6px 10px; font-size:12px; }
+}
 </style>
 </head>
 <body>
@@ -115,7 +87,7 @@ tr:nth-child(odd) { background:var(--card2) !important; }
 <div class="header">
   <h1>TEDDY</h1>
   <div class="sub">Львів — Останні 8 тижнів</div>
-  <div class="updated">Оновлено: 2026-07-20 11:49 UTC</div>
+  <div class="updated">Оновлено: 2026-07-20 13:52 UTC</div>
 </div>
 
 <div class="week-filter" id="weekFilter">
@@ -142,7 +114,7 @@ tr:nth-child(odd) { background:var(--card2) !important; }
 
 <div class="section">
   <h2>Дохідність по замовленнях <span class="count" id="ordersCount"></span></h2>
-  <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
     <div style="display:flex;align-items:center;gap:8px">
       <label for="bp-filter" style="font-size:12px;font-weight:600;color:#94a3b8;white-space:nowrap">Bolt Plus:</label>
       <select id="bp-filter" style="padding:6px 12px;border:1px solid #334155;border-radius:8px;font-size:12px;font-family:inherit;background:#1e293b;color:#e2e8f0;cursor:pointer">
@@ -166,6 +138,7 @@ tr:nth-child(odd) { background:var(--card2) !important; }
         <option value="yes">Зі знижкою</option>
         <option value="no">Без знижки</option>
       </select>
+    </div>
     <div style="display:flex;align-items:center;gap:8px">
       <label for="sp-filter" style="font-size:12px;font-weight:600;color:#94a3b8;white-space:nowrap">Smart Promo:</label>
       <select id="sp-filter" style="padding:6px 12px;border:1px solid #334155;border-radius:8px;font-size:12px;font-family:inherit;background:#1e293b;color:#e2e8f0;cursor:pointer">
@@ -184,12 +157,12 @@ tr:nth-child(odd) { background:var(--card2) !important; }
         <th>Повернення</th><th>Чистий дохід</th>
       </tr></thead>
       <tbody><tr data-week='2026-W29'><td>2026-07-19T00:00:00.000</td><td>YXURP</td><td>Доставлено</td><td>Ні</td><td class='num'>1,179.00</td><td class='num'>Bolt: 236</td><td class='num'>943.20</td><td class='num sm'>342 + 68 = 410</td><td class='num sm'>—</td><td class='num'>410.29</td><td class='num'>0.00</td><td class='num highlight'>532.91</td></tr>
-<tr data-week='2026-W29'><td>2026-07-19T00:00:00.000</td><td>QJJEL</td><td>Доставлено</td><td>Ні</td><td class='num'>1,398.00</td><td class='num'>Bolt: 195</td><td class='num'>1,258.20</td><td class='num sm'>405 + 81 = 486</td><td class='num sm'>—</td><td class='num'>486.50</td><td class='num'>0.00</td><td class='num highlight'>771.70</td></tr>
+<tr data-week='2026-W29'><td>2026-07-19T00:00:00.000</td><td>QJJEL</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>1,398.00</td><td class='num'>Bolt: 195</td><td class='num'>1,258.20</td><td class='num sm'>405 + 81 = 486</td><td class='num sm'>—</td><td class='num'>486.50</td><td class='num'>0.00</td><td class='num highlight'>771.70</td></tr>
 <tr data-week='2026-W29'><td>2026-07-19T00:00:00.000</td><td>ASNUZ</td><td>Доставлено</td><td>Ні</td><td class='num'>1,300.00</td><td class='num'>Bolt: 130</td><td class='num'>1,170.00</td><td class='num sm'>377 + 75 = 452</td><td class='num sm'>—</td><td class='num'>452.40</td><td class='num'>0.00</td><td class='num highlight'>717.60</td></tr>
 <tr data-week='2026-W29'><td>2026-07-19T00:00:00.000</td><td>CABOD</td><td>Доставлено</td><td>Ні</td><td class='num'>1,261.00</td><td class='num'>—</td><td class='num'>1,261.00</td><td class='num sm'>366 + 73 = 439</td><td class='num sm'>—</td><td class='num'>438.83</td><td class='num'>0.00</td><td class='num highlight'>822.17</td></tr>
 <tr data-week='2026-W29'><td>2026-07-18T00:00:00.000</td><td>RAGLD</td><td>Доставлено</td><td>Ні</td><td class='num'>827.00</td><td class='num'>Bolt: 83</td><td class='num'>744.30</td><td class='num sm'>240 + 48 = 288</td><td class='num sm'>—</td><td class='num'>287.80</td><td class='num'>0.00</td><td class='num highlight'>456.50</td></tr>
 <tr data-week='2026-W29'><td>2026-07-18T00:00:00.000</td><td>ISQHL</td><td>Доставлено</td><td>Ні</td><td class='num'>646.00</td><td class='num'>—</td><td class='num'>646.00</td><td class='num sm'>187 + 37 = 225</td><td class='num sm'>—</td><td class='num'>224.81</td><td class='num'>0.00</td><td class='num highlight'>421.19</td></tr>
-<tr data-week='2026-W29'><td>2026-07-18T00:00:00.000</td><td>6C9EY</td><td>Доставлено</td><td>Ні</td><td class='num'>1,811.00</td><td class='num'>Bolt: 26</td><td class='num'>1,811.00</td><td class='num sm'>525 + 105 = 630</td><td class='num sm'>—</td><td class='num'>630.23</td><td class='num'>0.00</td><td class='num highlight'>1,180.77</td></tr>
+<tr data-week='2026-W29'><td>2026-07-18T00:00:00.000</td><td>6C9EY</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>1,811.00</td><td class='num'>Bolt: 26</td><td class='num'>1,811.00</td><td class='num sm'>525 + 105 = 630</td><td class='num sm'>—</td><td class='num'>630.23</td><td class='num'>0.00</td><td class='num highlight'>1,180.77</td></tr>
 <tr data-week='2026-W29'><td>2026-07-18T00:00:00.000</td><td>X7F2B</td><td>Доставлено</td><td>Ні</td><td class='num'>413.00</td><td class='num'>—</td><td class='num'>413.00</td><td class='num sm'>120 + 24 = 144</td><td class='num sm'>—</td><td class='num'>143.72</td><td class='num'>0.00</td><td class='num highlight'>269.28</td></tr>
 <tr data-week='2026-W29'><td>2026-07-18T00:00:00.000</td><td>XISCP</td><td>Доставлено</td><td>Ні</td><td class='num'>3,330.00</td><td class='num'>Bolt: 666</td><td class='num'>2,664.00</td><td class='num sm'>966 + 193 = 1,159</td><td class='num sm'>—</td><td class='num'>1,158.84</td><td class='num'>0.00</td><td class='num highlight'>1,505.16</td></tr>
 <tr data-week='2026-W29'><td>2026-07-18T00:00:00.000</td><td>7QMKA</td><td>Доставлено</td><td>Ні</td><td class='num'>1,541.00</td><td class='num'>Bolt: 308</td><td class='num'>1,232.80</td><td class='num sm'>447 + 89 = 536</td><td class='num sm'>—</td><td class='num'>536.27</td><td class='num'>0.00</td><td class='num highlight'>696.53</td></tr>
@@ -197,24 +170,24 @@ tr:nth-child(odd) { background:var(--card2) !important; }
 <tr data-week='2026-W29'><td>2026-07-17T00:00:00.000</td><td>8GJYB</td><td>Доставлено</td><td>Ні</td><td class='num'>2,185.00</td><td class='num'>Bolt: 218</td><td class='num'>1,966.50</td><td class='num sm'>634 + 127 = 760</td><td class='num sm'>—</td><td class='num'>760.38</td><td class='num'>0.00</td><td class='num highlight'>1,206.12</td></tr>
 <tr data-week='2026-W29'><td>2026-07-16T00:00:00.000</td><td>SFFHT</td><td>Доставлено</td><td>Ні</td><td class='num'>1,283.00</td><td class='num'>Bolt: 257</td><td class='num'>1,026.40</td><td class='num sm'>372 + 74 = 446</td><td class='num sm'>—</td><td class='num'>446.48</td><td class='num'>0.00</td><td class='num highlight'>579.92</td></tr>
 <tr data-week='2026-W29'><td>2026-07-15T00:00:00.000</td><td>24U3I</td><td>Доставлено</td><td>Ні</td><td class='num'>1,028.00</td><td class='num'>—</td><td class='num'>1,028.00</td><td class='num sm'>298 + 60 = 358</td><td class='num sm'>—</td><td class='num'>357.74</td><td class='num'>0.00</td><td class='num highlight'>670.26</td></tr>
-<tr data-week='2026-W29'><td>2026-07-15T00:00:00.000</td><td>2IAU1</td><td>Доставлено</td><td>Ні</td><td class='num'>1,123.00</td><td class='num'>Bolt: 112</td><td class='num'>1,010.70</td><td class='num sm'>326 + 65 = 391</td><td class='num sm'>—</td><td class='num'>390.80</td><td class='num'>0.00</td><td class='num highlight'>619.90</td></tr>
+<tr data-week='2026-W29'><td>2026-07-15T00:00:00.000</td><td>2IAU1</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>1,123.00</td><td class='num'>Bolt: 112</td><td class='num'>1,010.70</td><td class='num sm'>326 + 65 = 391</td><td class='num sm'>—</td><td class='num'>390.80</td><td class='num'>0.00</td><td class='num highlight'>619.90</td></tr>
 <tr data-week='2026-W29'><td>2026-07-15T00:00:00.000</td><td>U62BI</td><td>Доставлено</td><td>Ні</td><td class='num'>558.00</td><td class='num'>—</td><td class='num'>558.00</td><td class='num sm'>162 + 32 = 194</td><td class='num sm'>—</td><td class='num'>194.18</td><td class='num'>0.00</td><td class='num highlight'>363.82</td></tr>
 <tr data-week='2026-W29'><td>2026-07-13T00:00:00.000</td><td>JRREJ</td><td>Доставлено</td><td>Ні</td><td class='num'>1,122.00</td><td class='num'>Bolt: 112</td><td class='num'>1,009.80</td><td class='num sm'>325 + 65 = 390</td><td class='num sm'>—</td><td class='num'>390.46</td><td class='num'>0.00</td><td class='num highlight'>619.34</td></tr>
 <tr data-week='2026-W29'><td>2026-07-13T00:00:00.000</td><td>JN5G8</td><td>Доставлено</td><td>Ні</td><td class='num'>977.00</td><td class='num'>Bolt: 98</td><td class='num'>879.30</td><td class='num sm'>283 + 57 = 340</td><td class='num sm'>—</td><td class='num'>340.00</td><td class='num'>0.00</td><td class='num highlight'>539.30</td></tr>
 <tr data-week='2026-W29'><td>2026-07-13T00:00:00.000</td><td>H14UV</td><td>Доставлено</td><td>Ні</td><td class='num'>965.00</td><td class='num'>Bolt: 96</td><td class='num'>868.50</td><td class='num sm'>280 + 56 = 336</td><td class='num sm'>—</td><td class='num'>335.82</td><td class='num'>0.00</td><td class='num highlight'>532.68</td></tr>
 <tr data-week='2026-W29'><td>2026-07-13T00:00:00.000</td><td>Q5QQJ</td><td>Доставлено</td><td>Ні</td><td class='num'>1,788.00</td><td class='num'>Bolt: 547</td><td class='num'>1,251.60</td><td class='num sm'>519 + 104 = 622</td><td class='num sm'>—</td><td class='num'>622.22</td><td class='num'>1,014.30</td><td class='num highlight'>-384.92</td></tr>
-<tr data-week='2026-W28'><td>2026-07-12T00:00:00.000</td><td>UUKOR</td><td>Доставлено</td><td>Ні</td><td class='num'>1,059.00</td><td class='num'>Bolt: 106</td><td class='num'>953.10</td><td class='num sm'>307 + 61 = 369</td><td class='num sm'>—</td><td class='num'>368.53</td><td class='num'>0.00</td><td class='num highlight'>584.57</td></tr>
-<tr data-week='2026-W28'><td>2026-07-12T00:00:00.000</td><td>NCQAO</td><td>Доставлено</td><td>Ні</td><td class='num'>1,083.00</td><td class='num'>—</td><td class='num'>1,083.00</td><td class='num sm'>314 + 63 = 377</td><td class='num sm'>—</td><td class='num'>376.88</td><td class='num'>0.00</td><td class='num highlight'>706.12</td></tr>
+<tr data-week='2026-W28'><td>2026-07-12T00:00:00.000</td><td>UUKOR</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>1,059.00</td><td class='num'>Bolt: 106</td><td class='num'>953.10</td><td class='num sm'>307 + 61 = 369</td><td class='num sm'>—</td><td class='num'>368.53</td><td class='num'>0.00</td><td class='num highlight'>584.57</td></tr>
+<tr data-week='2026-W28'><td>2026-07-12T00:00:00.000</td><td>NCQAO</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>1,083.00</td><td class='num'>—</td><td class='num'>1,083.00</td><td class='num sm'>314 + 63 = 377</td><td class='num sm'>—</td><td class='num'>376.88</td><td class='num'>0.00</td><td class='num highlight'>706.12</td></tr>
 <tr data-week='2026-W28'><td>2026-07-12T00:00:00.000</td><td>JQNFD</td><td>Доставлено</td><td>Ні</td><td class='num'>1,598.00</td><td class='num'>Bolt: 320</td><td class='num'>1,278.40</td><td class='num sm'>463 + 93 = 556</td><td class='num sm'>—</td><td class='num'>556.10</td><td class='num'>0.00</td><td class='num highlight'>722.30</td></tr>
 <tr data-week='2026-W28'><td>2026-07-11T00:00:00.000</td><td>0OR6Z</td><td>Доставлено</td><td>Ні</td><td class='num'>1,210.00</td><td class='num'>Bolt: 121</td><td class='num'>1,089.00</td><td class='num sm'>351 + 70 = 421</td><td class='num sm'>—</td><td class='num'>421.08</td><td class='num'>0.00</td><td class='num highlight'>667.92</td></tr>
 <tr data-week='2026-W28'><td>2026-07-11T00:00:00.000</td><td>KCVL4</td><td>Доставлено</td><td>Ні</td><td class='num'>2,359.00</td><td class='num'>Bolt: 236</td><td class='num'>2,123.10</td><td class='num sm'>684 + 137 = 821</td><td class='num sm'>—</td><td class='num'>820.93</td><td class='num'>0.00</td><td class='num highlight'>1,302.17</td></tr>
-<tr data-week='2026-W28'><td>2026-07-10T00:00:00.000</td><td>9GTD4</td><td>Доставлено</td><td>Ні</td><td class='num'>1,233.00</td><td class='num'>Bolt: 123</td><td class='num'>1,109.70</td><td class='num sm'>358 + 72 = 429</td><td class='num sm'>—</td><td class='num'>429.08</td><td class='num'>0.00</td><td class='num highlight'>680.62</td></tr>
-<tr data-week='2026-W28'><td>2026-07-10T00:00:00.000</td><td>DKWL0</td><td>Доставлено</td><td>Ні</td><td class='num'>1,684.00</td><td class='num'>Bolt: 168</td><td class='num'>1,515.60</td><td class='num sm'>488 + 98 = 586</td><td class='num sm'>—</td><td class='num'>586.03</td><td class='num'>0.00</td><td class='num highlight'>929.57</td></tr>
-<tr data-week='2026-W28'><td>2026-07-10T00:00:00.000</td><td>ZVGEG</td><td>Доставлено</td><td>Ні</td><td class='num'>1,261.00</td><td class='num'>—</td><td class='num'>1,261.00</td><td class='num sm'>366 + 73 = 439</td><td class='num sm'>—</td><td class='num'>438.83</td><td class='num'>0.00</td><td class='num highlight'>822.17</td></tr>
+<tr data-week='2026-W28'><td>2026-07-10T00:00:00.000</td><td>9GTD4</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>1,233.00</td><td class='num'>Bolt: 123</td><td class='num'>1,109.70</td><td class='num sm'>358 + 72 = 429</td><td class='num sm'>—</td><td class='num'>429.08</td><td class='num'>0.00</td><td class='num highlight'>680.62</td></tr>
+<tr data-week='2026-W28'><td>2026-07-10T00:00:00.000</td><td>DKWL0</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>1,684.00</td><td class='num'>Bolt: 168</td><td class='num'>1,515.60</td><td class='num sm'>488 + 98 = 586</td><td class='num sm'>—</td><td class='num'>586.03</td><td class='num'>0.00</td><td class='num highlight'>929.57</td></tr>
+<tr data-week='2026-W28'><td>2026-07-10T00:00:00.000</td><td>ZVGEG</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>1,261.00</td><td class='num'>—</td><td class='num'>1,261.00</td><td class='num sm'>366 + 73 = 439</td><td class='num sm'>—</td><td class='num'>438.83</td><td class='num'>0.00</td><td class='num highlight'>822.17</td></tr>
 <tr data-week='2026-W28'><td>2026-07-10T00:00:00.000</td><td>XOC09</td><td>Доставлено</td><td>Ні</td><td class='num'>2,031.00</td><td class='num'>Bolt: 406</td><td class='num'>1,624.80</td><td class='num sm'>589 + 118 = 707</td><td class='num sm'>—</td><td class='num'>706.79</td><td class='num'>0.00</td><td class='num highlight'>918.01</td></tr>
 <tr data-week='2026-W28'><td>2026-07-10T00:00:00.000</td><td>I7O0F</td><td>Доставлено</td><td>Ні</td><td class='num'>1,935.00</td><td class='num'>—</td><td class='num'>1,935.00</td><td class='num sm'>561 + 112 = 673</td><td class='num sm'>—</td><td class='num'>673.38</td><td class='num'>0.00</td><td class='num highlight'>1,261.62</td></tr>
 <tr data-week='2026-W28'><td>2026-07-09T00:00:00.000</td><td>19OMT</td><td>Доставлено</td><td>Ні</td><td class='num'>1,264.00</td><td class='num'>Bolt: 126</td><td class='num'>1,137.60</td><td class='num sm'>367 + 73 = 440</td><td class='num sm'>—</td><td class='num'>439.87</td><td class='num'>0.00</td><td class='num highlight'>697.73</td></tr>
-<tr data-week='2026-W28'><td>2026-07-09T00:00:00.000</td><td>T8LCP</td><td>Доставлено</td><td>Ні</td><td class='num'>2,434.00</td><td class='num'>—</td><td class='num'>2,434.00</td><td class='num sm'>706 + 141 = 847</td><td class='num sm'>—</td><td class='num'>847.03</td><td class='num'>0.00</td><td class='num highlight'>1,586.97</td></tr>
+<tr data-week='2026-W28'><td>2026-07-09T00:00:00.000</td><td>T8LCP</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>2,434.00</td><td class='num'>—</td><td class='num'>2,434.00</td><td class='num sm'>706 + 141 = 847</td><td class='num sm'>—</td><td class='num'>847.03</td><td class='num'>0.00</td><td class='num highlight'>1,586.97</td></tr>
 <tr data-week='2026-W28'><td>2026-07-09T00:00:00.000</td><td>4JRKU</td><td>Доставлено</td><td>Ні</td><td class='num'>1,167.00</td><td class='num'>—</td><td class='num'>1,167.00</td><td class='num sm'>338 + 68 = 406</td><td class='num sm'>—</td><td class='num'>406.12</td><td class='num'>0.00</td><td class='num highlight'>760.88</td></tr>
 <tr data-week='2026-W28'><td>2026-07-08T00:00:00.000</td><td>P1GMC</td><td>Доставлено</td><td>Ні</td><td class='num'>1,028.00</td><td class='num'>—</td><td class='num'>1,028.00</td><td class='num sm'>298 + 60 = 358</td><td class='num sm'>—</td><td class='num'>357.74</td><td class='num'>0.00</td><td class='num highlight'>670.26</td></tr>
 <tr data-week='2026-W28'><td>2026-07-08T00:00:00.000</td><td>TY3UD</td><td>Доставлено</td><td>Ні</td><td class='num'>646.00</td><td class='num'>—</td><td class='num'>646.00</td><td class='num sm'>187 + 37 = 225</td><td class='num sm'>—</td><td class='num'>224.81</td><td class='num'>0.00</td><td class='num highlight'>421.19</td></tr>
@@ -233,7 +206,7 @@ tr:nth-child(odd) { background:var(--card2) !important; }
 <tr data-week='2026-W27'><td>2026-06-29T00:00:00.000</td><td>A4A02</td><td>Доставлено</td><td>Ні</td><td class='num'>644.00</td><td class='num'>—</td><td class='num'>644.00</td><td class='num sm'>187 + 37 = 224</td><td class='num sm'>—</td><td class='num'>224.11</td><td class='num'>0.00</td><td class='num highlight'>419.89</td></tr>
 <tr data-week='2026-W27'><td>2026-06-29T00:00:00.000</td><td>32FKO</td><td>Доставлено</td><td>Ні</td><td class='num'>1,713.00</td><td class='num'>—</td><td class='num'>1,713.00</td><td class='num sm'>497 + 99 = 596</td><td class='num sm'>—</td><td class='num'>596.12</td><td class='num'>0.00</td><td class='num highlight'>1,116.88</td></tr>
 <tr data-week='2026-W27'><td>2026-06-29T00:00:00.000</td><td>X9CAP</td><td>Доставлено</td><td>Ні</td><td class='num'>1,611.00</td><td class='num'>—</td><td class='num'>1,611.00</td><td class='num sm'>467 + 93 = 561</td><td class='num sm'>—</td><td class='num'>560.63</td><td class='num'>0.00</td><td class='num highlight'>1,050.37</td></tr>
-<tr data-week='2026-W27'><td>2026-06-29T00:00:00.000</td><td>UUX1L</td><td>Доставлено</td><td>Ні</td><td class='num'>1,306.00</td><td class='num'>Bolt: 261</td><td class='num'>1,044.80</td><td class='num sm'>379 + 76 = 454</td><td class='num sm'>—</td><td class='num'>454.49</td><td class='num'>0.00</td><td class='num highlight'>590.31</td></tr>
+<tr data-week='2026-W27'><td>2026-06-29T00:00:00.000</td><td>UUX1L</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>1,306.00</td><td class='num'>Bolt: 261</td><td class='num'>1,044.80</td><td class='num sm'>379 + 76 = 454</td><td class='num sm'>—</td><td class='num'>454.49</td><td class='num'>0.00</td><td class='num highlight'>590.31</td></tr>
 <tr data-week='2026-W26'><td>2026-06-26T00:00:00.000</td><td>UY7O9</td><td>Доставлено</td><td>Ні</td><td class='num'>1,261.00</td><td class='num'>Bolt: 252</td><td class='num'>1,008.80</td><td class='num sm'>366 + 73 = 439</td><td class='num sm'>—</td><td class='num'>438.83</td><td class='num'>0.00</td><td class='num highlight'>569.97</td></tr>
 <tr data-week='2026-W26'><td>2026-06-24T00:00:00.000</td><td>YMO84</td><td>Доставлено</td><td>Ні</td><td class='num'>1,192.00</td><td class='num'>Bolt: 238</td><td class='num'>953.60</td><td class='num sm'>346 + 69 = 415</td><td class='num sm'>—</td><td class='num'>414.82</td><td class='num'>0.00</td><td class='num highlight'>538.78</td></tr>
 <tr data-week='2026-W25'><td>2026-06-21T00:00:00.000</td><td>HISI0</td><td>Доставлено</td><td>Ні</td><td class='num'>1,116.00</td><td class='num'>Bolt: 223</td><td class='num'>892.80</td><td class='num sm'>324 + 65 = 388</td><td class='num sm'>—</td><td class='num'>388.37</td><td class='num'>0.00</td><td class='num highlight'>504.43</td></tr>
@@ -246,10 +219,10 @@ tr:nth-child(odd) { background:var(--card2) !important; }
 <tr data-week='2026-W25'><td>2026-06-20T00:00:00.000</td><td>3GA4R</td><td>Доставлено</td><td>Ні</td><td class='num'>1,507.00</td><td class='num'>Bolt: 301</td><td class='num'>1,205.60</td><td class='num sm'>437 + 87 = 524</td><td class='num sm'>—</td><td class='num'>524.44</td><td class='num'>0.00</td><td class='num highlight'>681.16</td></tr>
 <tr data-week='2026-W25'><td>2026-06-19T00:00:00.000</td><td>5XPOH</td><td>Доставлено</td><td>Ні</td><td class='num'>1,730.00</td><td class='num'>—</td><td class='num'>1,730.00</td><td class='num sm'>502 + 100 = 602</td><td class='num sm'>—</td><td class='num'>602.04</td><td class='num'>0.00</td><td class='num highlight'>1,127.96</td></tr>
 <tr data-week='2026-W25'><td>2026-06-19T00:00:00.000</td><td>SYVEY</td><td>Доставлено</td><td>Ні</td><td class='num'>1,946.00</td><td class='num'>—</td><td class='num'>1,946.00</td><td class='num sm'>564 + 113 = 677</td><td class='num sm'>—</td><td class='num'>677.21</td><td class='num'>0.00</td><td class='num highlight'>1,268.79</td></tr>
-<tr data-week='2026-W25'><td>2026-06-19T00:00:00.000</td><td>TDHDR</td><td>Доставлено</td><td>Ні</td><td class='num'>646.00</td><td class='num'>Bolt: 100</td><td class='num'>546.00</td><td class='num sm'>187 + 37 = 225</td><td class='num sm'>—</td><td class='num'>224.81</td><td class='num'>0.00</td><td class='num highlight'>321.19</td></tr>
+<tr data-week='2026-W25'><td>2026-06-19T00:00:00.000</td><td>TDHDR</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>646.00</td><td class='num'>Bolt: 100</td><td class='num'>546.00</td><td class='num sm'>187 + 37 = 225</td><td class='num sm'>—</td><td class='num'>224.81</td><td class='num'>0.00</td><td class='num highlight'>321.19</td></tr>
 <tr data-week='2026-W25'><td>2026-06-19T00:00:00.000</td><td>6ZAUZ</td><td>Доставлено</td><td>Ні</td><td class='num'>1,261.00</td><td class='num'>Bolt: 252</td><td class='num'>1,008.80</td><td class='num sm'>366 + 73 = 439</td><td class='num sm'>—</td><td class='num'>438.83</td><td class='num'>0.00</td><td class='num highlight'>569.97</td></tr>
-<tr data-week='2026-W25'><td>2026-06-18T00:00:00.000</td><td>YHD9T</td><td>Доставлено</td><td>Ні</td><td class='num'>989.00</td><td class='num'>—</td><td class='num'>989.00</td><td class='num sm'>287 + 57 = 344</td><td class='num sm'>—</td><td class='num'>344.17</td><td class='num'>0.00</td><td class='num highlight'>644.83</td></tr>
-<tr data-week='2026-W25'><td>2026-06-16T00:00:00.000</td><td>X7T1X</td><td>Доставлено</td><td>Ні</td><td class='num'>725.00</td><td class='num'>Bolt: 109</td><td class='num'>616.25</td><td class='num sm'>210 + 42 = 252</td><td class='num sm'>—</td><td class='num'>252.30</td><td class='num'>0.00</td><td class='num highlight'>363.95</td></tr>
+<tr data-week='2026-W25'><td>2026-06-18T00:00:00.000</td><td>YHD9T</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>989.00</td><td class='num'>—</td><td class='num'>989.00</td><td class='num sm'>287 + 57 = 344</td><td class='num sm'>—</td><td class='num'>344.17</td><td class='num'>0.00</td><td class='num highlight'>644.83</td></tr>
+<tr data-week='2026-W25'><td>2026-06-16T00:00:00.000</td><td>X7T1X</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>725.00</td><td class='num'>Bolt: 109</td><td class='num'>616.25</td><td class='num sm'>210 + 42 = 252</td><td class='num sm'>—</td><td class='num'>252.30</td><td class='num'>0.00</td><td class='num highlight'>363.95</td></tr>
 <tr data-week='2026-W25'><td>2026-06-16T00:00:00.000</td><td>YFEGZ</td><td>Доставлено</td><td>Ні</td><td class='num'>646.00</td><td class='num'>—</td><td class='num'>646.00</td><td class='num sm'>187 + 37 = 225</td><td class='num sm'>—</td><td class='num'>224.81</td><td class='num'>0.00</td><td class='num highlight'>421.19</td></tr>
 <tr data-week='2026-W25'><td>2026-06-16T00:00:00.000</td><td>UQP4J</td><td>Доставлено</td><td>Ні</td><td class='num'>4,000.00</td><td class='num'>Bolt: 800</td><td class='num'>3,200.00</td><td class='num sm'>1,160 + 232 = 1,392</td><td class='num sm'>—</td><td class='num'>1,392.00</td><td class='num'>0.00</td><td class='num highlight'>1,808.00</td></tr>
 <tr data-week='2026-W24'><td>2026-06-14T00:00:00.000</td><td>8HSXD</td><td>Доставлено</td><td>Ні</td><td class='num'>646.00</td><td class='num'>—</td><td class='num'>646.00</td><td class='num sm'>187 + 37 = 225</td><td class='num sm'>—</td><td class='num'>224.81</td><td class='num'>0.00</td><td class='num highlight'>421.19</td></tr>
@@ -257,11 +230,11 @@ tr:nth-child(odd) { background:var(--card2) !important; }
 <tr data-week='2026-W24'><td>2026-06-13T00:00:00.000</td><td>PUO0C</td><td>Доставлено</td><td>Ні</td><td class='num'>621.00</td><td class='num'>—</td><td class='num'>621.00</td><td class='num sm'>180 + 36 = 216</td><td class='num sm'>—</td><td class='num'>216.11</td><td class='num'>0.00</td><td class='num highlight'>404.89</td></tr>
 <tr data-week='2026-W24'><td>2026-06-13T00:00:00.000</td><td>LG5IV</td><td>Доставлено</td><td>Ні</td><td class='num'>937.00</td><td class='num'>—</td><td class='num'>937.00</td><td class='num sm'>272 + 54 = 326</td><td class='num sm'>—</td><td class='num'>326.08</td><td class='num'>0.00</td><td class='num highlight'>610.92</td></tr>
 <tr data-week='2026-W24'><td>2026-06-13T00:00:00.000</td><td>23QVE</td><td>Доставлено</td><td>Ні</td><td class='num'>1,752.00</td><td class='num'>Bolt: 263</td><td class='num'>1,489.20</td><td class='num sm'>508 + 102 = 610</td><td class='num sm'>—</td><td class='num'>609.70</td><td class='num'>0.00</td><td class='num highlight'>879.50</td></tr>
-<tr data-week='2026-W24'><td>2026-06-12T00:00:00.000</td><td>9U0L4</td><td>Доставлено</td><td>Ні</td><td class='num'>1,083.00</td><td class='num'>—</td><td class='num'>1,083.00</td><td class='num sm'>314 + 63 = 377</td><td class='num sm'>—</td><td class='num'>376.88</td><td class='num'>0.00</td><td class='num highlight'>706.12</td></tr>
+<tr data-week='2026-W24'><td>2026-06-12T00:00:00.000</td><td>9U0L4</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>1,083.00</td><td class='num'>—</td><td class='num'>1,083.00</td><td class='num sm'>314 + 63 = 377</td><td class='num sm'>—</td><td class='num'>376.88</td><td class='num'>0.00</td><td class='num highlight'>706.12</td></tr>
 <tr data-week='2026-W24'><td>2026-06-12T00:00:00.000</td><td>4LW3C</td><td>Доставлено</td><td>Ні</td><td class='num'>1,216.00</td><td class='num'>Bolt: 182</td><td class='num'>1,033.60</td><td class='num sm'>353 + 71 = 423</td><td class='num sm'>—</td><td class='num'>423.17</td><td class='num'>0.00</td><td class='num highlight'>610.43</td></tr>
 <tr data-week='2026-W24'><td>2026-06-12T00:00:00.000</td><td>9EVPP</td><td>Доставлено</td><td>Ні</td><td class='num'>1,461.00</td><td class='num'>Bolt: 219</td><td class='num'>1,241.85</td><td class='num sm'>424 + 85 = 508</td><td class='num sm'>—</td><td class='num'>508.43</td><td class='num'>0.00</td><td class='num highlight'>733.42</td></tr>
 <tr data-week='2026-W24'><td>2026-06-12T00:00:00.000</td><td>6V6L0</td><td>Доставлено</td><td>Ні</td><td class='num'>841.00</td><td class='num'>Bolt: 168</td><td class='num'>672.80</td><td class='num sm'>244 + 49 = 293</td><td class='num sm'>—</td><td class='num'>292.67</td><td class='num'>0.00</td><td class='num highlight'>380.13</td></tr>
-<tr data-week='2026-W24'><td>2026-06-11T00:00:00.000</td><td>7Z4FE</td><td>Доставлено</td><td>Ні</td><td class='num'>735.00</td><td class='num'>—</td><td class='num'>735.00</td><td class='num sm'>213 + 43 = 256</td><td class='num sm'>—</td><td class='num'>255.78</td><td class='num'>0.00</td><td class='num highlight'>479.22</td></tr>
+<tr data-week='2026-W24'><td>2026-06-11T00:00:00.000</td><td>7Z4FE</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>735.00</td><td class='num'>—</td><td class='num'>735.00</td><td class='num sm'>213 + 43 = 256</td><td class='num sm'>—</td><td class='num'>255.78</td><td class='num'>0.00</td><td class='num highlight'>479.22</td></tr>
 <tr data-week='2026-W24'><td>2026-06-10T00:00:00.000</td><td>TQISF</td><td>Доставлено</td><td>Ні</td><td class='num'>1,230.00</td><td class='num'>Bolt: 184</td><td class='num'>1,045.50</td><td class='num sm'>357 + 71 = 428</td><td class='num sm'>—</td><td class='num'>428.04</td><td class='num'>0.00</td><td class='num highlight'>617.46</td></tr>
 <tr data-week='2026-W24'><td>2026-06-09T00:00:00.000</td><td>WHM7X</td><td>Доставлено</td><td>Ні</td><td class='num'>731.00</td><td class='num'>Bolt: 110</td><td class='num'>621.35</td><td class='num sm'>212 + 42 = 254</td><td class='num sm'>—</td><td class='num'>254.39</td><td class='num'>0.00</td><td class='num highlight'>366.96</td></tr>
 <tr data-week='2026-W24'><td>2026-06-09T00:00:00.000</td><td>SGC73</td><td>Доставлено</td><td>Ні</td><td class='num'>552.00</td><td class='num'>Bolt: 110</td><td class='num'>441.60</td><td class='num sm'>160 + 32 = 192</td><td class='num sm'>—</td><td class='num'>192.10</td><td class='num'>0.00</td><td class='num highlight'>249.50</td></tr>
@@ -279,28 +252,28 @@ tr:nth-child(odd) { background:var(--card2) !important; }
 <tr data-week='2026-W23'><td>2026-06-05T00:00:00.000</td><td>VRH21</td><td>Доставлено</td><td>Ні</td><td class='num'>1,138.00</td><td class='num'>Bolt: 171</td><td class='num'>967.30</td><td class='num sm'>330 + 66 = 396</td><td class='num sm'>—</td><td class='num'>396.02</td><td class='num'>0.00</td><td class='num highlight'>571.28</td></tr>
 <tr data-week='2026-W23'><td>2026-06-05T00:00:00.000</td><td>VKIIQ</td><td>Доставлено</td><td>Ні</td><td class='num'>1,852.00</td><td class='num'>—</td><td class='num'>1,852.00</td><td class='num sm'>537 + 107 = 644</td><td class='num sm'>—</td><td class='num'>644.50</td><td class='num'>0.00</td><td class='num highlight'>1,207.50</td></tr>
 <tr data-week='2026-W23'><td>2026-06-05T00:00:00.000</td><td>FK460</td><td>Доставлено</td><td>Ні</td><td class='num'>2,082.00</td><td class='num'>Bolt: 416</td><td class='num'>1,665.60</td><td class='num sm'>604 + 121 = 725</td><td class='num sm'>—</td><td class='num'>724.54</td><td class='num'>0.00</td><td class='num highlight'>941.06</td></tr>
-<tr data-week='2026-W23'><td>2026-06-04T00:00:00.000</td><td>1OHTA</td><td>Доставлено</td><td>Ні</td><td class='num'>1,075.00</td><td class='num'>Bolt: 215</td><td class='num'>860.00</td><td class='num sm'>312 + 62 = 374</td><td class='num sm'>—</td><td class='num'>374.10</td><td class='num'>0.00</td><td class='num highlight'>485.90</td></tr>
+<tr data-week='2026-W23'><td>2026-06-04T00:00:00.000</td><td>1OHTA</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>1,075.00</td><td class='num'>Bolt: 215</td><td class='num'>860.00</td><td class='num sm'>312 + 62 = 374</td><td class='num sm'>—</td><td class='num'>374.10</td><td class='num'>0.00</td><td class='num highlight'>485.90</td></tr>
 <tr data-week='2026-W23'><td>2026-06-04T00:00:00.000</td><td>CSRZM</td><td>Доставлено</td><td>Ні</td><td class='num'>646.00</td><td class='num'>—</td><td class='num'>646.00</td><td class='num sm'>187 + 37 = 225</td><td class='num sm'>—</td><td class='num'>224.81</td><td class='num'>0.00</td><td class='num highlight'>421.19</td></tr>
 <tr data-week='2026-W23'><td>2026-06-04T00:00:00.000</td><td>Y8V8P</td><td>Доставлено</td><td>Ні</td><td class='num'>1,928.00</td><td class='num'>Bolt: 482</td><td class='num'>1,446.00</td><td class='num sm'>559 + 112 = 671</td><td class='num sm'>—</td><td class='num'>670.94</td><td class='num'>0.00</td><td class='num highlight'>775.06</td></tr>
-<tr data-week='2026-W23'><td>2026-06-02T00:00:00.000</td><td>RZO1K</td><td>Доставлено</td><td>Ні</td><td class='num'>2,072.00</td><td class='num'>—</td><td class='num'>2,072.00</td><td class='num sm'>601 + 120 = 721</td><td class='num sm'>—</td><td class='num'>721.06</td><td class='num'>0.00</td><td class='num highlight'>1,350.94</td></tr>
+<tr data-week='2026-W23'><td>2026-06-02T00:00:00.000</td><td>RZO1K</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>2,072.00</td><td class='num'>—</td><td class='num'>2,072.00</td><td class='num sm'>601 + 120 = 721</td><td class='num sm'>—</td><td class='num'>721.06</td><td class='num'>0.00</td><td class='num highlight'>1,350.94</td></tr>
 <tr data-week='2026-W23'><td>2026-06-02T00:00:00.000</td><td>4QRB2</td><td>Доставлено</td><td>Ні</td><td class='num'>1,204.00</td><td class='num'>Bolt: 241</td><td class='num'>963.20</td><td class='num sm'>349 + 70 = 419</td><td class='num sm'>—</td><td class='num'>418.99</td><td class='num'>0.00</td><td class='num highlight'>544.21</td></tr>
 <tr data-week='2026-W23'><td>2026-06-02T00:00:00.000</td><td>56SAB</td><td>Доставлено</td><td>Ні</td><td class='num'>1,162.00</td><td class='num'>—</td><td class='num'>1,162.00</td><td class='num sm'>337 + 67 = 404</td><td class='num sm'>—</td><td class='num'>404.38</td><td class='num'>0.00</td><td class='num highlight'>757.62</td></tr>
 <tr data-week='2026-W23'><td>2026-06-01T00:00:00.000</td><td>FR0CC</td><td>Доставлено</td><td>Ні</td><td class='num'>1,323.00</td><td class='num'>Bolt: 265</td><td class='num'>1,058.40</td><td class='num sm'>384 + 77 = 460</td><td class='num sm'>—</td><td class='num'>460.40</td><td class='num'>0.00</td><td class='num highlight'>598.00</td></tr>
 <tr data-week='2026-W23'><td>2026-06-01T00:00:00.000</td><td>EIAHG</td><td>Доставлено</td><td>Ні</td><td class='num'>815.00</td><td class='num'>Bolt: 163</td><td class='num'>652.00</td><td class='num sm'>236 + 47 = 284</td><td class='num sm'>—</td><td class='num'>283.62</td><td class='num'>0.00</td><td class='num highlight'>368.38</td></tr>
 <tr data-week='2026-W23'><td>2026-06-01T00:00:00.000</td><td>9WG0G</td><td>Доставлено</td><td>Ні</td><td class='num'>2,242.00</td><td class='num'>Bolt: 448</td><td class='num'>1,793.60</td><td class='num sm'>650 + 130 = 780</td><td class='num sm'>—</td><td class='num'>780.22</td><td class='num'>0.00</td><td class='num highlight'>1,013.38</td></tr>
-<tr data-week='2026-W23'><td>2026-06-01T00:00:00.000</td><td>JK340</td><td>Доставлено</td><td>Ні</td><td class='num'>1,167.00</td><td class='num'>Bolt: 233</td><td class='num'>933.60</td><td class='num sm'>338 + 68 = 406</td><td class='num sm'>—</td><td class='num'>406.12</td><td class='num'>0.00</td><td class='num highlight'>527.48</td></tr>
+<tr data-week='2026-W23'><td>2026-06-01T00:00:00.000</td><td>JK340</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>1,167.00</td><td class='num'>Bolt: 233</td><td class='num'>933.60</td><td class='num sm'>338 + 68 = 406</td><td class='num sm'>—</td><td class='num'>406.12</td><td class='num'>0.00</td><td class='num highlight'>527.48</td></tr>
 <tr data-week='2026-W22'><td>2026-05-31T00:00:00.000</td><td>D9OXG</td><td>Доставлено</td><td>Ні</td><td class='num'>767.00</td><td class='num'>Bolt: 230</td><td class='num'>536.90</td><td class='num sm'>222 + 44 = 267</td><td class='num sm'>—</td><td class='num'>266.92</td><td class='num'>0.00</td><td class='num highlight'>269.98</td></tr>
 <tr data-week='2026-W22'><td>2026-05-31T00:00:00.000</td><td>E2VH1</td><td>Доставлено</td><td>Ні</td><td class='num'>1,511.00</td><td class='num'>Bolt: 302</td><td class='num'>1,208.80</td><td class='num sm'>438 + 88 = 526</td><td class='num sm'>—</td><td class='num'>525.83</td><td class='num'>0.00</td><td class='num highlight'>682.97</td></tr>
 <tr data-week='2026-W22'><td>2026-05-30T00:00:00.000</td><td>VVDE4</td><td>Доставлено</td><td>Ні</td><td class='num'>1,105.00</td><td class='num'>Bolt: 221</td><td class='num'>884.00</td><td class='num sm'>320 + 64 = 385</td><td class='num sm'>—</td><td class='num'>384.54</td><td class='num'>0.00</td><td class='num highlight'>499.46</td></tr>
 <tr data-week='2026-W22'><td>2026-05-29T00:00:00.000</td><td>YCTHE</td><td>Доставлено</td><td>Ні</td><td class='num'>998.00</td><td class='num'>Bolt: 200</td><td class='num'>798.40</td><td class='num sm'>289 + 58 = 347</td><td class='num sm'>—</td><td class='num'>347.30</td><td class='num'>0.00</td><td class='num highlight'>451.10</td></tr>
-<tr data-week='2026-W22'><td>2026-05-29T00:00:00.000</td><td>MAI8N</td><td>Доставлено</td><td>Ні</td><td class='num'>1,616.00</td><td class='num'>—</td><td class='num'>1,616.00</td><td class='num sm'>469 + 94 = 562</td><td class='num sm'>—</td><td class='num'>562.37</td><td class='num'>0.00</td><td class='num highlight'>1,053.63</td></tr>
+<tr data-week='2026-W22'><td>2026-05-29T00:00:00.000</td><td>MAI8N</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>1,616.00</td><td class='num'>—</td><td class='num'>1,616.00</td><td class='num sm'>469 + 94 = 562</td><td class='num sm'>—</td><td class='num'>562.37</td><td class='num'>0.00</td><td class='num highlight'>1,053.63</td></tr>
 <tr data-week='2026-W22'><td>2026-05-28T00:00:00.000</td><td>Q29LM</td><td>Доставлено</td><td>Ні</td><td class='num'>1,668.00</td><td class='num'>Bolt: 334</td><td class='num'>1,334.40</td><td class='num sm'>484 + 97 = 580</td><td class='num sm'>—</td><td class='num'>580.46</td><td class='num'>0.00</td><td class='num highlight'>753.94</td></tr>
 <tr data-week='2026-W22'><td>2026-05-28T00:00:00.000</td><td>JEUN6</td><td>Доставлено</td><td>Ні</td><td class='num'>1,167.00</td><td class='num'>Bolt: 350</td><td class='num'>816.90</td><td class='num sm'>338 + 68 = 406</td><td class='num sm'>—</td><td class='num'>406.12</td><td class='num'>0.00</td><td class='num highlight'>410.78</td></tr>
-<tr data-week='2026-W22'><td>2026-05-28T00:00:00.000</td><td>4LV4V</td><td>Доставлено</td><td>Ні</td><td class='num'>615.00</td><td class='num'>—</td><td class='num'>615.00</td><td class='num sm'>178 + 36 = 214</td><td class='num sm'>—</td><td class='num'>214.02</td><td class='num'>0.00</td><td class='num highlight'>400.98</td></tr>
+<tr data-week='2026-W22'><td>2026-05-28T00:00:00.000</td><td>4LV4V</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>615.00</td><td class='num'>—</td><td class='num'>615.00</td><td class='num sm'>178 + 36 = 214</td><td class='num sm'>—</td><td class='num'>214.02</td><td class='num'>0.00</td><td class='num highlight'>400.98</td></tr>
 <tr data-week='2026-W22'><td>2026-05-27T00:00:00.000</td><td>NS10A</td><td>Доставлено</td><td>Ні</td><td class='num'>1,261.00</td><td class='num'>Bolt: 315</td><td class='num'>945.75</td><td class='num sm'>366 + 73 = 439</td><td class='num sm'>—</td><td class='num'>438.83</td><td class='num'>0.00</td><td class='num highlight'>506.92</td></tr>
 <tr data-week='2026-W22'><td>2026-05-26T00:00:00.000</td><td>QK6BY</td><td>Доставлено</td><td>Ні</td><td class='num'>937.00</td><td class='num'>Bolt: 187</td><td class='num'>749.60</td><td class='num sm'>272 + 54 = 326</td><td class='num sm'>—</td><td class='num'>326.08</td><td class='num'>0.00</td><td class='num highlight'>423.52</td></tr>
 <tr data-week='2026-W22'><td>2026-05-26T00:00:00.000</td><td>KSV67</td><td>Доставлено</td><td>Ні</td><td class='num'>1,158.00</td><td class='num'>Bolt: 232</td><td class='num'>926.40</td><td class='num sm'>336 + 67 = 403</td><td class='num sm'>—</td><td class='num'>402.98</td><td class='num'>0.00</td><td class='num highlight'>523.42</td></tr>
-<tr data-week='2026-W22'><td>2026-05-26T00:00:00.000</td><td>1WJ6A</td><td>Доставлено</td><td>Ні</td><td class='num'>1,515.00</td><td class='num'>—</td><td class='num'>1,515.00</td><td class='num sm'>439 + 88 = 527</td><td class='num sm'>—</td><td class='num'>527.22</td><td class='num'>0.00</td><td class='num highlight'>987.78</td></tr>
+<tr data-week='2026-W22'><td>2026-05-26T00:00:00.000</td><td>1WJ6A</td><td>Доставлено</td><td class='bp'>Bolt Plus</td><td class='num'>1,515.00</td><td class='num'>—</td><td class='num'>1,515.00</td><td class='num sm'>439 + 88 = 527</td><td class='num sm'>—</td><td class='num'>527.22</td><td class='num'>0.00</td><td class='num highlight'>987.78</td></tr>
 </tbody>
     </table>
   </div>
@@ -606,20 +579,20 @@ document.getElementById('sp-filter').addEventListener('change', function() {
 
 function toggleTheme() {
   const isLight = document.body.classList.toggle('light');
-  const btn = document.getElementById('themeBtn');
-  btn.textContent = isLight ? '\u2600\uFE0F Темна тема' : '\ud83c\udf19 Світла тема';
+  document.getElementById('themeBtn').textContent = isLight ? '🌙 Темна тема' : '☀️ Світла тема';
   localStorage.setItem('theme_pref', isLight ? 'light' : 'dark');
-  Chart.defaults.color = isLight ? '#475569' : '#94a3b8';
-  Chart.defaults.borderColor = isLight ? '#e2e8f0' : '#334155';
-  [ordersChart, checkChart, cookingChart, revenueChart].forEach(c => { try { c.update(); } catch(e) {} });
+  const lightColor = '#475569'; const darkColor = '#94a3b8';
+  const lightBorder = '#e2e8f0'; const darkBorder = '#334155';
+  Chart.defaults.color = isLight ? lightColor : darkColor;
+  Chart.defaults.borderColor = isLight ? lightBorder : darkBorder;
+  [ordersChart, checkChart, cookingChart, revenueChart].forEach(c => c && c.update());
 }
 
 (function() {
   const saved = localStorage.getItem('theme_pref');
   if (saved === 'light') {
     document.body.classList.add('light');
-    const btn = document.getElementById('themeBtn');
-    if (btn) btn.textContent = '\u2600\uFE0F Темна тема';
+    document.getElementById('themeBtn').textContent = '🌙 Темна тема';
     Chart.defaults.color = '#475569';
     Chart.defaults.borderColor = '#e2e8f0';
   }
