@@ -562,6 +562,32 @@ tr.hidden {{ display:none; }}
 
 <div class="section">
   <h2>Дохідність по замовленнях <span class="count" id="ordersCount"></span></h2>
+  <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:8px">
+      <label for="bp-filter" style="font-size:12px;font-weight:600;color:#94a3b8;white-space:nowrap">Bolt Plus:</label>
+      <select id="bp-filter" style="padding:6px 12px;border:1px solid #334155;border-radius:8px;font-size:12px;font-family:inherit;background:#1e293b;color:#e2e8f0;cursor:pointer">
+        <option value="__all__">Всі</option>
+        <option value="yes">Bolt Plus</option>
+        <option value="no">Без Bolt Plus</option>
+      </select>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <label for="state-filter" style="font-size:12px;font-weight:600;color:#94a3b8;white-space:nowrap">Статус:</label>
+      <select id="state-filter" style="padding:6px 12px;border:1px solid #334155;border-radius:8px;font-size:12px;font-family:inherit;background:#1e293b;color:#e2e8f0;cursor:pointer">
+        <option value="__all__">Всі</option>
+        <option value="delivered">Доставлені</option>
+        <option value="failed">Невдалі / Скасовані</option>
+      </select>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <label for="disc-filter" style="font-size:12px;font-weight:600;color:#94a3b8;white-space:nowrap">Знижка:</label>
+      <select id="disc-filter" style="padding:6px 12px;border:1px solid #334155;border-radius:8px;font-size:12px;font-family:inherit;background:#1e293b;color:#e2e8f0;cursor:pointer">
+        <option value="__all__">Всі</option>
+        <option value="yes">Зі знижкою</option>
+        <option value="no">Без знижки</option>
+      </select>
+    </div>
+  </div>
   <div class="tbl-wrap scroll-table">
     <table id="ordersTable">
       <thead><tr>
@@ -675,11 +701,34 @@ function avgWeighted(valKey, weightKey) {{
   return den > 0 ? num / den : 0;
 }}
 
+let filterBP = '__all__';
+let filterState = '__all__';
+let filterDisc = '__all__';
+
 function filterRows(tableId, week) {{
   const rows = document.querySelectorAll(`#${{tableId}} tbody tr`);
   let visible = 0;
   rows.forEach(r => {{
-    if (week === 'all' || r.dataset.week === week) {{
+    let show = (week === 'all' || r.dataset.week === week);
+    if (show && tableId === 'ordersTable') {{
+      const cells = r.querySelectorAll('td');
+      if (filterBP !== '__all__') {{
+        const bpText = cells[3] ? cells[3].textContent.trim() : '';
+        if (filterBP === 'yes' && bpText !== 'Bolt Plus') show = false;
+        if (filterBP === 'no' && bpText === 'Bolt Plus') show = false;
+      }}
+      if (filterState !== '__all__') {{
+        const stateText = cells[2] ? cells[2].textContent.trim() : '';
+        if (filterState === 'delivered' && stateText !== '\u0414\u043e\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u043e') show = false;
+        if (filterState === 'failed' && stateText === '\u0414\u043e\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u043e') show = false;
+      }}
+      if (filterDisc !== '__all__') {{
+        const discText = cells[5] ? cells[5].textContent.trim() : '';
+        if (filterDisc === 'yes' && discText === '\u2014') show = false;
+        if (filterDisc === 'no' && discText !== '\u2014') show = false;
+      }}
+    }}
+    if (show) {{
       r.classList.remove('hidden');
       visible++;
     }} else {{
@@ -803,6 +852,28 @@ document.getElementById('weekFilter').addEventListener('click', e => {{
   if (e.target.classList.contains('week-btn')) {{
     updateView(e.target.dataset.week);
   }}
+}});
+
+function getActiveWeek() {{
+  return document.querySelector('.week-btn.active')?.dataset.week || 'all';
+}}
+
+document.getElementById('bp-filter').addEventListener('change', function() {{
+  filterBP = this.value;
+  const oVis = filterRows('ordersTable', getActiveWeek());
+  document.getElementById('ordersCount').textContent = `(${{oVis}} замовлень, всі суми в \u20b4)`;
+}});
+
+document.getElementById('state-filter').addEventListener('change', function() {{
+  filterState = this.value;
+  const oVis = filterRows('ordersTable', getActiveWeek());
+  document.getElementById('ordersCount').textContent = `(${{oVis}} замовлень, всі суми в \u20b4)`;
+}});
+
+document.getElementById('disc-filter').addEventListener('change', function() {{
+  filterDisc = this.value;
+  const oVis = filterRows('ordersTable', getActiveWeek());
+  document.getElementById('ordersCount').textContent = `(${{oVis}} замовлень, всі суми в \u20b4)`;
 }});
 
 // Initial render
