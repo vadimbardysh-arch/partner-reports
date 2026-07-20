@@ -156,7 +156,9 @@ jobs:
             else
               git commit -m "Auto-update smart-promo $(date -u +'%Y-%m-%d %H:%M UTC')"
             fi
-            git pull --rebase origin main
+            # Use -X theirs so freshly generated files always win over any
+            # concurrent manual pushes. Generated content is authoritative.
+            git pull --rebase -X theirs origin main
             git push
           fi
 
