@@ -1204,8 +1204,9 @@ function renderKPIs() {{
   const storeCount = ids.filter(id => wd[id]).length;
 
   let avgAvail = 0, avgAccept = 0, aCnt = 0;
+  const opsForPeriod = getOpsData()[selK] || {{}};
   ids.forEach(id => {{
-    const lo = D.latest_ops[id];
+    const lo = opsForPeriod[id] || D.latest_ops[id];
     if (lo) {{ avgAvail += lo.availability; avgAccept += lo.acceptance; aCnt++; }}
   }});
   if (aCnt > 0) {{ avgAvail /= aCnt; avgAccept /= aCnt; }}
@@ -1215,8 +1216,8 @@ function renderKPIs() {{
     {{ label: 'Замовлення', value: curOrders.toLocaleString('uk-UA'), ...wow(curOrders, prevOrders, 'up') }},
     {{ label: 'Середній чек', value: '₴' + avgChk.toFixed(0), ...wow(avgChk, prevAvgChk, 'up') }},
     {{ label: 'Час приготування', value: avgCook.toFixed(1) + ' хв', ...wow(avgCook, prevAvgCook, 'down') }},
-    {{ label: 'Доступність', value: avgAvail.toFixed(1) + '%', cls: avgAvail >= 90 ? 'up' : 'down', text: 'середнє по закладах' }},
-    {{ label: 'Прийняття', value: avgAccept.toFixed(1) + '%', cls: avgAccept >= 90 ? 'up' : 'down', text: 'середнє по закладах' }},
+    {{ label: 'Доступність', value: avgAvail.toFixed(1) + '%', cls: avgAvail >= 90 ? 'up' : 'down', text: periodLabel }},
+    {{ label: 'Прийняття', value: avgAccept.toFixed(1) + '%', cls: avgAccept >= 90 ? 'up' : 'down', text: periodLabel }},
     {{ label: 'Погані замовлення', value: badRate.toFixed(1) + '%', ...wow(badRate, prevBadRate, 'down') }},
     {{ label: 'Активних закладів', value: storeCount, cls: 'neutral', text: periodLabel }},
   ];
@@ -1335,8 +1336,9 @@ function renderInsights() {{
   document.getElementById('insight-orders').innerHTML = o;
 
   let avgAvail = 0, avgAccept = 0, aCnt = 0, bad = 0, ord = 0;
+  const opsForPeriodInsight = getOpsData()[selK] || {{}};
   ids.forEach(id => {{
-    const lo = D.latest_ops[id];
+    const lo = opsForPeriodInsight[id] || D.latest_ops[id];
     if (lo) {{ avgAvail += lo.availability; avgAccept += lo.acceptance; aCnt++; }}
     if (wd[id]) {{ bad += wd[id].bad_orders; ord += wd[id].orders; }}
   }});
