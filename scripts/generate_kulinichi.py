@@ -116,6 +116,38 @@ def week_sort_key(w):
     return (int(parts[0]), int(parts[1]))
 
 
+def month_sort_key(m):
+    parts = m.split("-")
+    return (int(parts[0]), int(parts[1]))
+
+
+def week_to_month(w):
+    """Convert '2026-W17' to '2026-04' (approximate)."""
+    from datetime import timedelta
+    year, wk = w.split("-W")
+    jan1 = datetime(int(year), 1, 1)
+    d = jan1 + timedelta(weeks=int(wk) - 1)
+    return d.strftime("%Y-%m")
+
+
+SPEND_OBJ_UA = {
+    "provider_campaign_obligations_commitments": "Зобов\x27язання",
+    "provider_campaign_portal": "Портал провайдера",
+    "provider_campaign_marketing": "Маркетинг",
+    "provider_campaign_locations": "Локації",
+    "bolt_plus_campaign": "Bolt Plus",
+    "new_city_launch": "Запуск міста",
+    "activation": "Активація",
+    "marketing_3rd_party_partnership": "Партнерство",
+    "retention": "Утримання",
+    "sp_engagement": "Smart Promo \u2014 Залучення",
+    "sp_activation": "Smart Promo \u2014 Активація",
+    "sp_reactivation": "Smart Promo \u2014 Реактивація",
+    "sp_fully_funded": "Smart Promo \u2014 Повне фінансування Bolt",
+}
+TARGET_UA = {"delivery_price": "Доставка", "item_price": "Знижка на товар"}
+
+
 # ── Queries ──────────────────────────────────────────────────────────────
 
 def fetch_weekly_per_store(conn):
@@ -376,6 +408,35 @@ def fetch_promo_unique_orders(conn):
     """)
 
 
+def fetch_campaigns(conn):
+    return query(conn, f"""
+    SELECT
+      c.campaign_id,
+      c.name AS campaign_name,
+      c.spend_objective,
+      c.target,
+      ROUND(c.discount_level, 0) AS discount_pct,
+      c.cost_share_v2,
+      DATE(c.campaign_start) AS start_date,
+      DATE(c.campaign_end) AS end_date,
+      c.provider_id,
+      CONCAT(YEAR(c.order_created_date), '-W', LPAD(WEEKOFYEAR(c.order_created_date), 2, '0')) AS order_week,
+      COUNT(*) AS orders,
+      ROUND(SUM(c.discount_value_local), 0) AS total_discount_uah,
+      ROUND(SUM(c.bolt_spend_local), 0) AS bolt_spend_uah,
+      ROUND(SUM(c.provider_spend_local), 0) AS provider_spend_uah
+    FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+    WHERE c.provider_id IN ({PROVIDER_IDS})
+      AND c.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+    GROUP BY c.campaign_id, c.name, c.spend_objective, c.target,
+             c.discount_level, c.cost_share_v2,
+             DATE(c.campaign_start), DATE(c.campaign_end),
+             c.provider_id,
+             CONCAT(YEAR(c.order_created_date), '-W', LPAD(WEEKOFYEAR(c.order_created_date), 2, '0'))
+    ORDER BY order_week DESC, orders DESC
+    """)
+
+
 def fetch_user_metrics(conn):
     return query(conn, f"""
     WITH user_orders AS (
@@ -415,7 +476,7 @@ def strip_nda(text):
     return text.strip()
 
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df=None):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df=None, campaigns_df=None):
     data = {}
 
     stores_map = {}
@@ -621,6 +682,43 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         week = str(r["order_week"])
         promo_unique[week] = to_native(r["unique_promo_orders"])
     data["promo_unique"] = promo_unique
+
+    campaigns = []
+    if campaigns_df is not None and len(campaigns_df):
+        for _, r in campaigns_df.iterrows():
+            pid = int(to_native(r["provider_id"]))
+            raw_obj = str(r["spend_objective"] or "")
+            raw_target = str(r["target"] or "")
+            cname = str(r["campaign_name"] or "")
+            disc_pct = to_native(r["discount_pct"])
+            target_ua = TARGET_UA.get(raw_target, raw_target)
+            obj_ua = SPEND_OBJ_UA.get(raw_obj, raw_obj)
+            is_smart_promo = raw_obj.startswith("sp_")
+            if raw_target == "delivery_price":
+                friendly = f"Безк. доставка \u2014 {obj_ua}"
+            else:
+                friendly = f"{int(disc_pct) if disc_pct else '?'}% на товар \u2014 {obj_ua}"
+            order_week = str(r["order_week"])
+            campaigns.append({
+                "campaign_id": to_native(r["campaign_id"]),
+                "name": friendly,
+                "full_name": cname[:120],
+                "is_smart_promo": is_smart_promo,
+                "objective": obj_ua,
+                "target": target_ua,
+                "discount_pct": to_native(r["discount_pct"]),
+                "cost_share": to_native(r["cost_share_v2"]),
+                "start_date": str(r["start_date"]),
+                "end_date": str(r["end_date"]),
+                "provider_id": pid,
+                "provider_short": KULINICHI_PROVIDERS.get(pid, {}).get("short", str(pid)),
+                "order_week": order_week,
+                "orders": to_native(r["orders"]),
+                "total_discount": to_native(r["total_discount_uah"]),
+                "bolt_spend": to_native(r["bolt_spend_uah"]),
+                "provider_spend": to_native(r["provider_spend_uah"]),
+            })
+    data["campaigns"] = campaigns
 
     user_weekly = {}
     if user_metrics_df is not None and len(user_metrics_df):
@@ -836,6 +934,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
  <a href="#sec-stores" class="nav-link">Деталі закладів</a>
  <a href="#sec-availability" class="nav-link">Доступність</a>
  <a href="#sec-revenue" class="nav-link">Дохідність</a>
+ <a href="#sec-campaigns" class="nav-link">Кампанії</a>
  <a href="#sec-orders-detail" class="nav-link">Деталі замовлень</a>
  <a href="#sec-complaints" class="nav-link">Скарги</a>
  <a href="#sec-cancelled" class="nav-link">Скасовані</a>
@@ -905,6 +1004,16 @@ body.dark .revenue-summary-table th{{background:#111827}}
  <div class="chart-card"><h3>Дохід (₴)</h3><div class="chart-wrap"><canvas id="chart-revenue"></canvas></div></div>
  <div class="chart-card"><h3>Замовлення — деталі по закладах</h3><div id="revenue-summary" style="overflow:auto;max-height:340px"></div></div>
  </div>
+ </div>
+
+ <div class="section" id="sec-campaigns">
+ <div class="section-title"><span class="section-icon">🎯</span> Кампанії <span id="campaigns-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+ <div class="section-insight" id="campaigns-summary"></div>
+ <div class="charts-grid">
+  <div class="chart-card"><h3>Витрати закладів на кампанії по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-spend"></canvas></div></div>
+  <div class="chart-card"><h3>Витрати Bolt на кампанії по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-bolt"></canvas></div></div>
+ </div>
+ <div class="table-wrap scroll-table" id="campaigns-wrap"></div>
  </div>
 
  <div class="section" id="sec-orders-detail">
@@ -1951,6 +2060,146 @@ function renderTopItems() {{
  document.getElementById('items-grid').innerHTML = html || '<div style="padding:24px;color:var(--text2)">Немає даних.</div>';
 }}
 
+function renderCampaignsChart() {{
+ const ids = getFilteredStoreIds();
+ const periods = getChartPeriods();
+ const labels = periods.map(p => p.label);
+ const camps = D.campaigns || [];
+
+ destroyChart('chart-campaign-spend');
+ destroyChart('chart-campaign-bolt');
+
+ const provSpend = periods.map(p =>
+  camps.filter(r => p.weeks.includes(r.order_week) && ids.includes(r.provider_id))
+       .reduce((s, r) => s + (r.provider_spend || 0), 0)
+ );
+ const boltSpend = periods.map(p =>
+  camps.filter(r => p.weeks.includes(r.order_week) && ids.includes(r.provider_id))
+       .reduce((s, r) => s + (r.bolt_spend || 0), 0)
+ );
+ const campOrders = periods.map(p => {{
+  const seen = {{}};
+  camps.filter(r => p.weeks.includes(r.order_week) && ids.includes(r.provider_id))
+       .forEach(r => {{ const k = r.campaign_id + '_' + r.order_week; seen[k] = (seen[k] || 0) + (r.orders || 0); }});
+  return Object.values(seen).reduce((s, v) => s + v, 0);
+ }});
+
+ chartInstances['chart-campaign-spend'] = new Chart(document.getElementById('chart-campaign-spend'), {{
+  type: 'bar',
+  data: {{
+   labels,
+   datasets: [
+    {{ label: 'Витрати закладу ₴', data: provSpend, backgroundColor: 'rgba(239,68,68,.7)', borderRadius: 4, barPercentage: .6, yAxisID: 'y' }},
+    {{ label: 'Промо-замовлення', data: campOrders, type: 'line', borderColor: '#F97316', backgroundColor: 'rgba(249,115,22,.08)', pointRadius: 3, pointBackgroundColor: '#F97316', borderWidth: 2, tension: .3, fill: false, yAxisID: 'y1' }}
+   ]
+  }},
+  options: {{
+   responsive: true, maintainAspectRatio: false,
+   plugins: {{ legend: {{ position: 'bottom', labels: {{ usePointStyle: true, padding: 12, font: {{ size: 11 }} }} }} }},
+   scales: {{
+    x: {{ grid: {{ display: false }} }},
+    y: {{ beginAtZero: true, position: 'left', grid: {{ color: 'rgba(0,0,0,.05)' }}, ticks: {{ callback: v => '\u20b4' + v.toLocaleString('uk-UA') }} }},
+    y1: {{ beginAtZero: true, position: 'right', grid: {{ display: false }}, ticks: {{ font: {{ size: 10 }} }} }}
+   }}
+  }}
+ }});
+
+ chartInstances['chart-campaign-bolt'] = new Chart(document.getElementById('chart-campaign-bolt'), {{
+  type: 'bar',
+  data: {{
+   labels,
+   datasets: [
+    {{ label: 'Витрати Bolt ₴', data: boltSpend, backgroundColor: 'rgba(59,130,246,.7)', borderRadius: 4, barPercentage: .6, yAxisID: 'y' }},
+    {{ label: 'Промо-замовлення', data: campOrders, type: 'line', borderColor: '#F97316', backgroundColor: 'rgba(249,115,22,.08)', pointRadius: 3, pointBackgroundColor: '#F97316', borderWidth: 2, tension: .3, fill: false, yAxisID: 'y1' }}
+   ]
+  }},
+  options: {{
+   responsive: true, maintainAspectRatio: false,
+   plugins: {{ legend: {{ position: 'bottom', labels: {{ usePointStyle: true, padding: 12, font: {{ size: 11 }} }} }} }},
+   scales: {{
+    x: {{ grid: {{ display: false }} }},
+    y: {{ beginAtZero: true, position: 'left', grid: {{ color: 'rgba(0,0,0,.05)' }}, ticks: {{ callback: v => '\u20b4' + v.toLocaleString('uk-UA') }} }},
+    y1: {{ beginAtZero: true, position: 'right', grid: {{ display: false }}, ticks: {{ font: {{ size: 10 }} }} }}
+   }}
+  }}
+ }});
+}}
+
+function renderCampaigns() {{
+ const ids = getFilteredStoreIds();
+ const weeks = periodMode === 'months' ? getWeeksForMonth(getSelectedMonth()) : [getSelectedWeek()];
+ const label = getPeriodLabel();
+ document.getElementById('campaigns-week-label').textContent = '\u2014 ' + label;
+
+ const rows = (D.campaigns || []).filter(r => weeks.includes(r.order_week) && ids.includes(r.provider_id));
+
+ const bycamp = {{}};
+ rows.forEach(r => {{
+  const key = r.campaign_id;
+  if (!bycamp[key]) bycamp[key] = {{ ...r, orders: 0, total_discount: 0, bolt_spend: 0, provider_spend: 0, providers: new Set() }};
+  bycamp[key].orders += r.orders;
+  bycamp[key].total_discount += r.total_discount;
+  bycamp[key].bolt_spend += r.bolt_spend;
+  bycamp[key].provider_spend += r.provider_spend;
+  bycamp[key].providers.add(r.provider_short);
+ }});
+ const campList = Object.values(bycamp).sort((a, b) => b.orders - a.orders);
+
+ let totOrd = 0, totDisc = 0, totBolt = 0, totProv = 0;
+ campList.forEach(c => {{ totOrd += c.orders; totDisc += c.total_discount; totBolt += c.bolt_spend; totProv += c.provider_spend; }});
+
+ const summaryEl = document.getElementById('campaigns-summary');
+ if (campList.length === 0) {{
+  summaryEl.innerHTML = '<b>' + label + '</b>. Немає активних кампаній для обраних закладів.';
+ }} else {{
+  summaryEl.innerHTML = '<b>' + label + '</b>. Активних кампаній: <b>' + campList.length + '</b>. '
+   + 'Замовлень з кампаніями: <b>' + totOrd + '</b>. '
+   + 'Загальна знижка: <b>\u20b4' + totDisc.toLocaleString('uk-UA') + '</b> '
+   + '(Bolt: \u20b4' + totBolt.toLocaleString('uk-UA') + ', Заклад: \u20b4' + totProv.toLocaleString('uk-UA') + ').';
+ }}
+
+ let t = '<table class="data-table"><thead><tr>'
+  + '<th>Кампанія</th><th>Хто платить</th>'
+  + '<th>Дати</th><th>Заклади</th>'
+  + '<th class="text-right">Зам.</th><th class="text-right">Знижка \u20b4</th>'
+  + '<th class="text-right">Bolt \u20b4</th><th class="text-right">Заклад \u20b4</th>'
+  + '</tr></thead><tbody>';
+
+ if (campList.length === 0) {{
+  t += '<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:24px">Немає кампаній за цей період</td></tr>';
+ }} else {{
+  campList.forEach(c => {{
+   const provArr = [...c.providers];
+   const provText = provArr.length > 3 ? provArr.slice(0, 3).join(', ') + ' +' + (provArr.length - 3) : provArr.join(', ');
+   const payer = c.provider_spend > 0 && c.bolt_spend > 0 ? 'Спільно'
+    : c.provider_spend > 0 ? 'Заклад'
+    : c.bolt_spend > 0 ? 'Bolt' : '\u2014';
+   const payerCls = payer === 'Bolt' ? 'color:var(--blue);font-weight:600'
+    : payer === 'Заклад' ? 'color:var(--neg);font-weight:600'
+    : payer === 'Спільно' ? 'color:var(--warn);font-weight:600' : '';
+   const spBadge = c.is_smart_promo ? ' <span style="display:inline-block;background:var(--orange);color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle;letter-spacing:.3px">SMART PROMO</span>' : '';
+   t += '<tr>';
+   t += '<td style="white-space:normal;min-width:180px;max-width:280px" title="' + (c.full_name || '').replace(/"/g,'&quot;') + '">' + c.name + spBadge + '</td>';
+   t += '<td style="' + payerCls + ';white-space:nowrap">' + payer + '</td>';
+   t += '<td style="font-size:11px;white-space:nowrap">' + c.start_date + ' \u2192 ' + c.end_date + '</td>';
+   t += '<td style="font-size:12px">' + provText + '</td>';
+   t += '<td class="text-right">' + c.orders + '</td>';
+   t += '<td class="text-right">\u20b4' + c.total_discount.toLocaleString('uk-UA') + '</td>';
+   t += '<td class="text-right" style="color:var(--blue)">\u20b4' + c.bolt_spend.toLocaleString('uk-UA') + '</td>';
+   t += '<td class="text-right" style="color:var(--neg)">\u20b4' + c.provider_spend.toLocaleString('uk-UA') + '</td>';
+   t += '</tr>';
+  }});
+  t += '<tr class="total-row"><td colspan="4">Всього</td>';
+  t += '<td class="text-right">' + totOrd + '</td>';
+  t += '<td class="text-right">\u20b4' + totDisc.toLocaleString('uk-UA') + '</td>';
+  t += '<td class="text-right" style="color:var(--blue)">\u20b4' + totBolt.toLocaleString('uk-UA') + '</td>';
+  t += '<td class="text-right" style="color:var(--neg)">\u20b4' + totProv.toLocaleString('uk-UA') + '</td>';
+  t += '</tr>';
+ }}
+ t += '</tbody></table>';
+ document.getElementById('campaigns-wrap').innerHTML = t;
+}}
+
 function renderAll() {{
  renderKPIs();
  renderInsights();
@@ -1961,6 +2210,8 @@ function renderAll() {{
  renderDailyAvailability();
  renderAvailLog();
  renderRevenueChart();
+ renderCampaignsChart();
+ renderCampaigns();
  renderOrdersDetail();
  renderComplaints();
  renderCancelled();
@@ -2419,13 +2670,17 @@ def main():
         promo_unique_df = fetch_promo_unique_orders(conn)
         print(f"  → {len(promo_unique_df)} rows")
 
+        print("  Fetching campaigns…")
+        campaigns_df = fetch_campaigns(conn)
+        print(f"  → {len(campaigns_df)} rows")
+
         print("  Fetching user metrics…")
         user_metrics_df = fetch_user_metrics(conn)
         print(f"  → {len(user_metrics_df)} rows")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, daily_avail_df, avail_log_df, promo_df, promo_unique_df, user_metrics_df, campaigns_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "kulinichi"
