@@ -314,10 +314,31 @@ def fetch_smart_promo(conn):
     """)
 
 
+def fetch_smart_promo_orders(conn):
+    """Order IDs that were part of a Smart Promo campaign (spend_objective 'sp_%')."""
+    return query(conn, f"""
+    SELECT DISTINCT c.order_id
+    FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+    WHERE c.provider_id IN ({PROVIDER_IDS})
+      AND c.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND c.spend_objective LIKE 'sp\\_%'
+    """)
+
+
 # ── Build data for HTML ──────────────────────────────────────────────────
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df, smart_promo_orders_df=None):
     data = {}
+
+    smart_promo_order_ids = set()
+    if smart_promo_orders_df is not None:
+        for _, r in smart_promo_orders_df.iterrows():
+            oid = r.get("order_id")
+            if oid is not None:
+                try:
+                    smart_promo_order_ids.add(int(oid))
+                except (TypeError, ValueError):
+                    pass
 
     stores_map = {}
     for pid, info in MA_PIZZA_PROVIDERS.items():
@@ -481,6 +502,14 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         ow = row.get("order_week", "")
         if ow:
             row["order_month"] = week_to_month(str(ow))
+        oid = row.get("order_id")
+        if oid is not None:
+            try:
+                row["is_smart_promo"] = int(oid) in smart_promo_order_ids
+            except (TypeError, ValueError):
+                row["is_smart_promo"] = False
+        else:
+            row["is_smart_promo"] = False
     data["orders"] = orders_list
 
     comp_list = safe_json(complaints_df)
@@ -879,6 +908,8 @@ body.dark .alert-box{{background:#1F2937;border-color:#374151;color:#FCA5A5}}
       <select id="bp-filter"><option value="__all__">Всі</option><option value="yes">Bolt Plus</option><option value="no">Без Bolt Plus</option></select>
       <label style="margin-left:12px">Статус:</label>
       <select id="state-filter"><option value="__all__">Всі</option><option value="delivered">Доставлені</option><option value="failed">Невдалі / Скасовані</option></select>
+      <label style="margin-left:12px">Smart Promo:</label>
+      <select id="sp-filter"><option value="__all__">Всі</option><option value="yes">Smart Promo</option><option value="no">Без Smart Promo</option></select>
     </div>
     <div class="table-wrap scroll-table" id="orders-detail-wrap"></div>
   </section>
@@ -916,6 +947,7 @@ let selectedMonthIdx = allMonths.length - 1;
 let selectedStores = new Set();
 let selectedBP = '__all__';
 let selectedState = '__all__';
+let selectedSP = '__all__';
 let chartInstances = {{}};
 
 function weekSortCmp(a, b) {{
@@ -1253,9 +1285,10 @@ function renderOrdersDetail() {{
   let rows=(D.orders||[]).filter(r=>r[periodField]===selK&&ids.includes(r.provider_id));
   if(selectedBP==='yes')rows=rows.filter(r=>r.bolt_plus==='Bolt Plus');else if(selectedBP==='no')rows=rows.filter(r=>r.bolt_plus!=='Bolt Plus');
   if(selectedState==='delivered')rows=rows.filter(r=>r.order_state_raw==='delivered');else if(selectedState==='failed')rows=rows.filter(r=>r.order_state_raw!=='delivered');
+  if(selectedSP==='yes')rows=rows.filter(r=>r.is_smart_promo);else if(selectedSP==='no')rows=rows.filter(r=>!r.is_smart_promo);
   let t='<table class="data-table"><thead><tr><th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Bolt+</th><th class="text-right">Ціна до знижки</th><th class="text-right">Знижка (за чий рахунок)</th><th class="text-right">Дохід від їжі</th><th class="text-right">Комісія (нетто+ПДВ=брутто)</th><th class="text-right">Bolt Plus комісія</th><th class="text-right">Всього комісія</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th><th>Причина</th></tr></thead><tbody>';
   let totFood=0,totRev=0,totFee=0,totBpFee=0,totRef=0,totNet=0;
-  rows.forEach(r=>{{const date=r.order_created_date?String(r.order_created_date).substring(0,10):'';totFood+=r.food_before_discount||0;totRev+=r.food_revenue||0;totFee+=r.total_fee_gross||0;totBpFee+=r.bp_fee_gross||0;totRef+=r.refund||0;totNet+=r.net_income||0;const isBp=(r.bp_fee_net||0)>0.5;const bpLabel=r.bolt_plus||'Ні';const bpClass=isBp?' class="bp"':'';const feeNet=r.fee_net||0;const feeGross=r.fee_gross||0;const bpFeeNet=r.bp_fee_net||0;const bpFeeGross=r.bp_fee_gross||0;const bpText=(isBp&&bpFeeNet>0.5)?fmtFee(bpFeeNet,bpFeeGross):'—';const isFailed=r.order_state_raw!=='delivered';const stateColor=isFailed?' style="color:var(--neg);font-weight:600"':'';const failReason=r.fail_reason||'';const nc=(r.net_income||0)<0?' style="color:var(--neg)"':'';t+='<tr'+(isFailed?' style="background:rgba(239,68,68,.04)"':'')+'><td>'+date+'</td><td>'+(r.order_reference_id||'')+'</td><td>'+(r.provider_short||'')+'</td><td'+stateColor+'>'+(r.order_state||'')+'</td><td'+bpClass+'>'+bpLabel+'</td><td class="text-right">'+(r.food_before_discount||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+fmtDiscount(r)+'</td><td class="text-right">'+(r.food_revenue||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="font-size:11px">'+(isFailed?'—':fmtFee(feeNet,feeGross))+'</td><td class="text-right" style="font-size:11px">'+(isFailed?'—':bpText)+'</td><td class="text-right" style="color:var(--neg)">'+(r.total_fee_gross||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+(r.refund||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right"'+nc+'>'+(r.net_income||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="comment-cell"'+(isFailed?' style="color:var(--neg)"':'')+'>'+failReason+'</td></tr>';}});
+  rows.forEach(r=>{{const date=r.order_created_date?String(r.order_created_date).substring(0,10):'';totFood+=r.food_before_discount||0;totRev+=r.food_revenue||0;totFee+=r.total_fee_gross||0;totBpFee+=r.bp_fee_gross||0;totRef+=r.refund||0;totNet+=r.net_income||0;const isBp=(r.bp_fee_net||0)>0.5;const bpLabel=r.bolt_plus||'Ні';const bpClass=isBp?' class="bp"':'';const feeNet=r.fee_net||0;const feeGross=r.fee_gross||0;const bpFeeNet=r.bp_fee_net||0;const bpFeeGross=r.bp_fee_gross||0;const bpText=(isBp&&bpFeeNet>0.5)?fmtFee(bpFeeNet,bpFeeGross):'—';const isFailed=r.order_state_raw!=='delivered';const stateColor=isFailed?' style="color:var(--neg);font-weight:600"':'';const failReason=r.fail_reason||'';const nc=(r.net_income||0)<0?' style="color:var(--neg)"':'';const spBadge=r.is_smart_promo?' <span style="display:inline-block;background:var(--orange);color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle;letter-spacing:.3px" title="Замовлення в межах Smart Promo кампанії">SMART PROMO</span>':'';t+='<tr'+(isFailed?' style="background:rgba(239,68,68,.04)"':'')+'><td>'+date+'</td><td>'+(r.order_reference_id||'')+'</td><td>'+(r.provider_short||'')+spBadge+'</td><td'+stateColor+'>'+(r.order_state||'')+'</td><td'+bpClass+'>'+bpLabel+'</td><td class="text-right">'+(r.food_before_discount||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+fmtDiscount(r)+'</td><td class="text-right">'+(r.food_revenue||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="font-size:11px">'+(isFailed?'—':fmtFee(feeNet,feeGross))+'</td><td class="text-right" style="font-size:11px">'+(isFailed?'—':bpText)+'</td><td class="text-right" style="color:var(--neg)">'+(r.total_fee_gross||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+(r.refund||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right"'+nc+'>'+(r.net_income||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="comment-cell"'+(isFailed?' style="color:var(--neg)"':'')+'>'+failReason+'</td></tr>';}});
   const failedCount=rows.filter(r=>r.order_state_raw!=='delivered').length;const deliveredCount=rows.length-failedCount;
   t+='<tr class="total-row"><td colspan="5">Всього ('+rows.length+' зам., '+deliveredCount+' дост., '+failedCount+' невдал.)</td><td class="text-right">'+totFood.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td><td class="text-right">'+totRev.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td><td class="text-right">'+totBpFee.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="color:var(--neg)">'+totFee.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+totRef.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+totNet.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td></tr>';
   t+='</tbody></table>';document.getElementById('orders-detail-wrap').innerHTML=t;
@@ -1301,6 +1334,7 @@ function setupNav() {{
 
 document.getElementById('bp-filter').addEventListener('change',function(){{selectedBP=this.value;renderOrdersDetail();}});
 document.getElementById('state-filter').addEventListener('change',function(){{selectedState=this.value;renderOrdersDetail();}});
+document.getElementById('sp-filter').addEventListener('change',function(){{selectedSP=this.value;renderOrdersDetail();}});
 
 window.toggleDark=function(){{
   document.body.classList.toggle('dark');const isDark=document.body.classList.contains('dark');
@@ -1365,10 +1399,14 @@ def main():
         print("  Fetching smart promo status...")
         smart_promo_df = fetch_smart_promo(conn)
         print(f"  -> {len(smart_promo_df)} rows")
+
+        print("  Fetching smart promo order IDs...")
+        smart_promo_orders_df = fetch_smart_promo_orders(conn)
+        print(f"  -> {len(smart_promo_orders_df)} rows")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df, smart_promo_orders_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "ma-pizza"
