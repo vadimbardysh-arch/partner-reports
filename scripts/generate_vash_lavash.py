@@ -48,6 +48,8 @@ VASH_LAVASH_PROVIDERS = {
     185782: {"name": "Ваш Лаваш вул. Чуднівська", "short": "Чуднівська", "city": "Zhytomyr"},
     185188: {"name": "Ваш Лаваш вул. Святошинська", "short": "Святошинська", "city": "Kyiv"},
     179394: {"name": "Ваш Лаваш вул. Івана Мазепи", "short": "Мазепи", "city": "Kolomyia"},
+    652601:  {"name": "Ваш Лаваш вул. Шевченка", "short": "Шевченка", "city": "Irpin"},
+    1372495: {"name": "Ваш Лаваш просп. Волі", "short": "пр. Волі", "city": "Lutsk"},
 }
 
 PROVIDER_IDS = ",".join(str(k) for k in VASH_LAVASH_PROVIDERS)
@@ -62,6 +64,8 @@ CITY_UA = {
     "Kharkiv": "Харків",
     "Vyshhorod": "Вишгород",
     "Kolomyia": "Коломия",
+    "Irpin": "Ірпінь",
+    "Lutsk": "Луцьк",
 }
 
 BAD_ORDER_TYPE_UA = {
