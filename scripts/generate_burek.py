@@ -1,13 +1,13 @@
 """
 Generate a multi-store weekly HTML report for BUREK by querying Databricks.
-Produces burek/index.html — a Ваш Лаваш-style dashboard without promo sections,
-with top-10 items per store.
+Produces burek/index.html — Ваш Лаваш-style dashboard (52 weeks, months, campaigns, filters).
 """
 
 import os
 import sys
 import json
 import math
+import re
 from pathlib import Path
 from datetime import datetime
 from decimal import Decimal
@@ -20,7 +20,7 @@ import pandas as pd
 from config import SERVER_HOSTNAME, HTTP_PATH
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WEEKS_BACK = 8
+WEEKS_BACK = 52
 
 BUREK_PROVIDERS = {
     120292: {"name": "BUREK / БУРЕК Ужгород", "short": "Ужгород", "city": "Uzhhorod"},
@@ -96,6 +96,18 @@ def week_sort_key(w):
     parts = w.split("-W")
     return (int(parts[0]), int(parts[1]))
 
+def month_sort_key(m):
+    parts = m.split("-")
+    return (int(parts[0]), int(parts[1]))
+
+def week_to_month(w):
+    """Convert '2026-W17' to '2026-04' (approximate)."""
+    year, wk = w.split("-W")
+    from datetime import datetime, timedelta
+    jan1 = datetime(int(year), 1, 1)
+    d = jan1 + timedelta(weeks=int(wk) - 1)
+    return d.strftime("%Y-%m")
+
 
 # ── Queries ──────────────────────────────────────────────────────────────
 
@@ -113,6 +125,7 @@ def fetch_weekly_per_store(conn):
     FROM ng_delivery_spark.fact_order_delivery f
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
       AND f.order_state = 'delivered'
     GROUP BY f.provider_id, f.provider_name, f.city_name, f.order_week
     ORDER BY f.order_week, f.provider_id
@@ -148,6 +161,7 @@ def fetch_top_items(conn):
       JOIN ng_delivery_spark.fact_order_delivery f ON b.order_id = f.order_id
       WHERE f.provider_id IN ({PROVIDER_IDS})
         AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
         AND b.basket_item_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
         AND f.order_state = 'delivered'
         AND b.item_price_before_discount_with_vat_local IS NOT NULL
@@ -167,24 +181,33 @@ def fetch_orders_detail(conn):
       f.provider_id, f.provider_name, f.order_state,
       CASE WHEN f.is_bolt_plus_order THEN 'Bolt Plus' ELSE 'Ні' END AS bolt_plus,
       f.is_bolt_plus_order,
-      ROUND(f.provider_price_before_discount, 2) AS food_before_discount,
-      ROUND(f.total_order_item_discount, 2) AS total_discount,
-      ROUND((COALESCE(m.bolt_delivery_campaign_cost_eur, 0) + COALESCE(m.bolt_menu_campaign_cost_eur, 0)) * m.currency_rate, 2) AS bolt_discount,
-      ROUND((COALESCE(m.provider_delivery_campaign_cost_eur, 0) + COALESCE(m.provider_menu_campaign_cost_eur, 0)) * m.currency_rate, 2) AS provider_discount,
-      ROUND(f.provider_price_after_discount, 2) AS food_revenue,
-      ROUND(m.provider_commission_net_eur * m.currency_rate, 2) AS fee_net,
-      ROUND(m.provider_commission_gross_eur * m.currency_rate, 2) AS fee_gross,
-      ROUND(f.commission_local - m.provider_commission_net_eur * m.currency_rate, 2) AS bp_fee_net,
-      ROUND((f.commission_local - m.provider_commission_net_eur * m.currency_rate) * 1.2, 2) AS bp_fee_gross,
-      ROUND(f.commission_local * 1.2, 2) AS total_fee_gross,
+      ROUND(COALESCE(f.provider_price_before_discount, 0), 2) AS food_before_discount,
+      ROUND(COALESCE(f.total_order_item_discount, 0), 2) AS total_discount,
+      ROUND(COALESCE((COALESCE(m.bolt_delivery_campaign_cost_eur, 0) + COALESCE(m.bolt_menu_campaign_cost_eur, 0)) * m.currency_rate, 0), 2) AS bolt_discount,
+      ROUND(COALESCE((COALESCE(m.provider_delivery_campaign_cost_eur, 0) + COALESCE(m.provider_menu_campaign_cost_eur, 0)) * m.currency_rate, 0), 2) AS provider_discount,
+      ROUND(COALESCE(f.provider_price_after_discount, 0), 2) AS food_revenue,
+      ROUND(COALESCE(m.provider_commission_net_eur * m.currency_rate, 0), 2) AS fee_net,
+      ROUND(COALESCE(m.provider_commission_gross_eur * m.currency_rate, 0), 2) AS fee_gross,
+      ROUND(COALESCE(f.commission_local - COALESCE(m.provider_commission_net_eur * m.currency_rate, 0), 0), 2) AS bp_fee_net,
+      ROUND(COALESCE((f.commission_local - COALESCE(m.provider_commission_net_eur * m.currency_rate, 0)) * 1.2, 0), 2) AS bp_fee_gross,
+      ROUND(COALESCE(f.commission_local * 1.2, 0), 2) AS total_fee_gross,
       ROUND(COALESCE(f.total_refunded_amount, 0), 2) AS refund,
-      ROUND(f.provider_price_after_discount - f.commission_local * 1.2 - COALESCE(f.total_refunded_amount, 0), 2) AS net_income
+      ROUND(COALESCE(f.provider_price_after_discount, 0) - COALESCE(f.commission_local * 1.2, 0) - COALESCE(f.total_refunded_amount, 0), 2) AS net_income,
+      CASE
+        WHEN f.order_state = 'delivered' THEN NULL
+        WHEN f.is_rejected_by_provider = true THEN 'Відхилено закладом'
+        WHEN f.is_not_responded_by_provider = true THEN 'Без відповіді від закладу'
+        WHEN f.order_state = 'failed' THEN 'Помилка системи'
+        WHEN f.order_state = 'cancelled' THEN 'Скасовано клієнтом'
+        ELSE 'Інше'
+      END AS fail_reason
     FROM ng_delivery_spark.fact_order_delivery f
-    JOIN ng_public_spark.etl_delivery_order_monetary_metrics m ON f.order_id = m.order_id
+    LEFT JOIN ng_public_spark.etl_delivery_order_monetary_metrics m
+      ON f.order_id = m.order_id
+      AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
-      AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
-      AND f.order_state = 'delivered'
+      AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
     ORDER BY f.order_created_date DESC, f.order_id DESC
     """)
 
@@ -202,6 +225,7 @@ def fetch_complaints(conn):
     JOIN ng_delivery_spark.fact_order_delivery f ON d.order_id = f.order_id
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
       AND (d.is_bad_order = true OR d.is_cs_ticket_order = true)
     ORDER BY f.order_created_date DESC
     """)
@@ -223,6 +247,7 @@ def fetch_cancelled(conn):
     LEFT JOIN ng_delivery_spark.dim_order_delivery d ON f.order_id = d.order_id
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
       AND f.order_state IN ('rejected', 'cancelled', 'failed')
     ORDER BY f.order_created_date DESC
     """)
@@ -240,18 +265,96 @@ def fetch_revenue_weekly(conn):
     FROM ng_delivery_spark.fact_order_delivery f
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
       AND f.order_state = 'delivered'
     GROUP BY f.order_week, f.provider_id
     ORDER BY f.order_week, f.provider_id
     """)
 
 
+def fetch_campaigns(conn):
+    return query(conn, f"""
+    SELECT
+      c.campaign_id,
+      c.name AS campaign_name,
+      c.spend_objective,
+      c.target,
+      ROUND(c.discount_level, 0) AS discount_pct,
+      c.cost_share_v2,
+      DATE(c.campaign_start) AS start_date,
+      DATE(c.campaign_end) AS end_date,
+      c.provider_id,
+      CONCAT(YEAR(c.order_created_date), '-W', WEEKOFYEAR(c.order_created_date)) AS order_week,
+      COUNT(*) AS orders,
+      ROUND(SUM(c.discount_value_local), 0) AS total_discount_uah,
+      ROUND(SUM(c.bolt_spend_local), 0) AS bolt_spend_uah,
+      ROUND(SUM(c.provider_spend_local), 0) AS provider_spend_uah
+    FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+    WHERE c.provider_id IN ({PROVIDER_IDS})
+      AND c.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND c.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
+    GROUP BY c.campaign_id, c.name, c.spend_objective, c.target,
+             c.discount_level, c.cost_share_v2,
+             DATE(c.campaign_start), DATE(c.campaign_end),
+             c.provider_id,
+             CONCAT(YEAR(c.order_created_date), '-W', WEEKOFYEAR(c.order_created_date))
+    ORDER BY order_week DESC, orders DESC
+    """)
+
+
+def fetch_smart_promo_orders(conn):
+    """Order IDs that were part of a Smart Promo campaign (spend_objective 'sp_%')."""
+    return query(conn, f"""
+    SELECT DISTINCT c.order_id
+    FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+    WHERE c.provider_id IN ({PROVIDER_IDS})
+      AND c.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND c.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
+      AND c.spend_objective LIKE 'sp\\_%'
+    """)
+
+
+SPEND_OBJ_UA = {
+    "provider_campaign_obligations_commitments": "Зобов'язання",
+    "provider_campaign_portal": "Портал провайдера",
+    "provider_campaign_marketing": "Маркетинг",
+    "provider_campaign_locations": "Локації",
+    "bolt_plus_campaign": "Bolt Plus",
+    "new_city_launch": "Запуск міста",
+    "activation": "Активація",
+    "marketing_3rd_party_partnership": "Партнерство",
+    "retention": "Утримання",
+    "sp_engagement": "Smart Promo — Залучення",
+    "sp_activation": "Smart Promo — Активація",
+    "sp_reactivation": "Smart Promo — Реактивація",
+    "sp_fully_funded": "Smart Promo — Повне фінансування Bolt",
+}
+TARGET_UA = {"delivery_price": "Доставка", "item_price": "Знижка на товар"}
+
+
 # ── Build data for HTML ──────────────────────────────────────────────────
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df=None):
     data = {}
 
+    smart_promo_order_ids = set()
+    if smart_promo_df is not None:
+        for _, r in smart_promo_df.iterrows():
+            oid = r.get("order_id")
+            if oid is not None:
+                try:
+                    smart_promo_order_ids.add(int(oid))
+                except (TypeError, ValueError):
+                    pass
+
     stores_map = {}
+    for pid, info in BUREK_PROVIDERS.items():
+        stores_map[int(pid)] = {
+            "name": info["name"],
+            "short": info["short"],
+            "city": CITY_UA.get(info["city"], info["city"]),
+            "city_en": info["city"],
+        }
     for _, r in weekly_df.iterrows():
         pid = to_native(r["provider_id"])
         info = BUREK_PROVIDERS.get(int(pid), {})
@@ -277,6 +380,32 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         }
     weekly = dict(sorted(weekly.items(), key=lambda x: week_sort_key(x[0])))
     data["weekly"] = weekly
+
+    # --- Monthly aggregation from weekly ---
+    monthly = {}
+    for wk, stores_data in weekly.items():
+        mk = week_to_month(wk)
+        if mk not in monthly:
+            monthly[mk] = {}
+        for pid, vals in stores_data.items():
+            if pid not in monthly[mk]:
+                monthly[mk][pid] = {"orders": 0, "_check_sum": 0, "_cook_sum": 0, "_cook_cnt": 0, "bad_orders": 0}
+            monthly[mk][pid]["orders"] += vals["orders"]
+            monthly[mk][pid]["_check_sum"] += vals["avg_check"] * vals["orders"]
+            if vals["avg_cooking"] and vals["avg_cooking"] > 0:
+                monthly[mk][pid]["_cook_sum"] += vals["avg_cooking"] * vals["orders"]
+                monthly[mk][pid]["_cook_cnt"] += vals["orders"]
+            monthly[mk][pid]["bad_orders"] += vals["bad_orders"]
+    for mk in monthly:
+        for pid in monthly[mk]:
+            d = monthly[mk][pid]
+            d["avg_check"] = round(d["_check_sum"] / d["orders"]) if d["orders"] else 0
+            d["avg_cooking"] = round(d["_cook_sum"] / d["_cook_cnt"], 1) if d["_cook_cnt"] else 0
+            del d["_check_sum"]
+            del d["_cook_sum"]
+            del d["_cook_cnt"]
+    monthly = dict(sorted(monthly.items(), key=lambda x: month_sort_key(x[0])))
+    data["monthly"] = monthly
 
     ops_weekly = {}
     if len(ops_df):
@@ -311,6 +440,30 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
     data["ops_weekly"] = ops_weekly
     data["latest_ops"] = latest_ops
 
+    # --- Monthly ops aggregation ---
+    ops_monthly = {}
+    for wk, stores_data in ops_weekly.items():
+        mk = week_to_month(wk)
+        if mk not in ops_monthly:
+            ops_monthly[mk] = {}
+        for pid, vals in stores_data.items():
+            if pid not in ops_monthly[mk]:
+                ops_monthly[mk][pid] = {"_avail_sum": 0, "_accept_sum": 0, "_photo_sum": 0, "_cnt": 0}
+            ops_monthly[mk][pid]["_avail_sum"] += vals["availability"]
+            ops_monthly[mk][pid]["_accept_sum"] += vals["acceptance"]
+            ops_monthly[mk][pid]["_photo_sum"] += vals["photo_coverage"]
+            ops_monthly[mk][pid]["_cnt"] += 1
+    for mk in ops_monthly:
+        for pid in ops_monthly[mk]:
+            d = ops_monthly[mk][pid]
+            n = d["_cnt"]
+            ops_monthly[mk][pid] = {
+                "availability": round(d["_avail_sum"] / n, 1) if n else 0,
+                "acceptance": round(d["_accept_sum"] / n, 1) if n else 0,
+                "photo_coverage": round(d["_photo_sum"] / n, 1) if n else 0,
+            }
+    data["ops_monthly"] = ops_monthly
+
     top_items = {}
     for _, r in items_df.iterrows():
         pid = int(to_native(r["provider_id"]))
@@ -326,18 +479,48 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         })
     data["top_items"] = top_items
 
-    # Orders detail
+    # --- Monthly items aggregation ---
+    monthly_items = {}
+    for wk, stores_data in top_items.items():
+        mk = week_to_month(wk)
+        if mk not in monthly_items:
+            monthly_items[mk] = {}
+        for pid, items_list in stores_data.items():
+            if pid not in monthly_items[mk]:
+                monthly_items[mk][pid] = {}
+            for it in items_list:
+                nm = it["name"]
+                if nm not in monthly_items[mk][pid]:
+                    monthly_items[mk][pid][nm] = {"name": nm, "qty": 0, "revenue": 0}
+                monthly_items[mk][pid][nm]["qty"] += it["qty"]
+                monthly_items[mk][pid][nm]["revenue"] += it["revenue"]
+    for mk in monthly_items:
+        for pid in monthly_items[mk]:
+            monthly_items[mk][pid] = sorted(monthly_items[mk][pid].values(), key=lambda x: -x["qty"])[:10]
+    data["monthly_items"] = monthly_items
+
     orders_list = safe_json(orders_df)
     for row in orders_list:
-        row["order_state"] = ORDER_STATE_UA.get(row.get("order_state", ""), row.get("order_state", ""))
+        raw_state = row.get("order_state", "") or ""
+        row["order_state_raw"] = raw_state
+        row["order_state"] = ORDER_STATE_UA.get(raw_state, raw_state)
+        oid = row.get("order_id")
+        row["is_smart_promo"] = False
+        if oid is not None:
+            try:
+                row["is_smart_promo"] = int(oid) in smart_promo_order_ids
+            except (TypeError, ValueError):
+                row["is_smart_promo"] = False
         pid = row.get("provider_id")
         if pid and int(pid) in BUREK_PROVIDERS:
             row["provider_short"] = BUREK_PROVIDERS[int(pid)]["short"]
         else:
             row["provider_short"] = row.get("provider_name", "")
+        ow = row.get("order_week", "")
+        if ow:
+            row["order_month"] = week_to_month(str(ow))
     data["orders"] = orders_list
 
-    # Complaints
     comp_list = safe_json(complaints_df)
     for row in comp_list:
         raw_type = row.get("bad_order_type", "") or ""
@@ -349,21 +532,29 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             row["provider_short"] = BUREK_PROVIDERS[int(pid)]["short"]
         else:
             row["provider_short"] = row.get("provider_name", "")
+        ow = row.get("order_week", "")
+        if ow:
+            row["order_month"] = week_to_month(str(ow))
     data["complaints"] = comp_list
 
-    # Cancelled
     canc_list = safe_json(cancelled_df)
     for row in canc_list:
         raw_state = row.get("order_state", "") or ""
         row["order_state"] = ORDER_STATE_UA.get(raw_state, raw_state)
+        comment = str(row.get("comment") or "")
+        comment = re.sub(r"Admin:\s*[\w\-]+(?:\s+[\w\-]+)*\s*Reason:\s*", "", comment)
+        comment = re.sub(r"h?t?tps?://beehive\.bolt\.eu/\S*", "", comment)
+        row["comment"] = comment.strip()
         pid = row.get("provider_id")
         if pid and int(pid) in BUREK_PROVIDERS:
             row["provider_short"] = BUREK_PROVIDERS[int(pid)]["short"]
         else:
             row["provider_short"] = row.get("provider_name", "")
+        ow = row.get("order_week", "")
+        if ow:
+            row["order_month"] = week_to_month(str(ow))
     data["cancelled"] = canc_list
 
-    # Revenue weekly: { week: { provider_id: { food_revenue, total_fee_gross, net_income, refund } } }
     revenue = {}
     for _, r in revenue_df.iterrows():
         week = str(r["order_week"])
@@ -380,10 +571,62 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
     revenue = dict(sorted(revenue.items(), key=lambda x: week_sort_key(x[0])))
     data["revenue"] = revenue
 
+    # --- Monthly revenue ---
+    monthly_revenue = {}
+    for wk, stores_data in revenue.items():
+        mk = week_to_month(wk)
+        if mk not in monthly_revenue:
+            monthly_revenue[mk] = {}
+        for pid, vals in stores_data.items():
+            if pid not in monthly_revenue[mk]:
+                monthly_revenue[mk][pid] = {"orders": 0, "food_revenue": 0, "total_fee_gross": 0, "refund": 0, "net_income": 0}
+            for k in ("orders", "food_revenue", "total_fee_gross", "refund", "net_income"):
+                monthly_revenue[mk][pid][k] += vals.get(k, 0)
+    monthly_revenue = dict(sorted(monthly_revenue.items(), key=lambda x: month_sort_key(x[0])))
+    data["monthly_revenue"] = monthly_revenue
+
+    campaigns = []
+    for _, r in campaigns_df.iterrows():
+        pid = int(to_native(r["provider_id"]))
+        raw_obj = str(r["spend_objective"] or "")
+        raw_target = str(r["target"] or "")
+        cname = str(r["campaign_name"] or "")
+        disc_pct = to_native(r["discount_pct"])
+        target_ua = TARGET_UA.get(raw_target, raw_target)
+        obj_ua = SPEND_OBJ_UA.get(raw_obj, raw_obj)
+        is_smart_promo = raw_obj.startswith("sp_")
+        if raw_target == "delivery_price":
+            friendly = f"Безк. доставка — {obj_ua}"
+        else:
+            friendly = f"{int(disc_pct)}% на товар — {obj_ua}"
+        campaigns.append({
+            "campaign_id": to_native(r["campaign_id"]),
+            "name": friendly,
+            "full_name": cname[:120],
+            "is_smart_promo": is_smart_promo,
+            "objective": SPEND_OBJ_UA.get(raw_obj, raw_obj),
+            "target": TARGET_UA.get(raw_target, raw_target),
+            "discount_pct": to_native(r["discount_pct"]),
+            "cost_share": to_native(r["cost_share_v2"]),
+            "start_date": str(r["start_date"]),
+            "end_date": str(r["end_date"]),
+            "provider_id": pid,
+            "provider_short": BUREK_PROVIDERS.get(pid, {}).get("short", str(pid)),
+            "order_week": str(r["order_week"]),
+            "order_month": week_to_month(str(r["order_week"])),
+            "orders": to_native(r["orders"]),
+            "total_discount": to_native(r["total_discount_uah"]),
+            "bolt_spend": to_native(r["bolt_spend_uah"]),
+            "provider_spend": to_native(r["provider_spend_uah"]),
+        })
+    data["campaigns"] = campaigns
+
     return data
 
 
 # ── HTML ─────────────────────────────────────────────────────────────────
+
+CITY_UA_JSON = json.dumps(CITY_UA, ensure_ascii=False)
 
 def generate_html(data, generated_at):
     return f"""<!DOCTYPE html>
@@ -411,8 +654,41 @@ a{{text-decoration:none;color:inherit}}
 .header-left h1{{font-size:20px;font-weight:800;letter-spacing:-.3px}}
 .brand-dot{{width:10px;height:10px;border-radius:50%;background:var(--orange);display:inline-block}}
 .header-right{{display:flex;align-items:center;gap:10px;flex-wrap:wrap}}
-#city-filter{{padding:8px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card);cursor:pointer;min-width:180px}}
-#city-filter:focus{{outline:none;border-color:var(--orange)}}
+.ms-wrap{{position:relative;min-width:180px}}
+.ms-btn{{padding:8px 32px 8px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--card);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;display:block;width:100%;text-align:left;color:var(--text);position:relative}}
+.ms-btn::after{{content:'▾';position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text2)}}
+.ms-btn:hover,.ms-btn.open{{border-color:var(--orange)}}
+.ms-panel{{display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:100%;max-height:320px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:1000;padding:4px 0}}
+.ms-panel.open{{display:block}}
+.ms-item{{display:flex;align-items:center;gap:8px;padding:6px 14px;font-size:13px;cursor:pointer;white-space:nowrap}}
+.ms-item:hover{{background:var(--bg)}}
+.ms-item input{{accent-color:var(--orange);width:15px;height:15px;cursor:pointer;flex-shrink:0}}
+.ms-item.all-item{{border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:2px;font-weight:600}}
+.ms-count{{display:inline-block;background:var(--orange);color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;margin-left:4px}}
+.reset-btn{{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 11px;font-size:14px;cursor:pointer;transition:all .15s;line-height:1}}
+.reset-btn:hover{{background:var(--neg);color:#fff;border-color:var(--neg)}}
+.calc-card{{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 24px;margin-top:20px}}
+.calc-title{{font-size:15px;font-weight:700;color:var(--text);margin:0 0 16px}}
+.calc-controls{{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}}
+.calc-field label{{display:block;font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}}
+.calc-field input,.calc-field select{{padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;background:var(--bg);color:var(--text);min-width:160px}}
+.calc-field input:focus,.calc-field select:focus{{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(249,115,22,.12)}}
+.calc-store-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}}
+.calc-store{{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px}}
+.calc-store-name{{font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px}}
+.calc-store-city{{font-size:11px;color:var(--text2);margin-bottom:10px}}
+.calc-bar-wrap{{height:8px;background:rgba(0,0,0,.06);border-radius:4px;overflow:hidden;margin-bottom:8px}}
+.calc-bar{{height:100%;border-radius:4px;transition:width .3s}}
+.calc-metrics{{display:flex;justify-content:space-between;font-size:12px}}
+.calc-spent{{font-weight:700}}
+.calc-left{{font-weight:600}}
+.calc-total-row{{margin-top:16px;padding:14px 16px;background:var(--card);border:2px solid var(--orange);border-radius:10px;display:flex;flex-wrap:wrap;gap:24px;align-items:center}}
+.calc-total-label{{font-size:13px;font-weight:700;color:var(--text)}}
+.calc-total-val{{font-size:18px;font-weight:800}}
+.period-toggle-wrap{{display:flex;align-items:center;padding:0 20px;margin-top:-4px}}
+.period-select{{padding:6px 32px 6px 14px;font-size:13px;font-weight:600;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;border-radius:8px;font-family:inherit;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;transition:all .15s}}
+.period-select:hover{{border-color:var(--orange)}}
+.period-select:focus{{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(249,115,22,.15)}}
 .theme-toggle{{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 12px;font-size:16px;cursor:pointer;transition:all .15s;line-height:1}}
 .theme-toggle:hover{{background:var(--bg);color:var(--text)}}
 .last-update{{font-size:12px;color:var(--text2)}}
@@ -497,7 +773,9 @@ body.dark .header{{background:var(--card)}}
 body.dark .main-nav{{background:var(--card)}}
 body.dark .week-bar{{background:var(--card)}}
 body.dark .data-table th{{background:#111827}}
-body.dark #city-filter{{background:var(--card);color:var(--text);border-color:var(--border)}}
+body.dark .ms-btn{{background:var(--card);color:var(--text);border-color:var(--border)}}
+body.dark .ms-panel{{background:var(--card);border-color:var(--border);box-shadow:0 8px 24px rgba(0,0,0,.4)}}
+body.dark .ms-item:hover{{background:var(--bg)}}
 body.dark .section-insight{{background:linear-gradient(135deg,rgba(249,115,22,.08),rgba(59,130,246,.06));border-color:rgba(249,115,22,.2)}}
 body.dark .week-pill{{background:#374151;color:var(--text2)}}
 body.dark .chart-card{{background:var(--card)}}
@@ -528,7 +806,9 @@ body.dark .revenue-summary-table th{{background:#111827}}
     <h1>BUREK | тижневий звіт</h1>
   </div>
   <div class="header-right">
-    <select id="city-filter"><option value="__all__">Всі міста</option></select>
+    <div class="ms-wrap" id="city-ms"><button class="ms-btn" id="city-btn">Всі міста</button><div class="ms-panel" id="city-panel"></div></div>
+    <div class="ms-wrap" id="store-ms"><button class="ms-btn" id="store-btn">Всі заклади</button><div class="ms-panel" id="store-panel"></div></div>
+    <button class="reset-btn" id="reset-btn" onclick="resetAllFilters()" title="Скинути всі фільтри">✕</button>
     <button class="theme-toggle" id="theme-toggle" onclick="toggleDark()">🌙</button>
     <span class="last-update">Оновлено: {generated_at}</span>
   </div>
@@ -540,12 +820,19 @@ body.dark .revenue-summary-table th{{background:#111827}}
   <a href="#ops-section" class="nav-link">Операції</a>
   <a href="#stores-section" class="nav-link">Деталі закладів</a>
   <a href="#revenue-section" class="nav-link">Дохідність</a>
+  <a href="#campaigns-section" class="nav-link">Кампанії</a>
   <a href="#orders-detail-section" class="nav-link">Деталі замовлень</a>
   <a href="#complaints-section" class="nav-link">Скарги</a>
   <a href="#cancelled-section" class="nav-link">Скасовані</a>
   <a href="#items-section" class="nav-link">Топ позиції</a>
 </nav>
 
+<div class="period-toggle-wrap">
+  <select class="period-select" id="period-select">
+    <option value="week" selected>Тижні</option>
+    <option value="month">Місяці</option>
+  </select>
+</div>
 <div class="week-bar" id="week-bar">
   <div class="week-bar-label">Тиждень:</div>
 </div>
@@ -586,11 +873,25 @@ body.dark .revenue-summary-table th{{background:#111827}}
     </div>
   </section>
 
+  <section id="campaigns-section" class="section">
+    <div class="section-title"><span class="section-icon">🎯</span> Кампанії <span id="campaigns-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="section-insight" id="campaigns-summary"></div>
+    <div class="charts-grid">
+      <div class="chart-card"><h3>Витрати закладів на кампанії по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-spend"></canvas></div></div>
+      <div class="chart-card"><h3>Витрати Bolt на кампанії по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-bolt"></canvas></div></div>
+    </div>
+    <div class="table-wrap scroll-table" id="campaigns-wrap"></div>
+  </section>
+
   <section id="orders-detail-section" class="section">
     <div class="section-title"><span class="section-icon">🧾</span> Дохідність по замовленнях <span id="orders-detail-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
     <div class="store-filter-wrap">
-      <label>Заклад:</label>
-      <select id="orders-store-filter"><option value="__all__">Всі заклади</option></select>
+      <label>Bolt Plus:</label>
+      <select id="bp-filter"><option value="__all__">Всі</option><option value="yes">Bolt Plus</option><option value="no">Без Bolt Plus</option></select>
+      <label style="margin-left:12px">Статус:</label>
+      <select id="state-filter"><option value="__all__">Всі</option><option value="delivered">Доставлені</option><option value="failed">Невдалі / Скасовані</option></select>
+      <label style="margin-left:12px">Smart Promo:</label>
+      <select id="sp-filter"><option value="__all__">Всі</option><option value="yes">Smart Promo</option><option value="no">Без Smart Promo</option></select>
     </div>
     <div class="table-wrap scroll-table" id="orders-detail-wrap"></div>
   </section>
@@ -607,7 +908,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
 
   <section id="items-section" class="section">
     <div class="section-title"><span class="section-icon">🍽️</span> Топ-10 позицій по закладах <span id="items-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
-    <div class="section-insight">Найпопулярніші позиції за обраний тиждень. Кількість замовлених одиниць та виручка (₴).</div>
+    <div class="section-insight" id="items-insight">Найпопулярніші позиції за обраний період. Кількість замовлених одиниць та виручка (₴).</div>
     <div class="items-grid" id="items-grid"></div>
   </section>
 </main>
@@ -615,15 +916,21 @@ body.dark .revenue-summary-table th{{background:#111827}}
 <script>
 const D = {json.dumps(data, ensure_ascii=False)};
 
-const CITY_UA = {{"Lviv":"Львів","Uzhhorod":"Ужгород"}};
+const CITY_UA = {CITY_UA_JSON};
 let allWeeks = Object.keys(D.weekly).sort((a,b) => {{
   const [ay,aw] = a.split('-W').map(Number);
   const [by,bw] = b.split('-W').map(Number);
   return ay !== by ? ay - by : aw - bw;
 }});
+let allMonths = Object.keys(D.monthly || {{}}).sort();
+let periodMode = 'week';
 let selectedWeekIdx = allWeeks.length - 1;
-let selectedCity = '__all__';
-let selectedOrdersStore = '__all__';
+let selectedMonthIdx = allMonths.length - 1;
+let selectedCities = new Set();
+let selectedStores = new Set();
+let selectedBP = '__all__';
+let selectedState = '__all__';
+let selectedSP = '__all__';
 let chartInstances = {{}};
 
 function weekSortCmp(a, b) {{
@@ -632,59 +939,150 @@ function weekSortCmp(a, b) {{
   return ay !== by ? ay - by : aw - bw;
 }}
 
+function getPeriodKeys() {{ return periodMode === 'month' ? allMonths : allWeeks; }}
+function getSelectedPeriodIdx() {{ return periodMode === 'month' ? selectedMonthIdx : selectedWeekIdx; }}
+function setSelectedPeriodIdx(i) {{ if (periodMode === 'month') selectedMonthIdx = i; else selectedWeekIdx = i; }}
+function getSelectedPeriodKey() {{ const keys = getPeriodKeys(); return keys[getSelectedPeriodIdx()] || keys[keys.length - 1]; }}
+function getPeriodLabel(key) {{
+  if (periodMode === 'month') {{
+    const [y, m] = key.split('-');
+    const months = ['Січ','Лют','Бер','Кві','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру'];
+    return months[parseInt(m) - 1] + ' ' + y;
+  }}
+  return key;
+}}
+function getPerStoreData() {{ return periodMode === 'month' ? (D.monthly || {{}}) : D.weekly; }}
+function getRevenueData() {{ return periodMode === 'month' ? (D.monthly_revenue || {{}}) : D.revenue; }}
+function getItemsData() {{ return periodMode === 'month' ? (D.monthly_items || {{}}) : D.top_items; }}
+function getCampaignPeriodKey(c) {{ return periodMode === 'month' ? c.order_month : c.order_week; }}
+function getOpsData() {{ return periodMode === 'month' ? (D.ops_monthly || {{}}) : D.ops_weekly; }}
+
 function getSelectedWeek() {{ return allWeeks.length ? allWeeks[selectedWeekIdx >= 0 ? selectedWeekIdx : allWeeks.length - 1] : null; }}
+function getSelectedPeriod() {{ return getSelectedPeriodKey(); }}
 function cityUA(c) {{ return CITY_UA[c] || c; }}
 
-function populateCityFilter() {{
-  const sel = document.getElementById('city-filter');
-  sel.innerHTML = '<option value="__all__">Всі міста</option>';
-  const cities = new Set(Object.values(D.stores).map(s => s.city_en));
-  [...cities].sort().forEach(c => {{
-    const o = document.createElement('option');
-    o.value = c; o.textContent = cityUA(c);
-    sel.appendChild(o);
+function buildMsPanel(panelEl, items, selected, allLabel, onChange) {{
+  let html = '<label class="ms-item all-item"><input type="checkbox" data-val="__all__" ' + (selected.size === 0 ? 'checked' : '') + '> ' + allLabel + '</label>';
+  items.forEach(it => {{
+    html += '<label class="ms-item"><input type="checkbox" data-val="' + it.value + '" ' + (selected.has(it.value) ? 'checked' : '') + '> ' + it.label + '</label>';
+  }});
+  panelEl.innerHTML = html;
+  panelEl.querySelectorAll('input[type=checkbox]').forEach(cb => {{
+    cb.addEventListener('change', function() {{
+      const val = this.dataset.val;
+      if (val === '__all__') {{
+        selected.clear();
+        panelEl.querySelectorAll('input[data-val]').forEach(x => {{ x.checked = (x.dataset.val === '__all__'); }});
+      }} else {{
+        if (this.checked) selected.add(val); else selected.delete(val);
+        const allCb = panelEl.querySelector('input[data-val="__all__"]');
+        if (selected.size === 0) {{ allCb.checked = true; }}
+        else {{ allCb.checked = false; }}
+      }}
+      onChange();
+    }});
   }});
 }}
 
-function populateOrdersStoreFilter() {{
-  const sel = document.getElementById('orders-store-filter');
-  sel.innerHTML = '<option value="__all__">Всі заклади</option>';
-  const ids = getFilteredStoreIds();
-  ids.forEach(id => {{
-    const s = D.stores[id];
-    if (s) {{
-      const o = document.createElement('option');
-      o.value = id; o.textContent = s.short + ' (' + s.city + ')';
-      sel.appendChild(o);
-    }}
+function updateMsLabel(btnEl, selected, allLabel, getLabel) {{
+  if (selected.size === 0) {{ btnEl.textContent = allLabel; return; }}
+  if (selected.size === 1) {{ btnEl.textContent = getLabel([...selected][0]); return; }}
+  btnEl.innerHTML = getLabel([...selected][0]) + ' <span class="ms-count">+' + (selected.size - 1) + '</span>';
+}}
+
+function initMsToggle(btnId, panelId) {{
+  const btn = document.getElementById(btnId);
+  const panel = document.getElementById(panelId);
+  btn.addEventListener('click', function(e) {{
+    e.stopPropagation();
+    const wasOpen = panel.classList.contains('open');
+    closeAllMs();
+    if (!wasOpen) {{ panel.classList.add('open'); btn.classList.add('open'); }}
   }});
+  panel.addEventListener('click', e => e.stopPropagation());
+}}
+function closeAllMs() {{
+  document.querySelectorAll('.ms-panel.open').forEach(p => p.classList.remove('open'));
+  document.querySelectorAll('.ms-btn.open').forEach(b => b.classList.remove('open'));
+}}
+document.addEventListener('click', closeAllMs);
+
+function populateCityFilter() {{
+  const panel = document.getElementById('city-panel');
+  const btn = document.getElementById('city-btn');
+  const cities = [...new Set(Object.values(D.stores).map(s => s.city_en))].sort();
+  const items = cities.map(c => ({{ value: c, label: cityUA(c) }}));
+  buildMsPanel(panel, items, selectedCities, 'Всі міста', function() {{
+    updateMsLabel(btn, selectedCities, 'Всі міста', v => cityUA(v));
+    selectedStores.clear();
+    populateStoreFilter();
+    populateWeekBar();
+    renderAll();
+  }});
+  updateMsLabel(btn, selectedCities, 'Всі міста', v => cityUA(v));
+}}
+
+function populateStoreFilter() {{
+  const panel = document.getElementById('store-panel');
+  const btn = document.getElementById('store-btn');
+  const cityIds = selectedCities.size === 0
+    ? Object.keys(D.stores).map(Number)
+    : Object.entries(D.stores).filter(([_, s]) => selectedCities.has(s.city_en)).map(([id]) => Number(id));
+  const items = cityIds
+    .sort((a, b) => (D.stores[a].short || '').localeCompare(D.stores[b].short || '', 'uk'))
+    .filter(id => D.stores[id])
+    .map(id => ({{ value: String(id), label: D.stores[id].short + ' (' + D.stores[id].city + ')' }}));
+  buildMsPanel(panel, items, selectedStores, 'Всі заклади', function() {{
+    updateMsLabel(btn, selectedStores, 'Всі заклади', v => D.stores[v] ? D.stores[v].short : v);
+    populateWeekBar();
+    renderAll();
+  }});
+  updateMsLabel(btn, selectedStores, 'Всі заклади', v => D.stores[v] ? D.stores[v].short : v);
+}}
+
+function resetAllFilters() {{
+  selectedCities.clear();
+  selectedStores.clear();
+  populateCityFilter();
+  populateStoreFilter();
+  selectedWeekIdx = allWeeks.length - 1;
+  selectedMonthIdx = allMonths.length - 1;
+  populateWeekBar();
+  renderAll();
 }}
 
 function getFilteredStoreIds() {{
-  if (selectedCity === '__all__') return Object.keys(D.stores).map(Number);
-  return Object.entries(D.stores).filter(([_, s]) => s.city_en === selectedCity).map(([id]) => Number(id));
+  if (selectedStores.size > 0) return [...selectedStores].map(Number);
+  if (selectedCities.size === 0) return Object.keys(D.stores).map(Number);
+  return Object.entries(D.stores).filter(([_, s]) => selectedCities.has(s.city_en)).map(([id]) => Number(id));
 }}
 
-function getFilteredWeeks() {{
+function getFilteredPeriodKeys() {{
   const ids = getFilteredStoreIds();
-  return allWeeks.filter(w => {{
-    const wd = D.weekly[w] || {{}};
-    return ids.some(id => wd[id]);
+  const keys = getPeriodKeys();
+  const store = getPerStoreData();
+  return keys.filter(k => {{
+    const kd = store[k] || {{}};
+    return ids.some(id => kd[id]);
   }});
 }}
 
 function populateWeekBar() {{
   const bar = document.getElementById('week-bar');
-  let html = '<div class="week-bar-label">Тиждень:</div>';
-  const weeks = getFilteredWeeks();
-  weeks.forEach(w => {{
-    const idx = allWeeks.indexOf(w);
-    html += '<div class="week-pill' + (idx === selectedWeekIdx ? ' active' : '') + '" data-idx="' + idx + '">' + w + '</div>';
+  const label = periodMode === 'month' ? 'Місяць:' : 'Тиждень:';
+  let html = '<div class="week-bar-label">' + label + '</div>';
+  const keys = getFilteredPeriodKeys();
+  const allKeys = getPeriodKeys();
+  const selIdx = getSelectedPeriodIdx();
+  keys.forEach(k => {{
+    const idx = allKeys.indexOf(k);
+    const lbl = getPeriodLabel(k);
+    html += '<div class="week-pill' + (idx === selIdx ? ' active' : '') + '" data-idx="' + idx + '">' + lbl + '</div>';
   }});
   bar.innerHTML = html;
   bar.querySelectorAll('.week-pill').forEach(pill => {{
     pill.addEventListener('click', () => {{
-      selectedWeekIdx = parseInt(pill.dataset.idx);
+      setSelectedPeriodIdx(parseInt(pill.dataset.idx));
       bar.querySelectorAll('.week-pill').forEach(p => p.classList.remove('active'));
       pill.classList.add('active');
       renderAll();
@@ -697,22 +1095,25 @@ function populateWeekBar() {{
 function destroyChart(id) {{ if (chartInstances[id]) {{ chartInstances[id].destroy(); delete chartInstances[id]; }} }}
 
 function wow(cur, prev, dir) {{
-  if (!prev || prev === 0) return {{ cls: 'neutral', text: '— WoW' }};
+  const lbl = periodMode === 'month' ? 'MoM' : 'WoW';
+  if (!prev || prev === 0) return {{ cls: 'neutral', text: '— ' + lbl }};
   const chg = ((cur - prev) / Math.abs(prev)) * 100;
   const good = (dir === 'up' && chg > 0) || (dir === 'down' && chg < 0);
   const bad = (dir === 'up' && chg < 0) || (dir === 'down' && chg > 0);
   const cls = good ? 'up' : bad ? 'down' : 'neutral';
   const arrow = chg > 0 ? '↑' : chg < 0 ? '↓' : '';
-  return {{ cls, text: arrow + ' ' + Math.abs(chg).toFixed(1) + '% WoW' }};
+  return {{ cls, text: arrow + ' ' + Math.abs(chg).toFixed(1) + '% ' + lbl }};
 }}
 
 function renderKPIs() {{
   const ids = getFilteredStoreIds();
-  const selW = getSelectedWeek();
-  const prevIdx = allWeeks.indexOf(selW) - 1;
-  const prevW = prevIdx >= 0 ? allWeeks[prevIdx] : null;
-  const wd = D.weekly[selW] || {{}};
-  const pd = prevW ? (D.weekly[prevW] || {{}}) : {{}};
+  const store = getPerStoreData();
+  const keys = getPeriodKeys();
+  const selK = getSelectedPeriod();
+  const prevIdx = keys.indexOf(selK) - 1;
+  const prevK = prevIdx >= 0 ? keys[prevIdx] : null;
+  const wd = store[selK] || {{}};
+  const pd = prevK ? (store[prevK] || {{}}) : {{}};
 
   let curOrders = 0, curCheck = 0, curCooking = 0, curBad = 0, cnt = 0;
   let prevOrders = 0, prevCheck = 0, prevCooking = 0, prevBad = 0, pcnt = 0;
@@ -728,13 +1129,20 @@ function renderKPIs() {{
   const prevBadRate = prevOrders > 0 ? (prevBad / prevOrders * 100) : 0;
   const storeCount = ids.filter(id => wd[id]).length;
 
-  let avgAvail = 0, avgAccept = 0, aCnt = 0;
+  const opsSel = getOpsData()[selK] || {{}};
+  let avgAvail = 0, avgAccept = 0, avCnt = 0, acCnt = 0;
   ids.forEach(id => {{
-    const lo = D.latest_ops[id];
-    if (lo) {{ avgAvail += lo.availability; avgAccept += lo.acceptance; aCnt++; }}
+    const lo = opsSel[id] || (Object.keys(opsSel).length === 0 ? D.latest_ops[id] : null);
+    if (lo) {{
+      if (lo.availability != null) {{ avgAvail += lo.availability; avCnt++; }}
+      if (lo.acceptance != null) {{ avgAccept += lo.acceptance; acCnt++; }}
+    }}
   }});
-  if (aCnt > 0) {{ avgAvail /= aCnt; avgAccept /= aCnt; }}
+  avgAvail = avCnt > 0 ? avgAvail / avCnt : 0;
+  avgAccept = acCnt > 0 ? avgAccept / acCnt : 0;
 
+  const periodLabel = periodMode === 'month' ? 'за обраний місяць' : 'за обраний тиждень';
+  const changeLabel = periodMode === 'month' ? 'MoM' : 'WoW';
   const kpis = [
     {{ label: 'Замовлення', value: curOrders.toLocaleString('uk-UA'), ...wow(curOrders, prevOrders, 'up') }},
     {{ label: 'Середній чек', value: '₴' + avgChk.toFixed(0), ...wow(avgChk, prevAvgChk, 'up') }},
@@ -742,7 +1150,7 @@ function renderKPIs() {{
     {{ label: 'Доступність', value: avgAvail.toFixed(1) + '%', cls: avgAvail >= 90 ? 'up' : 'down', text: 'середнє по закладах' }},
     {{ label: 'Прийняття', value: avgAccept.toFixed(1) + '%', cls: avgAccept >= 90 ? 'up' : 'down', text: 'середнє по закладах' }},
     {{ label: 'Погані замовлення', value: badRate.toFixed(1) + '%', ...wow(badRate, prevBadRate, 'down') }},
-    {{ label: 'Активних закладів', value: storeCount, cls: 'neutral', text: 'за обраний тиждень' }},
+    {{ label: 'Активних закладів', value: storeCount, cls: 'neutral', text: periodLabel }},
   ];
 
   document.getElementById('kpi-grid').innerHTML = kpis.map(k =>
@@ -753,57 +1161,62 @@ function renderKPIs() {{
 
 function renderOrdersCharts() {{
   const ids = getFilteredStoreIds();
-  const weeks = getFilteredWeeks();
+  const pkeys = getFilteredPeriodKeys();
+  const labels = pkeys.map(k => getPeriodLabel(k));
+  const store = getPerStoreData();
 
   destroyChart('chart-orders');
-  const ordersData = weeks.map(w => {{
-    const wd = D.weekly[w] || {{}};
-    return ids.reduce((s, id) => s + (wd[id] ? wd[id].orders : 0), 0);
+  const ordersData = pkeys.map(k => {{
+    const kd = store[k] || {{}};
+    return ids.reduce((s, id) => s + (kd[id] ? kd[id].orders : 0), 0);
   }});
   chartInstances['chart-orders'] = new Chart(document.getElementById('chart-orders'), {{
     type: 'bar',
-    data: {{ labels: weeks, datasets: [{{ label: 'Замовлення', data: ordersData, backgroundColor: 'rgba(249,115,22,.7)', borderColor: '#F97316', borderWidth: 1, borderRadius: 6, barPercentage: .6 }}] }},
+    data: {{ labels, datasets: [{{ label: 'Замовлення', data: ordersData, backgroundColor: 'rgba(249,115,22,.7)', borderColor: '#F97316', borderWidth: 1, borderRadius: 6, barPercentage: .6 }}] }},
     options: {{ responsive: true, maintainAspectRatio: false, plugins: {{ legend: {{ display: false }} }}, scales: {{ y: {{ beginAtZero: true, grid: {{ color: 'rgba(0,0,0,.05)' }} }}, x: {{ grid: {{ display: false }} }} }} }}
   }});
 
   destroyChart('chart-avg-check');
-  const checkData = weeks.map(w => {{
-    const wd = D.weekly[w] || {{}};
+  const checkData = pkeys.map(k => {{
+    const kd = store[k] || {{}};
     let sum = 0, cnt = 0;
-    ids.forEach(id => {{ if (wd[id]) {{ sum += wd[id].avg_check * wd[id].orders; cnt += wd[id].orders; }} }});
+    ids.forEach(id => {{ if (kd[id]) {{ sum += kd[id].avg_check * kd[id].orders; cnt += kd[id].orders; }} }});
     return cnt > 0 ? Math.round(sum / cnt) : 0;
   }});
   chartInstances['chart-avg-check'] = new Chart(document.getElementById('chart-avg-check'), {{
     type: 'line',
-    data: {{ labels: weeks, datasets: [{{ label: 'Середній чек', data: checkData, borderColor: '#3B82F6', backgroundColor: 'rgba(59,130,246,.08)', fill: true, tension: .35, pointRadius: 4, pointBackgroundColor: '#3B82F6', borderWidth: 2.5 }}] }},
+    data: {{ labels, datasets: [{{ label: 'Середній чек', data: checkData, borderColor: '#3B82F6', backgroundColor: 'rgba(59,130,246,.08)', fill: true, tension: .35, pointRadius: 4, pointBackgroundColor: '#3B82F6', borderWidth: 2.5 }}] }},
     options: {{ responsive: true, maintainAspectRatio: false, plugins: {{ legend: {{ display: false }} }}, scales: {{ y: {{ beginAtZero: false, grid: {{ color: 'rgba(0,0,0,.05)' }}, ticks: {{ callback: v => '₴' + v }} }}, x: {{ grid: {{ display: false }} }} }} }}
   }});
 }}
 
 function renderOpsCharts() {{
   const ids = getFilteredStoreIds();
-  const weeks = getFilteredWeeks();
+  const pkeys = getFilteredPeriodKeys();
+  const labels = pkeys.map(k => getPeriodLabel(k));
+  const opsStore = getOpsData();
+  const store = getPerStoreData();
 
-  const avgByWeek = (field) => weeks.map(w => {{
-    const ow = D.ops_weekly[w] || {{}};
+  const avgByPeriod = (field) => pkeys.map(k => {{
+    const ow = opsStore[k] || {{}};
     let sum = 0, cnt = 0;
     ids.forEach(id => {{ if (ow[id]) {{ sum += ow[id][field]; cnt++; }} }});
     return cnt > 0 ? +(sum / cnt).toFixed(1) : null;
   }});
 
-  const badRates = weeks.map(w => {{
-    const wd = D.weekly[w] || {{}};
+  const badRates = pkeys.map(k => {{
+    const kd = store[k] || {{}};
     let ord = 0, bad = 0;
-    ids.forEach(id => {{ if (wd[id]) {{ ord += wd[id].orders; bad += wd[id].bad_orders; }} }});
+    ids.forEach(id => {{ if (kd[id]) {{ ord += kd[id].orders; bad += kd[id].bad_orders; }} }});
     return ord > 0 ? +(bad / ord * 100).toFixed(1) : 0;
   }});
 
   destroyChart('chart-ops-rates');
   chartInstances['chart-ops-rates'] = new Chart(document.getElementById('chart-ops-rates'), {{
     type: 'line',
-    data: {{ labels: weeks, datasets: [
-      {{ label: 'Доступність', data: avgByWeek('availability'), borderColor: '#F97316', backgroundColor: 'rgba(249,115,22,.08)', fill: true, tension: .35, pointRadius: 4, pointBackgroundColor: '#F97316', borderWidth: 2.5 }},
-      {{ label: 'Прийняття', data: avgByWeek('acceptance'), borderColor: '#3B82F6', backgroundColor: 'rgba(59,130,246,.06)', fill: true, tension: .35, pointRadius: 4, pointBackgroundColor: '#3B82F6', borderWidth: 2.5 }}
+    data: {{ labels, datasets: [
+      {{ label: 'Доступність', data: avgByPeriod('availability'), borderColor: '#F97316', backgroundColor: 'rgba(249,115,22,.08)', fill: true, tension: .35, pointRadius: 4, pointBackgroundColor: '#F97316', borderWidth: 2.5 }},
+      {{ label: 'Прийняття', data: avgByPeriod('acceptance'), borderColor: '#3B82F6', backgroundColor: 'rgba(59,130,246,.06)', fill: true, tension: .35, pointRadius: 4, pointBackgroundColor: '#3B82F6', borderWidth: 2.5 }}
     ] }},
     options: {{ responsive: true, maintainAspectRatio: false,
       plugins: {{ legend: {{ position: 'bottom', labels: {{ usePointStyle: true, padding: 12, font: {{ size: 11 }} }} }} }},
@@ -813,7 +1226,7 @@ function renderOpsCharts() {{
   destroyChart('chart-bad-orders');
   chartInstances['chart-bad-orders'] = new Chart(document.getElementById('chart-bad-orders'), {{
     type: 'line',
-    data: {{ labels: weeks, datasets: [
+    data: {{ labels, datasets: [
       {{ label: 'Погані замовлення', data: badRates, borderColor: '#EF4444', backgroundColor: 'rgba(239,68,68,.06)', fill: true, tension: .35, pointRadius: 4, pointBackgroundColor: '#EF4444', borderWidth: 2.5 }}
     ] }},
     options: {{ responsive: true, maintainAspectRatio: false,
@@ -824,11 +1237,14 @@ function renderOpsCharts() {{
 
 function renderInsights() {{
   const ids = getFilteredStoreIds();
-  const selW = getSelectedWeek();
-  const prevIdx = allWeeks.indexOf(selW) - 1;
-  const prevW = prevIdx >= 0 ? allWeeks[prevIdx] : null;
-  const wd = D.weekly[selW] || {{}};
-  const pd = prevW ? (D.weekly[prevW] || {{}}) : {{}};
+  const store = getPerStoreData();
+  const keys = getPeriodKeys();
+  const selK = getSelectedPeriod();
+  const prevIdx = keys.indexOf(selK) - 1;
+  const prevK = prevIdx >= 0 ? keys[prevIdx] : null;
+  const wd = store[selK] || {{}};
+  const pd = prevK ? (store[prevK] || {{}}) : {{}};
+  const lbl = periodMode === 'month' ? 'MoM' : 'WoW';
 
   let curOrd = 0, prevOrd = 0;
   ids.forEach(id => {{
@@ -844,22 +1260,27 @@ function renderInsights() {{
     return '<b class="' + cls + '">' + (chg > 0 ? '+' : '') + chg.toFixed(1) + '%</b>';
   }}
 
-  let o = '<b>' + selW + '</b>. ';
-  o += 'Доставлено <b>' + curOrd + '</b> замовлень (' + cs(ordChg, 'up') + ' WoW). ';
+  let o = '<b>' + getPeriodLabel(selK) + '</b>. ';
+  o += 'Доставлено <b>' + curOrd + '</b> замовлень (' + cs(ordChg, 'up') + ' ' + lbl + '). ';
   if (ordChg != null && ordChg < -10) o += '<span class="insight-bad">Суттєве падіння замовлень.</span>';
   else if (ordChg != null && ordChg > 10) o += '<span class="insight-good">Гарне зростання!</span>';
   document.getElementById('insight-orders').innerHTML = o;
 
-  let avgAvail = 0, avgAccept = 0, aCnt = 0, bad = 0, ord = 0;
+  const opsSel2 = getOpsData()[selK] || {{}};
+  let avgAvail = 0, avgAccept = 0, avCnt = 0, acCnt = 0, bad = 0, ord = 0;
   ids.forEach(id => {{
-    const lo = D.latest_ops[id];
-    if (lo) {{ avgAvail += lo.availability; avgAccept += lo.acceptance; aCnt++; }}
+    const lo = opsSel2[id] || (Object.keys(opsSel2).length === 0 ? D.latest_ops[id] : null);
+    if (lo) {{
+      if (lo.availability != null) {{ avgAvail += lo.availability; avCnt++; }}
+      if (lo.acceptance != null) {{ avgAccept += lo.acceptance; acCnt++; }}
+    }}
     if (wd[id]) {{ bad += wd[id].bad_orders; ord += wd[id].orders; }}
   }});
-  if (aCnt > 0) {{ avgAvail /= aCnt; avgAccept /= aCnt; }}
+  avgAvail = avCnt > 0 ? avgAvail / avCnt : 0;
+  avgAccept = acCnt > 0 ? avgAccept / acCnt : 0;
   const badRate = ord > 0 ? (bad / ord * 100) : 0;
 
-  let ops = '<b>' + selW + '</b>. ';
+  let ops = '<b>' + getPeriodLabel(selK) + '</b>. ';
   ops += 'Доступність — <b>' + avgAvail.toFixed(1) + '%</b>. Прийняття — <b>' + avgAccept.toFixed(1) + '%</b>. Погані замовлення — <b>' + badRate.toFixed(1) + '%</b>. ';
   if (avgAvail < 80) ops += '<span class="insight-bad">Доступність критично низька!</span> ';
   else if (avgAvail >= 95) ops += '<span class="insight-good">Відмінна доступність!</span> ';
@@ -869,16 +1290,20 @@ function renderInsights() {{
 
 function renderStoresTable() {{
   const ids = getFilteredStoreIds();
-  const selW = getSelectedWeek();
-  const prevIdx = allWeeks.indexOf(selW) - 1;
-  const prevW = prevIdx >= 0 ? allWeeks[prevIdx] : null;
-  document.getElementById('stores-week-label').textContent = '— ' + selW + (prevW ? ' (WoW до ' + prevW + ')' : '');
-  const wd = D.weekly[selW] || {{}};
-  const pd = prevW ? (D.weekly[prevW] || {{}}) : {{}};
+  const store = getPerStoreData();
+  const keys = getPeriodKeys();
+  const selK = getSelectedPeriod();
+  const prevIdx = keys.indexOf(selK) - 1;
+  const prevK = prevIdx >= 0 ? keys[prevIdx] : null;
+  const chgLbl = periodMode === 'month' ? 'MoM' : 'WoW';
+  document.getElementById('stores-week-label').textContent = '— ' + getPeriodLabel(selK) + (prevK ? ' (' + chgLbl + ' до ' + getPeriodLabel(prevK) + ')' : '');
+  const wd = store[selK] || {{}};
+  const pd = prevK ? (store[prevK] || {{}}) : {{}};
 
+  const opsSelT = getOpsData()[selK] || {{}};
   const rows = ids.filter(id => wd[id]).map(id => ({{
     id, ...D.stores[id], ...wd[id],
-    ops: D.latest_ops[id] || {{}},
+    ops: opsSelT[id] || {{}},
     prev: pd[id] || null
   }})).sort((a, b) => b.orders - a.orders);
 
@@ -914,27 +1339,29 @@ function renderStoresTable() {{
 
 function renderRevenueChart() {{
   const ids = getFilteredStoreIds();
-  const weeks = getFilteredWeeks();
-  const selW = getSelectedWeek();
+  const pkeys = getFilteredPeriodKeys();
+  const labels = pkeys.map(k => getPeriodLabel(k));
+  const revStore = getRevenueData();
+  const selK = getSelectedPeriod();
 
   destroyChart('chart-revenue');
-  const foodData = weeks.map(w => {{
-    const rw = D.revenue[w] || {{}};
+  const foodData = pkeys.map(k => {{
+    const rw = revStore[k] || {{}};
     return ids.reduce((s, id) => s + ((rw[id] && rw[id].food_revenue) || 0), 0);
   }});
-  const feeData = weeks.map(w => {{
-    const rw = D.revenue[w] || {{}};
+  const feeData = pkeys.map(k => {{
+    const rw = revStore[k] || {{}};
     return ids.reduce((s, id) => s + ((rw[id] && rw[id].total_fee_gross) || 0), 0);
   }});
-  const netData = weeks.map(w => {{
-    const rw = D.revenue[w] || {{}};
+  const netData = pkeys.map(k => {{
+    const rw = revStore[k] || {{}};
     return ids.reduce((s, id) => s + ((rw[id] && rw[id].net_income) || 0), 0);
   }});
 
   chartInstances['chart-revenue'] = new Chart(document.getElementById('chart-revenue'), {{
     type: 'bar',
     data: {{
-      labels: weeks,
+      labels,
       datasets: [
         {{ label: 'Дохід від їжі', data: foodData, backgroundColor: 'rgba(59,130,246,.7)', borderRadius: 4, barPercentage: .7 }},
         {{ label: 'Комісія (брутто)', data: feeData, backgroundColor: 'rgba(239,68,68,.6)', borderRadius: 4, barPercentage: .7 }},
@@ -952,7 +1379,7 @@ function renderRevenueChart() {{
   }});
 
   let sumHtml = '<table class="revenue-summary-table"><thead><tr><th>Заклад</th><th class="text-right">Замовлення</th><th class="text-right">Дохід їжі</th><th class="text-right">Комісія</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th></tr></thead><tbody>';
-  const rw = D.revenue[selW] || {{}};
+  const rw = revStore[selK] || {{}};
   let tOrd = 0, tFood = 0, tFee = 0, tRef = 0, tNet = 0;
   ids.filter(id => rw[id]).sort((a, b) => (rw[b].net_income || 0) - (rw[a].net_income || 0)).forEach(id => {{
     const r = rw[id];
@@ -963,6 +1390,143 @@ function renderRevenueChart() {{
   sumHtml += '<tr class="total-row"><td>Всього</td><td class="text-right">' + tOrd + '</td><td class="text-right">₴' + tFood.toLocaleString('uk-UA') + '</td><td class="text-right" style="color:var(--neg)">₴' + tFee.toLocaleString('uk-UA') + '</td><td class="text-right">₴' + tRef.toLocaleString('uk-UA') + '</td><td class="text-right" style="color:var(--pos)">₴' + tNet.toLocaleString('uk-UA') + '</td></tr>';
   sumHtml += '</tbody></table>';
   document.getElementById('revenue-summary').innerHTML = sumHtml;
+}}
+
+function renderCampaignsChart() {{
+  const ids = getFilteredStoreIds();
+  const pkeys = getFilteredPeriodKeys();
+  const labels = pkeys.map(k => getPeriodLabel(k));
+  const camps = D.campaigns || [];
+
+  destroyChart('chart-campaign-spend');
+  destroyChart('chart-campaign-bolt');
+
+  const provSpend = pkeys.map(k =>
+    camps.filter(r => getCampaignPeriodKey(r) === k && ids.includes(r.provider_id))
+         .reduce((s, r) => s + (r.provider_spend || 0), 0)
+  );
+  const boltSpend = pkeys.map(k =>
+    camps.filter(r => getCampaignPeriodKey(r) === k && ids.includes(r.provider_id))
+         .reduce((s, r) => s + (r.bolt_spend || 0), 0)
+  );
+  const campOrders = pkeys.map(k =>
+    camps.filter(r => getCampaignPeriodKey(r) === k && ids.includes(r.provider_id))
+         .reduce((s, r) => s + (r.orders || 0), 0)
+  );
+
+  chartInstances['chart-campaign-spend'] = new Chart(document.getElementById('chart-campaign-spend'), {{
+    type: 'bar',
+    data: {{
+      labels,
+      datasets: [
+        {{ label: 'Витрати закладу ₴', data: provSpend, backgroundColor: 'rgba(239,68,68,.7)', borderRadius: 4, barPercentage: .6, yAxisID: 'y' }},
+        {{ label: 'Промо-замовлення', data: campOrders, type: 'line', borderColor: '#F97316', backgroundColor: 'rgba(249,115,22,.08)', pointRadius: 3, pointBackgroundColor: '#F97316', borderWidth: 2, tension: .3, fill: false, yAxisID: 'y1' }}
+      ]
+    }},
+    options: {{
+      responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend: {{ position: 'bottom', labels: {{ usePointStyle: true, padding: 12, font: {{ size: 11 }} }} }} }},
+      scales: {{
+        x: {{ grid: {{ display: false }} }},
+        y: {{ beginAtZero: true, position: 'left', grid: {{ color: 'rgba(0,0,0,.05)' }}, ticks: {{ callback: v => '₴' + v.toLocaleString('uk-UA') }} }},
+        y1: {{ beginAtZero: true, position: 'right', grid: {{ display: false }}, ticks: {{ font: {{ size: 10 }} }} }}
+      }}
+    }}
+  }});
+
+  chartInstances['chart-campaign-bolt'] = new Chart(document.getElementById('chart-campaign-bolt'), {{
+    type: 'bar',
+    data: {{
+      labels,
+      datasets: [
+        {{ label: 'Витрати Bolt ₴', data: boltSpend, backgroundColor: 'rgba(59,130,246,.7)', borderRadius: 4, barPercentage: .6, yAxisID: 'y' }},
+        {{ label: 'Промо-замовлення', data: campOrders, type: 'line', borderColor: '#F97316', backgroundColor: 'rgba(249,115,22,.08)', pointRadius: 3, pointBackgroundColor: '#F97316', borderWidth: 2, tension: .3, fill: false, yAxisID: 'y1' }}
+      ]
+    }},
+    options: {{
+      responsive: true, maintainAspectRatio: false,
+      plugins: {{ legend: {{ position: 'bottom', labels: {{ usePointStyle: true, padding: 12, font: {{ size: 11 }} }} }} }},
+      scales: {{
+        x: {{ grid: {{ display: false }} }},
+        y: {{ beginAtZero: true, position: 'left', grid: {{ color: 'rgba(0,0,0,.05)' }}, ticks: {{ callback: v => '₴' + v.toLocaleString('uk-UA') }} }},
+        y1: {{ beginAtZero: true, position: 'right', grid: {{ display: false }}, ticks: {{ font: {{ size: 10 }} }} }}
+      }}
+    }}
+  }});
+}}
+
+function renderCampaigns() {{
+  const ids = getFilteredStoreIds();
+  const selK = getSelectedPeriod();
+  document.getElementById('campaigns-week-label').textContent = '— ' + getPeriodLabel(selK);
+
+  const rows = (D.campaigns || []).filter(r => getCampaignPeriodKey(r) === selK && ids.includes(r.provider_id));
+
+  const bycamp = {{}};
+  rows.forEach(r => {{
+    const key = r.campaign_id;
+    if (!bycamp[key]) bycamp[key] = {{ ...r, orders: 0, total_discount: 0, bolt_spend: 0, provider_spend: 0, providers: new Set() }};
+    bycamp[key].orders += r.orders;
+    bycamp[key].total_discount += r.total_discount;
+    bycamp[key].bolt_spend += r.bolt_spend;
+    bycamp[key].provider_spend += r.provider_spend;
+    bycamp[key].providers.add(r.provider_short);
+  }});
+  const campList = Object.values(bycamp).sort((a, b) => b.orders - a.orders);
+
+  let totOrd = 0, totDisc = 0, totBolt = 0, totProv = 0;
+  campList.forEach(c => {{ totOrd += c.orders; totDisc += c.total_discount; totBolt += c.bolt_spend; totProv += c.provider_spend; }});
+
+  const summaryEl = document.getElementById('campaigns-summary');
+  if (campList.length === 0) {{
+    summaryEl.innerHTML = '<b>' + getPeriodLabel(selK) + '</b>. Немає активних кампаній для обраних закладів.';
+  }} else {{
+    summaryEl.innerHTML = '<b>' + getPeriodLabel(selK) + '</b>. Активних кампаній: <b>' + campList.length + '</b>. '
+      + 'Замовлень з кампаніями: <b>' + totOrd + '</b>. '
+      + 'Загальна знижка: <b>₴' + totDisc.toLocaleString('uk-UA') + '</b> '
+      + '(Bolt: ₴' + totBolt.toLocaleString('uk-UA') + ', Заклад: ₴' + totProv.toLocaleString('uk-UA') + ').';
+  }}
+
+  let t = '<table class="data-table"><thead><tr>'
+    + '<th>Кампанія</th><th>Хто платить</th>'
+    + '<th>Дати</th><th>Заклади</th>'
+    + '<th class="text-right">Зам.</th><th class="text-right">Знижка ₴</th>'
+    + '<th class="text-right">Bolt ₴</th><th class="text-right">Заклад ₴</th>'
+    + '</tr></thead><tbody>';
+
+  if (campList.length === 0) {{
+    t += '<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:24px">Немає кампаній за цей період</td></tr>';
+  }} else {{
+    campList.forEach(c => {{
+      const provArr = [...c.providers];
+      const provText = provArr.length > 3 ? provArr.slice(0, 3).join(', ') + ' +' + (provArr.length - 3) : provArr.join(', ');
+      const payer = c.provider_spend > 0 && c.bolt_spend > 0 ? 'Спільно'
+        : c.provider_spend > 0 ? 'Заклад'
+        : c.bolt_spend > 0 ? 'Bolt' : '—';
+      const payerCls = payer === 'Bolt' ? 'color:var(--blue);font-weight:600'
+        : payer === 'Заклад' ? 'color:var(--neg);font-weight:600'
+        : payer === 'Спільно' ? 'color:var(--warn);font-weight:600' : '';
+      const spBadge = c.is_smart_promo ? ' <span style="display:inline-block;background:var(--orange);color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle;letter-spacing:.3px">SMART PROMO</span>' : '';
+      t += '<tr>';
+      t += '<td style="white-space:normal;min-width:180px;max-width:280px" title="' + (c.full_name || '').replace(/"/g,'&quot;') + '">' + c.name + spBadge + '</td>';
+      t += '<td style="' + payerCls + ';white-space:nowrap">' + payer + '</td>';
+      t += '<td style="font-size:11px;white-space:nowrap">' + c.start_date + ' → ' + c.end_date + '</td>';
+      t += '<td style="font-size:12px">' + provText + '</td>';
+      t += '<td class="text-right">' + c.orders + '</td>';
+      t += '<td class="text-right">₴' + c.total_discount.toLocaleString('uk-UA') + '</td>';
+      t += '<td class="text-right" style="color:var(--blue)">₴' + c.bolt_spend.toLocaleString('uk-UA') + '</td>';
+      t += '<td class="text-right" style="color:var(--neg)">₴' + c.provider_spend.toLocaleString('uk-UA') + '</td>';
+      t += '</tr>';
+    }});
+    t += '<tr class="total-row"><td colspan="4">Всього</td>';
+    t += '<td class="text-right">' + totOrd + '</td>';
+    t += '<td class="text-right">₴' + totDisc.toLocaleString('uk-UA') + '</td>';
+    t += '<td class="text-right" style="color:var(--blue)">₴' + totBolt.toLocaleString('uk-UA') + '</td>';
+    t += '<td class="text-right" style="color:var(--neg)">₴' + totProv.toLocaleString('uk-UA') + '</td>';
+    t += '</tr>';
+  }}
+  t += '</tbody></table>';
+  document.getElementById('campaigns-wrap').innerHTML = t;
 }}
 
 function fmtDiscount(r) {{
@@ -984,20 +1548,25 @@ function fmtFee(net, gross) {{
 
 function renderOrdersDetail() {{
   const ids = getFilteredStoreIds();
-  const selW = getSelectedWeek();
-  document.getElementById('orders-detail-week-label').textContent = '— ' + selW;
+  const selK = getSelectedPeriod();
+  document.getElementById('orders-detail-week-label').textContent = '— ' + getPeriodLabel(selK);
+  const periodField = periodMode === 'month' ? 'order_month' : 'order_week';
 
-  let rows = (D.orders || []).filter(r => r.order_week === selW && ids.includes(r.provider_id));
-  if (selectedOrdersStore !== '__all__') {{
-    rows = rows.filter(r => r.provider_id === Number(selectedOrdersStore));
-  }}
+  let rows = (D.orders || []).filter(r => r[periodField] === selK && ids.includes(r.provider_id));
+  if (selectedBP === 'yes') rows = rows.filter(r => r.bolt_plus === 'Bolt Plus');
+  else if (selectedBP === 'no') rows = rows.filter(r => r.bolt_plus !== 'Bolt Plus');
+  if (selectedState === 'delivered') rows = rows.filter(r => r.order_state_raw === 'delivered');
+  else if (selectedState === 'failed') rows = rows.filter(r => r.order_state_raw !== 'delivered');
+  if (selectedSP === 'yes') rows = rows.filter(r => r.is_smart_promo);
+  else if (selectedSP === 'no') rows = rows.filter(r => !r.is_smart_promo);
 
   let t = '<table class="data-table"><thead><tr>';
-  t += '<th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Bolt+</th>';
+  t += '<th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Bolt+</th>';
   t += '<th class="text-right">Ціна до знижки</th><th class="text-right">Знижка (за чий рахунок)</th>';
   t += '<th class="text-right">Дохід від їжі</th><th class="text-right">Комісія (нетто+ПДВ=брутто)</th>';
   t += '<th class="text-right">Bolt Plus комісія</th><th class="text-right">Всього комісія</th>';
   t += '<th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th>';
+  t += '<th>Причина</th>';
   t += '</tr></thead><tbody>';
 
   let totFood = 0, totRev = 0, totFee = 0, totBpFee = 0, totRef = 0, totNet = 0;
@@ -1018,23 +1587,31 @@ function renderOrdersDetail() {{
     const bpFeeNet = r.bp_fee_net || 0;
     const bpFeeGross = r.bp_fee_gross || 0;
     const bpText = (isBp && bpFeeNet > 0.5) ? fmtFee(bpFeeNet, bpFeeGross) : '—';
+    const isFailed = r.order_state_raw !== 'delivered';
+    const stateColor = isFailed ? ' style="color:var(--neg);font-weight:600"' : '';
+    const failReason = r.fail_reason || '';
 
     const nc = (r.net_income || 0) < 0 ? ' style="color:var(--neg)"' : '';
-    t += '<tr><td>' + date + '</td>';
+    const spBadge = r.is_smart_promo ? ' <span style="display:inline-block;background:var(--orange);color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle;letter-spacing:.3px" title="Замовлення в межах Smart Promo кампанії">SMART PROMO</span>' : '';
+    t += '<tr' + (isFailed ? ' style="background:rgba(239,68,68,.04)"' : '') + '><td>' + date + '</td>';
     t += '<td>' + (r.order_reference_id || '') + '</td>';
-    t += '<td>' + (r.provider_short || '') + '</td>';
+    t += '<td>' + (r.provider_short || '') + spBadge + '</td>';
+    t += '<td' + stateColor + '>' + (r.order_state || '') + '</td>';
     t += '<td' + bpClass + '>' + bpLabel + '</td>';
     t += '<td class="text-right">' + (r.food_before_discount || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
     t += '<td class="text-right">' + fmtDiscount(r) + '</td>';
     t += '<td class="text-right">' + (r.food_revenue || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
-    t += '<td class="text-right" style="font-size:11px">' + fmtFee(feeNet, feeGross) + '</td>';
-    t += '<td class="text-right" style="font-size:11px">' + bpText + '</td>';
+    t += '<td class="text-right" style="font-size:11px">' + (isFailed ? '—' : fmtFee(feeNet, feeGross)) + '</td>';
+    t += '<td class="text-right" style="font-size:11px">' + (isFailed ? '—' : bpText) + '</td>';
     t += '<td class="text-right" style="color:var(--neg)">' + (r.total_fee_gross || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
     t += '<td class="text-right">' + (r.refund || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
-    t += '<td class="text-right"' + nc + '>' + (r.net_income || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td></tr>';
+    t += '<td class="text-right"' + nc + '>' + (r.net_income || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+    t += '<td class="comment-cell"' + (isFailed ? ' style="color:var(--neg)"' : '') + '>' + failReason + '</td></tr>';
   }});
 
-  t += '<tr class="total-row"><td colspan="4">Всього (' + rows.length + ' зам.)</td>';
+  const failedCount = rows.filter(r => r.order_state_raw !== 'delivered').length;
+  const deliveredCount = rows.length - failedCount;
+  t += '<tr class="total-row"><td colspan="5">Всього (' + rows.length + ' зам., ' + deliveredCount + ' дост., ' + failedCount + ' невдал.)</td>';
   t += '<td class="text-right">' + totFood.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
   t += '<td></td>';
   t += '<td class="text-right">' + totRev.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
@@ -1042,20 +1619,22 @@ function renderOrdersDetail() {{
   t += '<td class="text-right">' + totBpFee.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
   t += '<td class="text-right" style="color:var(--neg)">' + totFee.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
   t += '<td class="text-right">' + totRef.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
-  t += '<td class="text-right">' + totNet.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td></tr>';
+  t += '<td class="text-right">' + totNet.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+  t += '<td></td></tr>';
   t += '</tbody></table>';
   document.getElementById('orders-detail-wrap').innerHTML = t;
 }}
 
 function renderComplaints() {{
   const ids = getFilteredStoreIds();
-  const selW = getSelectedWeek();
-  const rows = (D.complaints || []).filter(r => r.order_week === selW && ids.includes(r.provider_id));
-  document.getElementById('comp-count').textContent = '(' + rows.length + ' за ' + selW + ')';
+  const selK = getSelectedPeriod();
+  const periodField = periodMode === 'month' ? 'order_month' : 'order_week';
+  const rows = (D.complaints || []).filter(r => r[periodField] === selK && ids.includes(r.provider_id));
+  document.getElementById('comp-count').textContent = '(' + rows.length + ' за ' + getPeriodLabel(selK) + ')';
 
   let t = '<table class="data-table"><thead><tr><th>Дата</th><th>Order Ref</th><th>Заклад</th><th class="text-right">Сума</th><th>Тип проблеми</th><th>Винний</th><th class="text-center">Рейтинг</th><th>Коментар</th></tr></thead><tbody>';
   if (rows.length === 0) {{
-    t += '<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:24px">Немає скарг за цей тиждень</td></tr>';
+    t += '<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:24px">Немає скарг за цей період</td></tr>';
   }} else {{
     rows.forEach(r => {{
       const date = r.order_created_date ? String(r.order_created_date).substring(0, 10) : '';
@@ -1074,13 +1653,14 @@ function renderComplaints() {{
 
 function renderCancelled() {{
   const ids = getFilteredStoreIds();
-  const selW = getSelectedWeek();
-  const rows = (D.cancelled || []).filter(r => r.order_week === selW && ids.includes(r.provider_id));
-  document.getElementById('canc-count').textContent = '(' + rows.length + ' за ' + selW + ')';
+  const selK = getSelectedPeriod();
+  const periodField = periodMode === 'month' ? 'order_month' : 'order_week';
+  const rows = (D.cancelled || []).filter(r => r[periodField] === selK && ids.includes(r.provider_id));
+  document.getElementById('canc-count').textContent = '(' + rows.length + ' за ' + getPeriodLabel(selK) + ')';
 
   let t = '<table class="data-table"><thead><tr><th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Причина</th><th>Коментар</th></tr></thead><tbody>';
   if (rows.length === 0) {{
-    t += '<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:24px">Немає скасованих за цей тиждень</td></tr>';
+    t += '<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:24px">Немає скасованих за цей період</td></tr>';
   }} else {{
     rows.forEach(r => {{
       const date = r.order_created_date ? String(r.order_created_date).substring(0, 10) : '';
@@ -1097,9 +1677,10 @@ function renderCancelled() {{
 
 function renderTopItems() {{
   const ids = getFilteredStoreIds();
-  const selW = getSelectedWeek();
-  const weekItems = D.top_items[selW] || {{}};
-  document.getElementById('items-week-label').textContent = '— ' + selW;
+  const selK = getSelectedPeriod();
+  const itemsStore = getItemsData();
+  const weekItems = itemsStore[selK] || {{}};
+  document.getElementById('items-week-label').textContent = '— ' + getPeriodLabel(selK);
   let html = '';
   ids.forEach(id => {{
     const items = weekItems[id];
@@ -1121,6 +1702,8 @@ function renderAll() {{
   renderOpsCharts();
   renderStoresTable();
   renderRevenueChart();
+  renderCampaignsChart();
+  renderCampaigns();
   renderOrdersDetail();
   renderComplaints();
   renderCancelled();
@@ -1150,15 +1733,18 @@ function setupNav() {{
   document.querySelectorAll('.section').forEach(s => observer.observe(s));
 }}
 
-document.getElementById('city-filter').addEventListener('change', function() {{
-  selectedCity = this.value;
-  populateWeekBar();
-  populateOrdersStoreFilter();
-  renderAll();
+document.getElementById('bp-filter').addEventListener('change', function() {{
+  selectedBP = this.value;
+  renderOrdersDetail();
 }});
 
-document.getElementById('orders-store-filter').addEventListener('change', function() {{
-  selectedOrdersStore = this.value;
+document.getElementById('state-filter').addEventListener('change', function() {{
+  selectedState = this.value;
+  renderOrdersDetail();
+}});
+
+document.getElementById('sp-filter').addEventListener('change', function() {{
+  selectedSP = this.value;
   renderOrdersDetail();
 }});
 
@@ -1172,8 +1758,16 @@ window.toggleDark = function() {{
 }};
 (function() {{ try {{ if (localStorage.getItem('burek-dark') === '1') {{ document.body.classList.add('dark'); document.getElementById('theme-toggle').textContent = '☀️'; Chart.defaults.color = '#D1D5DB'; }} }} catch(e) {{}} }})();
 
+document.getElementById('period-select').addEventListener('change', function() {{
+  periodMode = this.value;
+  populateWeekBar();
+  renderAll();
+}});
+
+initMsToggle('city-btn', 'city-panel');
+initMsToggle('store-btn', 'store-panel');
 populateCityFilter();
-populateOrdersStoreFilter();
+populateStoreFilter();
 populateWeekBar();
 setupNav();
 renderAll();
@@ -1185,7 +1779,7 @@ renderAll();
 # ── Main ─────────────────────────────────────────────────────────────────
 
 def main():
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
+    generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     print(f"Starting BUREK report generation at {generated_at}")
 
     conn = connect()
@@ -1217,10 +1811,18 @@ def main():
         print("  Fetching revenue weekly…")
         revenue_df = fetch_revenue_weekly(conn)
         print(f"  → {len(revenue_df)} rows")
+
+        print("  Fetching campaigns…")
+        campaigns_df = fetch_campaigns(conn)
+        print(f"  → {len(campaigns_df)} rows")
+
+        print("  Fetching Smart Promo order ids…")
+        smart_promo_df = fetch_smart_promo_orders(conn)
+        print(f"  → {len(smart_promo_df)} rows")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "burek"
@@ -1228,61 +1830,7 @@ def main():
     out_path = out_dir / "index.html"
     out_path.write_text(html, encoding="utf-8")
     print(f"  Saved: {out_path}")
-
-    update_root_index()
     print("\nDone!")
-
-
-def update_root_index():
-    """Re-generate the root index.html to include BUREK."""
-    from config import PROVIDERS
-
-    all_partners = {}
-    for pid, info in PROVIDERS.items():
-        all_partners[info["slug"]] = {"name": info["name"], "city": info["city"]}
-    all_partners["burek"] = {"name": "BUREK", "city": "Львів / Ужгород"}
-
-    cards = ""
-    for slug in sorted(all_partners, key=lambda s: all_partners[s]["name"]):
-        info = all_partners[slug]
-        cards += f"""
-    <a href="{slug}/index.html" class="report-card">
-      <h3>{info['name']}</h3>
-      <p>{info['city']}</p>
-      <span class="badge">Тижневий звіт</span>
-    </a>"""
-
-    html = f"""<!DOCTYPE html>
-<html lang="uk">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Partner Reports</title>
-<style>
-* {{ margin:0; padding:0; box-sizing:border-box; }}
-body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f172a; color:#e2e8f0; min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:60px 20px; }}
-.logo {{ font-size:48px; margin-bottom:8px; }}
-h1 {{ font-size:28px; font-weight:700; margin-bottom:6px; }}
-.subtitle {{ color:#94a3b8; font-size:15px; margin-bottom:48px; }}
-.reports-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:16px; width:100%; max-width:900px; }}
-.report-card {{ background:#1e293b; border:1px solid #334155; border-radius:12px; padding:24px; text-decoration:none; color:inherit; transition:all 0.2s; }}
-.report-card:hover {{ border-color:#34d399; transform:translateY(-2px); box-shadow:0 8px 24px rgba(52,211,153,0.1); }}
-.report-card h3 {{ font-size:18px; margin-bottom:8px; }}
-.report-card p {{ color:#94a3b8; font-size:13px; }}
-.badge {{ display:inline-block; background:#064e3b; color:#34d399; font-size:11px; padding:3px 8px; border-radius:6px; margin-top:12px; }}
-</style>
-</head>
-<body>
-<div class="logo">📊</div>
-<h1>Partner Reports</h1>
-<div class="subtitle">Тижневі звіти для партнерів</div>
-<div class="reports-grid">
-{cards}
-</div>
-</body>
-</html>"""
-    (REPO_ROOT / "index.html").write_text(html, encoding="utf-8")
-    print("  Updated root index.html")
 
 
 if __name__ == "__main__":
