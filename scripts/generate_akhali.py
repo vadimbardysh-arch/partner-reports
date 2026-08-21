@@ -1,6 +1,6 @@
 """
-Generate a multi-store weekly HTML report for Ваш Лаваш by querying Databricks.
-Produces vash-lavash/index.html — identical structure to the BUREK dashboard.
+Generate a multi-store weekly HTML report for Akhali Group by querying Databricks.
+Produces akhali/index.html — identical structure to the BUREK dashboard.
 """
 
 import os
@@ -21,51 +21,17 @@ from config import SERVER_HOSTNAME, HTTP_PATH
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEEKS_BACK = 52
 
-VASH_LAVASH_PROVIDERS = {
-    60918:  {"name": "Ваш Лаваш вул. Костомарова", "short": "Костомарова", "city": "Lviv"},
-    63369:  {"name": "Ваш Лаваш Шувар", "short": "Шувар", "city": "Lviv"},
-    63550:  {"name": "Ваш Лаваш Городоцька", "short": "Городоцька", "city": "Lviv"},
-    62676:  {"name": "Ваш Лаваш Великого", "short": "Великого", "city": "Lviv"},
-    62203:  {"name": "Ваш Лаваш вул. Бандери", "short": "Бандери", "city": "Lviv"},
-    114843: {"name": "Ваш Лаваш вул. Трудова", "short": "Трудова", "city": "Khmelnytskyi"},
-    154836: {"name": "Ваш Лаваш вул. Тернопільська", "short": "Тернопільська", "city": "Khmelnytskyi"},
-    117457: {"name": "Ваш Лаваш вул. Грушевського", "short": "Грушевського", "city": "Rivne"},
-    176277: {"name": "Ваш Лаваш вул. Чорновола", "short": "Чорновола", "city": "Rivne"},
-    117465: {"name": "Ваш Лаваш вул. Валова", "short": "Валова", "city": "Ternopil"},
-    117466: {"name": "Ваш Лаваш вул. Шептицького", "short": "Шептицького", "city": "Ternopil"},
-    117474: {"name": "Ваш Лаваш вул. Київська", "short": "Київська", "city": "Zhytomyr"},
-    117473: {"name": "Ваш Лаваш просп. Миру 37", "short": "пр. Миру 37", "city": "Zhytomyr"},
-    167163: {"name": "Ваш Лаваш просп. Шевченка", "short": "пр. Шевченка", "city": "Vyshhorod"},
-    185860: {"name": "Ваш Лаваш просп. Байрона", "short": "пр. Байрона", "city": "Kharkiv"},
-    185731: {"name": "Ваш Лаваш вул. В. Бердичівська", "short": "Бердичівська", "city": "Zhytomyr"},
-    185738: {"name": "Ваш Лаваш вул. І. Кочерги", "short": "Кочерги", "city": "Zhytomyr"},
-    185758: {"name": "Ваш Лаваш вул. Вітрука", "short": "Вітрука", "city": "Zhytomyr"},
-    185759: {"name": "Ваш Лаваш просп. Миру", "short": "пр. Миру", "city": "Zhytomyr"},
-    185781: {"name": "Ваш Лаваш вул. Корольова", "short": "Корольова", "city": "Zhytomyr"},
-    185784: {"name": "Ваш Лаваш вул. Покровська", "short": "Покровська", "city": "Zhytomyr"},
-    185658: {"name": "Ваш Лаваш вул. Домбровського", "short": "Домбровського", "city": "Zhytomyr"},
-    185651: {"name": "Ваш Лаваш вул. Лесі Українки", "short": "Л. Українки", "city": "Zhytomyr"},
-    185782: {"name": "Ваш Лаваш вул. Чуднівська", "short": "Чуднівська", "city": "Zhytomyr"},
-    185188: {"name": "Ваш Лаваш вул. Святошинська", "short": "Святошинська", "city": "Kyiv"},
-    179394: {"name": "Ваш Лаваш вул. Івана Мазепи", "short": "Мазепи", "city": "Kolomyia"},
-    652601:  {"name": "Ваш Лаваш вул. Шевченка", "short": "Шевченка", "city": "Irpin"},
-    1372495: {"name": "Ваш Лаваш просп. Волі", "short": "пр. Волі", "city": "Lutsk"},
+AKHALI_PROVIDERS = {
+    124446: {"name": "Ахалі на Курбаса", "short": "Курбаса", "city": "Lviv"},
+    124447: {"name": "Ахалі на Дудаєва", "short": "Дудаєва", "city": "Lviv"},
+    156860: {"name": "Ахалі на Стрийській", "short": "Стрийська", "city": "Lviv"},
+    124909: {"name": "Айда", "short": "Айда", "city": "Lviv"},
 }
 
-PROVIDER_IDS = ",".join(str(k) for k in VASH_LAVASH_PROVIDERS)
+PROVIDER_IDS = ",".join(str(k) for k in AKHALI_PROVIDERS)
 
 CITY_UA = {
     "Lviv": "Львів",
-    "Zhytomyr": "Житомир",
-    "Khmelnytskyi": "Хмельницький",
-    "Rivne": "Рівне",
-    "Ternopil": "Тернопіль",
-    "Kyiv": "Київ",
-    "Kharkiv": "Харків",
-    "Vyshhorod": "Вишгород",
-    "Kolomyia": "Коломия",
-    "Irpin": "Ірпінь",
-    "Lutsk": "Луцьк",
 }
 
 BAD_ORDER_TYPE_UA = {
@@ -370,7 +336,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
     stores_map = {}
     for _, r in weekly_df.iterrows():
         pid = to_native(r["provider_id"])
-        info = VASH_LAVASH_PROVIDERS.get(int(pid), {})
+        info = AKHALI_PROVIDERS.get(int(pid), {})
         stores_map[int(pid)] = {
             "name": info.get("name", r["provider_name"]),
             "short": info.get("short", r["provider_name"]),
@@ -525,8 +491,8 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             except (TypeError, ValueError):
                 row["is_smart_promo"] = False
         pid = row.get("provider_id")
-        if pid and int(pid) in VASH_LAVASH_PROVIDERS:
-            row["provider_short"] = VASH_LAVASH_PROVIDERS[int(pid)]["short"]
+        if pid and int(pid) in AKHALI_PROVIDERS:
+            row["provider_short"] = AKHALI_PROVIDERS[int(pid)]["short"]
         else:
             row["provider_short"] = row.get("provider_name", "")
         ow = row.get("order_week", "")
@@ -541,8 +507,8 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         raw_fault = row.get("fault", "") or ""
         row["fault"] = FAULT_UA.get(str(raw_fault).lower(), raw_fault)
         pid = row.get("provider_id")
-        if pid and int(pid) in VASH_LAVASH_PROVIDERS:
-            row["provider_short"] = VASH_LAVASH_PROVIDERS[int(pid)]["short"]
+        if pid and int(pid) in AKHALI_PROVIDERS:
+            row["provider_short"] = AKHALI_PROVIDERS[int(pid)]["short"]
         else:
             row["provider_short"] = row.get("provider_name", "")
         ow = row.get("order_week", "")
@@ -555,8 +521,8 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         raw_state = row.get("order_state", "") or ""
         row["order_state"] = ORDER_STATE_UA.get(raw_state, raw_state)
         pid = row.get("provider_id")
-        if pid and int(pid) in VASH_LAVASH_PROVIDERS:
-            row["provider_short"] = VASH_LAVASH_PROVIDERS[int(pid)]["short"]
+        if pid and int(pid) in AKHALI_PROVIDERS:
+            row["provider_short"] = AKHALI_PROVIDERS[int(pid)]["short"]
         else:
             row["provider_short"] = row.get("provider_name", "")
         ow = row.get("order_week", "")
@@ -620,7 +586,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             "start_date": str(r["start_date"]),
             "end_date": str(r["end_date"]),
             "provider_id": pid,
-            "provider_short": VASH_LAVASH_PROVIDERS.get(pid, {}).get("short", str(pid)),
+            "provider_short": AKHALI_PROVIDERS.get(pid, {}).get("short", str(pid)),
             "order_week": str(r["order_week"]),
             "order_month": week_to_month(str(r["order_week"])),
             "orders": to_native(r["orders"]),
@@ -643,7 +609,7 @@ def generate_html(data, generated_at):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ВАШ ЛАВАШ | тижневий звіт</title>
+<title>AKHALI GROUP | тижневий звіт</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -812,7 +778,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
 <header class="header">
   <div class="header-left">
     <span class="brand-dot"></span>
-    <h1>ВАШ ЛАВАШ | тижневий звіт</h1>
+    <h1>AKHALI GROUP | тижневий звіт</h1>
   </div>
   <div class="header-right">
     <div class="ms-wrap" id="city-ms"><button class="ms-btn" id="city-btn">Всі міста</button><div class="ms-panel" id="city-panel"></div></div>
@@ -1840,11 +1806,11 @@ window.toggleDark = function() {{
   document.body.classList.toggle('dark');
   const isDark = document.body.classList.contains('dark');
   document.getElementById('theme-toggle').textContent = isDark ? '☀️' : '🌙';
-  try {{ localStorage.setItem('vash-lavash-dark', isDark ? '1' : '0') }} catch(e) {{}}
+  try {{ localStorage.setItem('akhali-dark', isDark ? '1' : '0') }} catch(e) {{}}
   Chart.defaults.color = isDark ? '#D1D5DB' : '#374151';
   renderAll();
 }};
-(function() {{ try {{ if (localStorage.getItem('vash-lavash-dark') === '1') {{ document.body.classList.add('dark'); document.getElementById('theme-toggle').textContent = '☀️'; Chart.defaults.color = '#D1D5DB'; }} }} catch(e) {{}} }})();
+(function() {{ try {{ if (localStorage.getItem('akhali-dark') === '1') {{ document.body.classList.add('dark'); document.getElementById('theme-toggle').textContent = '☀️'; Chart.defaults.color = '#D1D5DB'; }} }} catch(e) {{}} }})();
 
 document.getElementById('period-select').addEventListener('change', function() {{
   periodMode = this.value;
@@ -1868,7 +1834,7 @@ renderAll();
 
 def main():
     generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    print(f"Starting Ваш Лаваш report generation at {generated_at}")
+    print(f"Starting Akhali Group report generation at {generated_at}")
 
     conn = connect()
     try:
@@ -1913,19 +1879,11 @@ def main():
     data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df)
     html = generate_html(data, generated_at)
 
-    out_dir = REPO_ROOT / "vash-lavash"
+    out_dir = REPO_ROOT / "akhali"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "index.html"
     out_path.write_text(html, encoding="utf-8")
     print(f"  Saved: {out_path}")
-
-    # Chained run: CI token lacks `workflow` scope to add a dedicated step
-    # for Стумарі and Akhali in update-reports.yml, so they are generated here.
-    import subprocess
-    print("\nRunning generate_stumari.py…")
-    subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "generate_stumari.py")], check=True)
-    print("\nRunning generate_akhali.py…")
-    subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "generate_akhali.py")], check=True)
 
     print("\nDone!")
 
