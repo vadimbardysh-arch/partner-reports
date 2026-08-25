@@ -334,6 +334,27 @@ def fetch_smart_promo_orders(conn):
     """)
 
 
+# ── Sponsored Listings (manual data from Provider Portal) ────────────────
+# Aug 17-25 → W34 (17-23 = 7 days) + W35 (24-25 = 2 days)
+SPONSORED_LISTINGS = [
+    {
+        "name": "Платне просування в 5 місцях",
+        "start_date": "2026-08-17",
+        "end_date": "2026-08-25",
+        "status": "Виконано",
+        "status_color": "green",
+        "roas": 5.45,
+        "revenue": 4087,
+        "orders": 12,
+        "customers": 12,
+        "cost": 750,
+        "weeks": [
+            {"week": "2026-W34", "label": "2026-W34", "days": 7, "days_label": "7 днів (17–23 серп)"},
+            {"week": "2026-W35", "label": "2026-W35", "days": 2, "days_label": "2 дні (24–25 серп)"},
+        ],
+    }
+]
+
 SPEND_OBJ_UA = {
     "provider_campaign_obligations_commitments": "Зобов'язання",
     "provider_campaign_portal": "Портал провайдера",
@@ -629,6 +650,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             "provider_spend": to_native(r["provider_spend_uah"]),
         })
     data["campaigns"] = campaigns
+    data["sponsored_listings"] = SPONSORED_LISTINGS
 
     return data
 
@@ -830,6 +852,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
   <a href="#stores-section" class="nav-link">Деталі закладів</a>
   <a href="#revenue-section" class="nav-link">Дохідність</a>
   <a href="#campaigns-section" class="nav-link">Кампанії</a>
+  <a href="#sponsored-section" class="nav-link">Sponsored Listing</a>
   <a href="#orders-detail-section" class="nav-link">Деталі замовлень</a>
   <a href="#complaints-section" class="nav-link">Скарги</a>
   <a href="#cancelled-section" class="nav-link">Скасовані</a>
@@ -905,6 +928,12 @@ body.dark .revenue-summary-table th{{background:#111827}}
       </div>
       <div id="calc-results"></div>
     </div>
+  </section>
+
+  <section id="sponsored-section" class="section">
+    <div class="section-title"><span class="section-icon">📣</span> Sponsored Listing <span style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px">— Provider Portal</span></div>
+    <div class="section-insight" id="sponsored-insight">Дані з Provider Portal (не з Databricks). Кількість замовлень — загальна за весь період кампанії.</div>
+    <div id="sponsored-wrap"></div>
   </section>
 
   <section id="orders-detail-section" class="section">
@@ -1782,6 +1811,77 @@ function renderTopItems() {{
   document.getElementById('items-grid').innerHTML = html || '<p style="color:var(--text2);padding:24px;text-align:center">Немає даних.</p>';
 }}
 
+function renderSponsoredListings() {{
+  const selK = getSelectedPeriod();
+  const listings = D.sponsored_listings || [];
+  const wrap = document.getElementById('sponsored-wrap');
+  if (!listings.length) {{
+    wrap.innerHTML = '<p style="color:var(--text2);padding:24px;text-align:center">Немає даних про Sponsored Listing.</p>';
+    return;
+  }}
+
+  let html = '';
+  listings.forEach(sl => {{
+    const activeWeek = (sl.weeks || []).find(w => w.week === selK);
+    const totalDays = (sl.weeks || []).reduce((s, w) => s + w.days, 0);
+
+    // Summary KPI bar
+    const statusColor = sl.status_color === 'green' ? 'var(--pos)' : 'var(--warn)';
+    html += '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 24px;margin-bottom:20px">';
+    html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">';
+    html += '<span style="font-size:15px;font-weight:700">' + sl.name + '</span>';
+    html += '<span style="font-size:12px;color:var(--text2)">' + sl.start_date + ' → ' + sl.end_date + '</span>';
+    html += '<span style="background:' + statusColor + ';color:#fff;font-size:11px;font-weight:700;border-radius:20px;padding:2px 10px">' + sl.status + '</span>';
+    if (activeWeek) {{
+      html += '<span style="background:rgba(249,115,22,.12);color:var(--orange);font-size:11px;font-weight:700;border-radius:20px;padding:2px 10px">▶ Активний цього тижня: ' + activeWeek.days_label + '</span>';
+    }} else {{
+      html += '<span style="background:var(--bg);color:var(--text2);font-size:11px;border-radius:20px;padding:2px 10px">Не активний у цей тиждень</span>';
+    }}
+    html += '</div>';
+
+    // KPI row
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:20px">';
+    const kpis2 = [
+      {{ label: 'Окупність (ROAS)', value: sl.roas.toFixed(2) + '×', color: 'var(--pos)' }},
+      {{ label: 'Дохід', value: '₴' + sl.revenue.toLocaleString('uk-UA'), color: 'var(--blue)' }},
+      {{ label: 'Замовлення', value: sl.orders, color: 'var(--text)' }},
+      {{ label: 'Унікальні клієнти', value: sl.customers, color: 'var(--text)' }},
+      {{ label: 'Витрати заклад', value: '₴' + sl.cost.toLocaleString('uk-UA'), color: 'var(--neg)' }},
+      {{ label: 'Тривалість', value: totalDays + ' днів', color: 'var(--text2)' }},
+    ];
+    kpis2.forEach(k => {{
+      html += '<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px">';
+      html += '<div style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px">' + k.label + '</div>';
+      html += '<div style="font-size:22px;font-weight:700;color:' + k.color + '">' + k.value + '</div>';
+      html += '</div>';
+    }});
+    html += '</div>';
+
+    // Week-by-week table
+    html += '<div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.3px">Тривалість по тижнях</div>';
+    html += '<div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)">';
+    html += '<table class="data-table"><thead><tr>';
+    html += '<th>Тиждень</th><th>Дні активності</th><th class="text-right">Замовлень (всього за кампанію)</th><th class="text-right">Частка тижня</th>';
+    html += '</tr></thead><tbody>';
+    (sl.weeks || []).forEach(w => {{
+      const sharePct = totalDays > 0 ? (w.days / totalDays * 100).toFixed(0) : 0;
+      const isActive = w.week === selK;
+      const rowStyle = isActive ? ' style="background:rgba(249,115,22,.06)"' : '';
+      html += '<tr' + rowStyle + '>';
+      html += '<td><b>' + w.label + '</b>' + (isActive ? ' <span style="background:var(--orange);color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle">обрано</span>' : '') + '</td>';
+      html += '<td>' + w.days_label + '</td>';
+      html += '<td class="text-right">' + sl.orders + ' (' + w.days + ' із ' + totalDays + ' днів)</td>';
+      html += '<td class="text-right">' + sharePct + '%</td>';
+      html += '</tr>';
+    }});
+    html += '<tr class="total-row"><td>Всього</td><td>' + totalDays + ' днів</td>';
+    html += '<td class="text-right">' + sl.orders + '</td><td class="text-right">100%</td></tr>';
+    html += '</tbody></table></div>';
+    html += '</div>';
+  }});
+  wrap.innerHTML = html;
+}}
+
 function renderAll() {{
   renderKPIs();
   renderInsights();
@@ -1792,6 +1892,7 @@ function renderAll() {{
   renderCampaignsChart();
   renderCampaigns();
   renderBudgetCalc();
+  renderSponsoredListings();
   renderOrdersDetail();
   renderComplaints();
   renderCancelled();
