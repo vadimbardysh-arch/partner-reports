@@ -323,6 +323,34 @@ def fetch_campaigns(conn):
     """)
 
 
+def fetch_sponsored_listings(conn):
+    """Cost per provider per campaign period from dim_sponsored_listing."""
+    return query(conn, f"""
+    SELECT
+      sl.provider_id,
+      sl.offer_name,
+      sl.sponsored_listing_state AS state,
+      sl.sponsored_listing_placement_reporting AS placement,
+      DATE(sl.sponsored_listing_start_ts_local) AS start_date,
+      DATE(COALESCE(sl.sponsored_listing_actual_end_ts_local, sl.sponsored_listing_default_end_ts_local)) AS end_date,
+      ROUND(SUM(sl.offer_price_per_day_local * (
+        DATEDIFF(
+          DATE(COALESCE(sl.sponsored_listing_actual_end_ts_local, sl.sponsored_listing_default_end_ts_local)),
+          DATE(sl.sponsored_listing_start_ts_local)
+        ) + 1
+      )), 2) AS total_cost_uah
+    FROM ng_delivery_spark.dim_sponsored_listing sl
+    WHERE sl.provider_id IN ({PROVIDER_IDS})
+      AND sl.sponsored_listing_start_ts_local >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND sl.sponsored_listing_state IN ('finished', 'active')
+    GROUP BY sl.provider_id, sl.offer_name, sl.sponsored_listing_state,
+             sl.sponsored_listing_placement_reporting,
+             DATE(sl.sponsored_listing_start_ts_local),
+             DATE(COALESCE(sl.sponsored_listing_actual_end_ts_local, sl.sponsored_listing_default_end_ts_local))
+    ORDER BY start_date DESC, sl.provider_id
+    """)
+
+
 def fetch_smart_promo_orders(conn):
     """Order IDs that were part of a Smart Promo campaign (spend_objective 'sp_%')."""
     return query(conn, f"""
@@ -333,27 +361,6 @@ def fetch_smart_promo_orders(conn):
       AND c.spend_objective LIKE 'sp\\_%'
     """)
 
-
-# ── Sponsored Listings (manual data from Provider Portal) ────────────────
-# Aug 17-25 → W34 (17-23 = 7 days) + W35 (24-25 = 2 days)
-SPONSORED_LISTINGS = [
-    {
-        "name": "Платне просування в 5 місцях",
-        "start_date": "2026-08-17",
-        "end_date": "2026-08-25",
-        "status": "Виконано",
-        "status_color": "green",
-        "roas": 5.45,
-        "revenue": 4087,
-        "orders": 12,
-        "customers": 12,
-        "cost": 750,
-        "weeks": [
-            {"week": "2026-W34", "label": "2026-W34", "days": 7, "days_label": "7 днів (17–23 серп)"},
-            {"week": "2026-W35", "label": "2026-W35", "days": 2, "days_label": "2 дні (24–25 серп)"},
-        ],
-    }
-]
 
 SPEND_OBJ_UA = {
     "provider_campaign_obligations_commitments": "Зобов'язання",
@@ -375,7 +382,7 @@ TARGET_UA = {"delivery_price": "Доставка", "item_price": "Знижка �
 
 # ── Build data for HTML ──────────────────────────────────────────────────
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df=None):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df=None, sponsored_df=None):
     data = {}
 
     smart_promo_order_ids = set()
@@ -650,8 +657,98 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             "provider_spend": to_native(r["provider_spend_uah"]),
         })
     data["campaigns"] = campaigns
-    data["sponsored_listings"] = SPONSORED_LISTINGS
 
+    # ── Sponsored Listings (from Databricks dim_sponsored_listing) ──────
+    sponsored_listings = []
+    if sponsored_df is not None and len(sponsored_df):
+        from datetime import date, timedelta
+
+        def iso_week_key(d):
+            iso = d.isocalendar()
+            return f"{iso.year}-W{iso.week}"
+
+        def days_in_week(start, end, week_key):
+            """Count days of [start, end] that fall in the given ISO week."""
+            year, wnum = week_key.split("-W")
+            from datetime import datetime
+            # Monday of that ISO week
+            week_start = datetime.strptime(f"{year} {wnum} 1", "%G %V %u").date()
+            week_end = week_start + timedelta(days=6)
+            overlap_start = max(start, week_start)
+            overlap_end = min(end, week_end)
+            delta = (overlap_end - overlap_start).days + 1
+            return max(delta, 0)
+
+        # Group by (provider_id, start_date, end_date, offer_name, placement)
+        from collections import defaultdict
+        grouped = defaultdict(lambda: {"total_cost": 0.0, "placement": "", "state": "", "offer_name": ""})
+        for _, r in sponsored_df.iterrows():
+            pid = int(to_native(r["provider_id"]))
+            key = (pid, str(r["start_date"]), str(r["end_date"]))
+            grouped[key]["total_cost"] += float(r["total_cost_uah"]) if r["total_cost_uah"] is not None else 0
+            grouped[key]["placement"] = str(r["placement"] or "")
+            grouped[key]["state"] = str(r["state"] or "")
+            grouped[key]["offer_name"] = str(r["offer_name"] or "")
+
+        # Build per-provider entries with week breakdown
+        for (pid, start_str, end_str), vals in grouped.items():
+            try:
+                from datetime import datetime
+                start = datetime.strptime(start_str, "%Y-%m-%d").date()
+                end = datetime.strptime(end_str, "%Y-%m-%d").date()
+            except Exception:
+                continue
+            total_days = (end - start).days + 1
+
+            # Find all ISO weeks this campaign spans
+            week_keys = []
+            d = start
+            seen = set()
+            while d <= end:
+                wk = iso_week_key(d)
+                if wk not in seen:
+                    seen.add(wk)
+                    week_keys.append(wk)
+                d += timedelta(days=1)
+
+            weeks_data = []
+            for wk in week_keys:
+                d_in_wk = days_in_week(start, end, wk)
+                if d_in_wk <= 0:
+                    continue
+                cost_in_wk = round(vals["total_cost"] * d_in_wk / total_days, 2) if total_days > 0 else 0
+                # Build human label
+                year, wnum = wk.split("-W")
+                from datetime import datetime as dt2
+                wmon = dt2.strptime(f"{year} {wnum} 1", "%G %V %u").date()
+                wsun = wmon + timedelta(days=6)
+                wmon_c = max(wmon, start)
+                wsun_c = min(wsun, end)
+                MONTH_UA = ["","січ","лют","бер","кві","тра","чер","лип","сер","вер","жов","лис","гру"]
+                days_label = f"{d_in_wk} дн. ({wmon_c.day} {MONTH_UA[wmon_c.month]}–{wsun_c.day} {MONTH_UA[wsun_c.month]})"
+                weeks_data.append({"week": wk, "days": d_in_wk, "days_label": days_label, "cost": cost_in_wk})
+
+            provider_short = VASH_LAVASH_PROVIDERS.get(pid, {}).get("short", str(pid))
+            placement_ua = {"bundle": "Пакет (5 місць)", "home_screen": "Головний екран", "search_result": "Пошук", "main_feed": "Головна стрічка", "order_again": "Замовити знову", "home_category": "Категорія"}.get(vals["placement"], vals["placement"])
+            state_ua = "Виконано" if vals["state"] == "finished" else "Активний" if vals["state"] == "active" else vals["state"]
+            sponsored_listings.append({
+                "provider_id": pid,
+                "provider_short": provider_short,
+                "offer_name": vals["offer_name"],
+                "placement": placement_ua,
+                "state": state_ua,
+                "state_color": "green" if vals["state"] == "finished" else "orange",
+                "start_date": start_str,
+                "end_date": end_str,
+                "total_days": total_days,
+                "total_cost": round(vals["total_cost"], 2),
+                "weeks": weeks_data,
+            })
+
+        # Sort by start_date desc, then provider
+        sponsored_listings.sort(key=lambda x: (x["start_date"], x["provider_short"]), reverse=True)
+
+    data["sponsored_listings"] = sponsored_listings
     return data
 
 
@@ -932,7 +1029,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
 
   <section id="sponsored-section" class="section">
     <div class="section-title"><span class="section-icon">📣</span> Sponsored Listing <span style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px">— Provider Portal</span></div>
-    <div class="section-insight" id="sponsored-insight">Дані з Provider Portal (не з Databricks). Кількість замовлень — загальна за весь період кампанії.</div>
+    <div class="section-insight" id="sponsored-insight">Дані з Databricks (dim_sponsored_listing). Витрати = ціна/день × кількість днів по кожному розміщенню. ROAS/замовлення — в Provider Portal (атрибуція не доступна в Databricks).</div>
     <div id="sponsored-wrap"></div>
   </section>
 
@@ -1813,72 +1910,114 @@ function renderTopItems() {{
 
 function renderSponsoredListings() {{
   const selK = getSelectedPeriod();
-  const listings = D.sponsored_listings || [];
+  const ids = getFilteredStoreIds();
+  const allListings = D.sponsored_listings || [];
   const wrap = document.getElementById('sponsored-wrap');
-  if (!listings.length) {{
+  if (!allListings.length) {{
     wrap.innerHTML = '<p style="color:var(--text2);padding:24px;text-align:center">Немає даних про Sponsored Listing.</p>';
     return;
   }}
 
-  let html = '';
-  listings.forEach(sl => {{
-    const activeWeek = (sl.weeks || []).find(w => w.week === selK);
-    const totalDays = (sl.weeks || []).reduce((s, w) => s + w.days, 0);
+  // Group by offer campaign period: same offer_name + start_date + end_date = one campaign
+  const campaigns = {{}};
+  allListings.forEach(sl => {{
+    if (!ids.includes(sl.provider_id)) return;
+    const ckey = sl.start_date + '|' + sl.end_date + '|' + sl.placement;
+    if (!campaigns[ckey]) {{
+      campaigns[ckey] = {{
+        start_date: sl.start_date, end_date: sl.end_date,
+        placement: sl.placement, state: sl.state, state_color: sl.state_color,
+        total_days: sl.total_days, providers: [], weeks_map: {{}}, total_cost: 0
+      }};
+    }}
+    const c = campaigns[ckey];
+    c.providers.push({{ short: sl.provider_short, cost: sl.total_cost }});
+    c.total_cost += sl.total_cost;
+    (sl.weeks || []).forEach(w => {{
+      if (!c.weeks_map[w.week]) c.weeks_map[w.week] = {{ week: w.week, days: w.days, days_label: w.days_label, cost: 0 }};
+      c.weeks_map[w.week].cost += w.cost;
+    }});
+  }});
 
-    // Summary KPI bar
-    const statusColor = sl.status_color === 'green' ? 'var(--pos)' : 'var(--warn)';
+  const campList = Object.values(campaigns).sort((a,b) => b.start_date.localeCompare(a.start_date));
+
+  if (!campList.length) {{
+    wrap.innerHTML = '<p style="color:var(--text2);padding:24px;text-align:center">Немає даних для обраних закладів.</p>';
+    return;
+  }}
+
+  let html = '';
+  campList.forEach(c => {{
+    const weeks = Object.values(c.weeks_map).sort((a,b) => a.week.localeCompare(b.week));
+    const activeWeek = weeks.find(w => w.week === selK);
+    const statusColor = c.state_color === 'green' ? 'var(--pos)' : 'var(--warn)';
+
     html += '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 24px;margin-bottom:20px">';
+
+    // Header
     html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">';
-    html += '<span style="font-size:15px;font-weight:700">' + sl.name + '</span>';
-    html += '<span style="font-size:12px;color:var(--text2)">' + sl.start_date + ' → ' + sl.end_date + '</span>';
-    html += '<span style="background:' + statusColor + ';color:#fff;font-size:11px;font-weight:700;border-radius:20px;padding:2px 10px">' + sl.status + '</span>';
+    html += '<span style="font-size:15px;font-weight:700">📣 ' + c.placement + '</span>';
+    html += '<span style="font-size:12px;color:var(--text2)">' + c.start_date + ' → ' + c.end_date + '</span>';
+    html += '<span style="background:' + statusColor + ';color:#fff;font-size:11px;font-weight:700;border-radius:20px;padding:2px 10px">' + c.state + '</span>';
     if (activeWeek) {{
       html += '<span style="background:rgba(249,115,22,.12);color:var(--orange);font-size:11px;font-weight:700;border-radius:20px;padding:2px 10px">▶ Активний цього тижня: ' + activeWeek.days_label + '</span>';
-    }} else {{
-      html += '<span style="background:var(--bg);color:var(--text2);font-size:11px;border-radius:20px;padding:2px 10px">Не активний у цей тиждень</span>';
     }}
     html += '</div>';
 
-    // KPI row
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:20px">';
-    const kpis2 = [
-      {{ label: 'Окупність (ROAS)', value: sl.roas.toFixed(2) + '×', color: 'var(--pos)' }},
-      {{ label: 'Дохід', value: '₴' + sl.revenue.toLocaleString('uk-UA'), color: 'var(--blue)' }},
-      {{ label: 'Замовлення', value: sl.orders, color: 'var(--text)' }},
-      {{ label: 'Унікальні клієнти', value: sl.customers, color: 'var(--text)' }},
-      {{ label: 'Витрати заклад', value: '₴' + sl.cost.toLocaleString('uk-UA'), color: 'var(--neg)' }},
-      {{ label: 'Тривалість', value: totalDays + ' днів', color: 'var(--text2)' }},
-    ];
-    kpis2.forEach(k => {{
+    // KPI cards
+    const costInWeek = activeWeek ? activeWeek.cost : null;
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px">';
+    [
+      {{ label: 'Загальні витрати', value: '₴' + Math.round(c.total_cost).toLocaleString('uk-UA'), color: 'var(--neg)' }},
+      {{ label: 'Витрати цього тижня', value: costInWeek != null ? '₴' + Math.round(costInWeek).toLocaleString('uk-UA') : '—', color: costInWeek != null ? 'var(--warn)' : 'var(--text2)' }},
+      {{ label: 'Тривалість', value: c.total_days + ' днів', color: 'var(--text2)' }},
+      {{ label: 'Активних закладів', value: c.providers.length, color: 'var(--blue)' }},
+    ].forEach(k => {{
       html += '<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px">';
       html += '<div style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px">' + k.label + '</div>';
-      html += '<div style="font-size:22px;font-weight:700;color:' + k.color + '">' + k.value + '</div>';
+      html += '<div style="font-size:20px;font-weight:700;color:' + k.color + '">' + k.value + '</div>';
       html += '</div>';
     }});
     html += '</div>';
 
     // Week-by-week table
-    html += '<div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.3px">Тривалість по тижнях</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
+
+    // Left: weeks table
+    html += '<div>';
+    html += '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.3px">По тижнях</div>';
     html += '<div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)">';
-    html += '<table class="data-table"><thead><tr>';
-    html += '<th>Тиждень</th><th>Дні активності</th><th class="text-right">Замовлень (всього за кампанію)</th><th class="text-right">Частка тижня</th>';
-    html += '</tr></thead><tbody>';
-    (sl.weeks || []).forEach(w => {{
-      const sharePct = totalDays > 0 ? (w.days / totalDays * 100).toFixed(0) : 0;
+    html += '<table class="data-table"><thead><tr><th>Тиждень</th><th>Дні</th><th class="text-right">Витрати ₴</th></tr></thead><tbody>';
+    let totCost = 0;
+    weeks.forEach(w => {{
       const isActive = w.week === selK;
       const rowStyle = isActive ? ' style="background:rgba(249,115,22,.06)"' : '';
+      totCost += w.cost;
       html += '<tr' + rowStyle + '>';
-      html += '<td><b>' + w.label + '</b>' + (isActive ? ' <span style="background:var(--orange);color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle">обрано</span>' : '') + '</td>';
+      html += '<td><b>' + w.week + '</b>' + (isActive ? ' <span style="background:var(--orange);color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle">тут</span>' : '') + '</td>';
       html += '<td>' + w.days_label + '</td>';
-      html += '<td class="text-right">' + sl.orders + ' (' + w.days + ' із ' + totalDays + ' днів)</td>';
-      html += '<td class="text-right">' + sharePct + '%</td>';
+      html += '<td class="text-right" style="color:var(--neg)">₴' + Math.round(w.cost).toLocaleString('uk-UA') + '</td>';
       html += '</tr>';
     }});
-    html += '<tr class="total-row"><td>Всього</td><td>' + totalDays + ' днів</td>';
-    html += '<td class="text-right">' + sl.orders + '</td><td class="text-right">100%</td></tr>';
-    html += '</tbody></table></div>';
-    html += '</div>';
+    html += '<tr class="total-row"><td>Всього</td><td>' + c.total_days + ' днів</td><td class="text-right" style="color:var(--neg)">₴' + Math.round(totCost).toLocaleString('uk-UA') + '</td></tr>';
+    html += '</tbody></table></div></div>';
+
+    // Right: providers table
+    html += '<div>';
+    html += '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.3px">По закладах</div>';
+    html += '<div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)">';
+    html += '<table class="data-table"><thead><tr><th>Заклад</th><th class="text-right">Витрати ₴</th></tr></thead><tbody>';
+    const sortedProvs = c.providers.slice().sort((a,b) => b.cost - a.cost);
+    sortedProvs.forEach(p => {{
+      html += '<tr><td>' + p.short + '</td><td class="text-right" style="color:var(--neg)">₴' + Math.round(p.cost).toLocaleString('uk-UA') + '</td></tr>';
+    }});
+    html += '<tr class="total-row"><td>Всього</td><td class="text-right" style="color:var(--neg)">₴' + Math.round(c.total_cost).toLocaleString('uk-UA') + '</td></tr>';
+    html += '</tbody></table></div></div>';
+
+    html += '</div>'; // grid
+    html += '</div>'; // card
   }});
+
   wrap.innerHTML = html;
 }}
 
@@ -2008,10 +2147,14 @@ def main():
         print("  Fetching Smart Promo order ids…")
         smart_promo_df = fetch_smart_promo_orders(conn)
         print(f"  → {len(smart_promo_df)} rows")
+
+        print("  Fetching Sponsored Listings…")
+        sponsored_df = fetch_sponsored_listings(conn)
+        print(f"  → {len(sponsored_df)} rows")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df, sponsored_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "vash-lavash"
