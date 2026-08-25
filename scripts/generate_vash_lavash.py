@@ -385,6 +385,26 @@ TARGET_UA = {"delivery_price": "Доставка", "item_price": "Знижка �
 def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df=None, sponsored_df=None):
     data = {}
 
+    # Build set of (provider_id, iso_week) that had an active sponsored listing
+    sponsored_provider_weeks = set()
+    if sponsored_df is not None and len(sponsored_df):
+        from datetime import date as _date, timedelta as _td
+        def _iso_week(d):
+            iso = d.isocalendar()
+            return f"{iso.year}-W{iso.week}"
+        for _, r in sponsored_df.iterrows():
+            try:
+                from datetime import datetime as _dt
+                start = _dt.strptime(str(r["start_date"]), "%Y-%m-%d").date()
+                end = _dt.strptime(str(r["end_date"]), "%Y-%m-%d").date()
+            except Exception:
+                continue
+            pid = int(to_native(r["provider_id"]))
+            d = start
+            while d <= end:
+                sponsored_provider_weeks.add((pid, _iso_week(d)))
+                d += _td(days=1)
+
     smart_promo_order_ids = set()
     if smart_promo_df is not None:
         for _, r in smart_promo_df.iterrows():
@@ -552,6 +572,9 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
                 row["is_smart_promo"] = int(oid) in smart_promo_order_ids
             except (TypeError, ValueError):
                 row["is_smart_promo"] = False
+        pid_row = row.get("provider_id")
+        ow_row = str(row.get("order_week", "") or "")
+        row["is_sponsored_listing"] = bool(pid_row and ow_row and (int(pid_row), ow_row) in sponsored_provider_weeks)
         pid = row.get("provider_id")
         if pid and int(pid) in VASH_LAVASH_PROVIDERS:
             row["provider_short"] = VASH_LAVASH_PROVIDERS[int(pid)]["short"]
@@ -949,7 +972,6 @@ body.dark .revenue-summary-table th{{background:#111827}}
   <a href="#stores-section" class="nav-link">Деталі закладів</a>
   <a href="#revenue-section" class="nav-link">Дохідність</a>
   <a href="#campaigns-section" class="nav-link">Кампанії</a>
-  <a href="#sponsored-section" class="nav-link">Sponsored Listing</a>
   <a href="#orders-detail-section" class="nav-link">Деталі замовлень</a>
   <a href="#complaints-section" class="nav-link">Скарги</a>
   <a href="#cancelled-section" class="nav-link">Скасовані</a>
@@ -1027,12 +1049,6 @@ body.dark .revenue-summary-table th{{background:#111827}}
     </div>
   </section>
 
-  <section id="sponsored-section" class="section">
-    <div class="section-title"><span class="section-icon">📣</span> Sponsored Listing <span style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px">— Provider Portal</span></div>
-    <div class="section-insight" id="sponsored-insight">Дані з Databricks (dim_sponsored_listing). Витрати = ціна/день × кількість днів по кожному розміщенню. ROAS/замовлення — в Provider Portal (атрибуція не доступна в Databricks).</div>
-    <div id="sponsored-wrap"></div>
-  </section>
-
   <section id="orders-detail-section" class="section">
     <div class="section-title"><span class="section-icon">🧾</span> Дохідність по замовленнях <span id="orders-detail-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
     <div class="store-filter-wrap">
@@ -1042,6 +1058,8 @@ body.dark .revenue-summary-table th{{background:#111827}}
       <select id="state-filter"><option value="__all__">Всі</option><option value="delivered">Доставлені</option><option value="failed">Невдалі / Скасовані</option></select>
       <label style="margin-left:12px">Smart Promo:</label>
       <select id="sp-filter"><option value="__all__">Всі</option><option value="yes">Smart Promo</option><option value="no">Без Smart Promo</option></select>
+      <label style="margin-left:12px">Sponsored Listing:</label>
+      <select id="sl-filter"><option value="__all__">Всі</option><option value="yes">Sponsored Listing</option><option value="no">Без Sponsored Listing</option></select>
     </div>
     <div class="table-wrap scroll-table" id="orders-detail-wrap"></div>
   </section>
@@ -1081,6 +1099,7 @@ let selectedStores = new Set();
 let selectedBP = '__all__';
 let selectedState = '__all__';
 let selectedSP = '__all__';
+let selectedSL = '__all__';
 let chartInstances = {{}};
 
 function weekSortCmp(a, b) {{
@@ -1709,6 +1728,8 @@ function renderOrdersDetail() {{
   else if (selectedState === 'failed') rows = rows.filter(r => r.order_state_raw !== 'delivered');
   if (selectedSP === 'yes') rows = rows.filter(r => r.is_smart_promo);
   else if (selectedSP === 'no') rows = rows.filter(r => !r.is_smart_promo);
+  if (selectedSL === 'yes') rows = rows.filter(r => r.is_sponsored_listing);
+  else if (selectedSL === 'no') rows = rows.filter(r => !r.is_sponsored_listing);
 
   let t = '<table class="data-table"><thead><tr>';
   t += '<th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Bolt+</th>';
@@ -1743,9 +1764,10 @@ function renderOrdersDetail() {{
 
     const nc = (r.net_income || 0) < 0 ? ' style="color:var(--neg)"' : '';
     const spBadge = r.is_smart_promo ? ' <span style="display:inline-block;background:var(--orange);color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle;letter-spacing:.3px" title="Замовлення в межах Smart Promo кампанії">SMART PROMO</span>' : '';
+    const slBadge = r.is_sponsored_listing ? ' <span style="display:inline-block;background:#7C3AED;color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle;letter-spacing:.3px" title="Заклад мав активний Sponsored Listing в цей тиждень">SL</span>' : '';
     t += '<tr' + (isFailed ? ' style="background:rgba(239,68,68,.04)"' : '') + '><td>' + date + '</td>';
     t += '<td>' + (r.order_reference_id || '') + '</td>';
-    t += '<td>' + (r.provider_short || '') + spBadge + '</td>';
+    t += '<td>' + (r.provider_short || '') + spBadge + slBadge + '</td>';
     t += '<td' + stateColor + '>' + (r.order_state || '') + '</td>';
     t += '<td' + bpClass + '>' + bpLabel + '</td>';
     t += '<td class="text-right">' + (r.food_before_discount || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
@@ -1908,119 +1930,6 @@ function renderTopItems() {{
   document.getElementById('items-grid').innerHTML = html || '<p style="color:var(--text2);padding:24px;text-align:center">Немає даних.</p>';
 }}
 
-function renderSponsoredListings() {{
-  const selK = getSelectedPeriod();
-  const ids = getFilteredStoreIds();
-  const allListings = D.sponsored_listings || [];
-  const wrap = document.getElementById('sponsored-wrap');
-  if (!allListings.length) {{
-    wrap.innerHTML = '<p style="color:var(--text2);padding:24px;text-align:center">Немає даних про Sponsored Listing.</p>';
-    return;
-  }}
-
-  // Group by offer campaign period: same offer_name + start_date + end_date = one campaign
-  const campaigns = {{}};
-  allListings.forEach(sl => {{
-    if (!ids.includes(sl.provider_id)) return;
-    const ckey = sl.start_date + '|' + sl.end_date + '|' + sl.placement;
-    if (!campaigns[ckey]) {{
-      campaigns[ckey] = {{
-        start_date: sl.start_date, end_date: sl.end_date,
-        placement: sl.placement, state: sl.state, state_color: sl.state_color,
-        total_days: sl.total_days, providers: [], weeks_map: {{}}, total_cost: 0
-      }};
-    }}
-    const c = campaigns[ckey];
-    c.providers.push({{ short: sl.provider_short, cost: sl.total_cost }});
-    c.total_cost += sl.total_cost;
-    (sl.weeks || []).forEach(w => {{
-      if (!c.weeks_map[w.week]) c.weeks_map[w.week] = {{ week: w.week, days: w.days, days_label: w.days_label, cost: 0 }};
-      c.weeks_map[w.week].cost += w.cost;
-    }});
-  }});
-
-  const campList = Object.values(campaigns).sort((a,b) => b.start_date.localeCompare(a.start_date));
-
-  if (!campList.length) {{
-    wrap.innerHTML = '<p style="color:var(--text2);padding:24px;text-align:center">Немає даних для обраних закладів.</p>';
-    return;
-  }}
-
-  let html = '';
-  campList.forEach(c => {{
-    const weeks = Object.values(c.weeks_map).sort((a,b) => a.week.localeCompare(b.week));
-    const activeWeek = weeks.find(w => w.week === selK);
-    const statusColor = c.state_color === 'green' ? 'var(--pos)' : 'var(--warn)';
-
-    html += '<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 24px;margin-bottom:20px">';
-
-    // Header
-    html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">';
-    html += '<span style="font-size:15px;font-weight:700">📣 ' + c.placement + '</span>';
-    html += '<span style="font-size:12px;color:var(--text2)">' + c.start_date + ' → ' + c.end_date + '</span>';
-    html += '<span style="background:' + statusColor + ';color:#fff;font-size:11px;font-weight:700;border-radius:20px;padding:2px 10px">' + c.state + '</span>';
-    if (activeWeek) {{
-      html += '<span style="background:rgba(249,115,22,.12);color:var(--orange);font-size:11px;font-weight:700;border-radius:20px;padding:2px 10px">▶ Активний цього тижня: ' + activeWeek.days_label + '</span>';
-    }}
-    html += '</div>';
-
-    // KPI cards
-    const costInWeek = activeWeek ? activeWeek.cost : null;
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px">';
-    [
-      {{ label: 'Загальні витрати', value: '₴' + Math.round(c.total_cost).toLocaleString('uk-UA'), color: 'var(--neg)' }},
-      {{ label: 'Витрати цього тижня', value: costInWeek != null ? '₴' + Math.round(costInWeek).toLocaleString('uk-UA') : '—', color: costInWeek != null ? 'var(--warn)' : 'var(--text2)' }},
-      {{ label: 'Тривалість', value: c.total_days + ' днів', color: 'var(--text2)' }},
-      {{ label: 'Активних закладів', value: c.providers.length, color: 'var(--blue)' }},
-    ].forEach(k => {{
-      html += '<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px">';
-      html += '<div style="font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px">' + k.label + '</div>';
-      html += '<div style="font-size:20px;font-weight:700;color:' + k.color + '">' + k.value + '</div>';
-      html += '</div>';
-    }});
-    html += '</div>';
-
-    // Week-by-week table
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">';
-
-    // Left: weeks table
-    html += '<div>';
-    html += '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.3px">По тижнях</div>';
-    html += '<div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)">';
-    html += '<table class="data-table"><thead><tr><th>Тиждень</th><th>Дні</th><th class="text-right">Витрати ₴</th></tr></thead><tbody>';
-    let totCost = 0;
-    weeks.forEach(w => {{
-      const isActive = w.week === selK;
-      const rowStyle = isActive ? ' style="background:rgba(249,115,22,.06)"' : '';
-      totCost += w.cost;
-      html += '<tr' + rowStyle + '>';
-      html += '<td><b>' + w.week + '</b>' + (isActive ? ' <span style="background:var(--orange);color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle">тут</span>' : '') + '</td>';
-      html += '<td>' + w.days_label + '</td>';
-      html += '<td class="text-right" style="color:var(--neg)">₴' + Math.round(w.cost).toLocaleString('uk-UA') + '</td>';
-      html += '</tr>';
-    }});
-    html += '<tr class="total-row"><td>Всього</td><td>' + c.total_days + ' днів</td><td class="text-right" style="color:var(--neg)">₴' + Math.round(totCost).toLocaleString('uk-UA') + '</td></tr>';
-    html += '</tbody></table></div></div>';
-
-    // Right: providers table
-    html += '<div>';
-    html += '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.3px">По закладах</div>';
-    html += '<div style="overflow-x:auto;border-radius:10px;border:1px solid var(--border)">';
-    html += '<table class="data-table"><thead><tr><th>Заклад</th><th class="text-right">Витрати ₴</th></tr></thead><tbody>';
-    const sortedProvs = c.providers.slice().sort((a,b) => b.cost - a.cost);
-    sortedProvs.forEach(p => {{
-      html += '<tr><td>' + p.short + '</td><td class="text-right" style="color:var(--neg)">₴' + Math.round(p.cost).toLocaleString('uk-UA') + '</td></tr>';
-    }});
-    html += '<tr class="total-row"><td>Всього</td><td class="text-right" style="color:var(--neg)">₴' + Math.round(c.total_cost).toLocaleString('uk-UA') + '</td></tr>';
-    html += '</tbody></table></div></div>';
-
-    html += '</div>'; // grid
-    html += '</div>'; // card
-  }});
-
-  wrap.innerHTML = html;
-}}
-
 function renderAll() {{
   renderKPIs();
   renderInsights();
@@ -2031,7 +1940,6 @@ function renderAll() {{
   renderCampaignsChart();
   renderCampaigns();
   renderBudgetCalc();
-  renderSponsoredListings();
   renderOrdersDetail();
   renderComplaints();
   renderCancelled();
@@ -2073,6 +1981,11 @@ document.getElementById('state-filter').addEventListener('change', function() {{
 
 document.getElementById('sp-filter').addEventListener('change', function() {{
   selectedSP = this.value;
+  renderOrdersDetail();
+}});
+
+document.getElementById('sl-filter').addEventListener('change', function() {{
+  selectedSL = this.value;
   renderOrdersDetail();
 }});
 
