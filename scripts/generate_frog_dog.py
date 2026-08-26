@@ -25,6 +25,7 @@ def load_generator():
     source = source[:providers_start] + FROG_DOG_PROVIDERS.rstrip() + source[providers_end:]
     source = source.replace("MIASORUB_PROVIDERS", "FROG_DOG_PROVIDERS")
     source = source.replace("Мʼясоруб", "FROG & DOG")
+    source = source.replace("МʼЯСОРУБ", "FROG & DOG")
     source = source.replace("miasorub", "frog-dog")
     source = re.sub(r"\n\.calc-card\{\{[^\n]+\}\}", "", source)
     return compile(source, str(TEMPLATE_PATH), "exec")
