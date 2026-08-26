@@ -1008,6 +1008,9 @@ def main():
     print("\n--- Мʼясоруб multi-store report ---")
     from generate_miasorub import main as generate_miasorub_report
     generate_miasorub_report()
+    print("\n--- FROG & DOG multi-store report ---")
+    from generate_frog_dog import main as generate_frog_dog_report
+    generate_frog_dog_report()
     print("\nDone!")
 
 
@@ -1024,6 +1027,11 @@ def update_index():
         <a class="report-card" href="miasorub/">
             <h3>Мʼясоруб</h3>
             <p>Львів / Тернопіль / Хмельницький / Чернівці / Івано-Франківськ</p>
+            <span class="badge">Тижневий звіт</span>
+        </a>
+        <a class="report-card" href="frog-dog/">
+            <h3>FROG &amp; DOG</h3>
+            <p>Львів · 7 закладів</p>
             <span class="badge">Тижневий звіт</span>
         </a>"""
 
