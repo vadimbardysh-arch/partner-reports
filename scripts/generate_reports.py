@@ -1005,6 +1005,9 @@ def main():
         conn.close()
 
     update_index()
+    print("\n--- Мʼясоруб multi-store report ---")
+    from generate_miasorub import main as generate_miasorub_report
+    generate_miasorub_report()
     print("\nDone!")
 
 
@@ -1015,6 +1018,12 @@ def update_index():
         <a class="report-card" href="{info['slug']}/">
             <h3>{info['name']}</h3>
             <p>{info['city']}</p>
+            <span class="badge">Тижневий звіт</span>
+        </a>"""
+    cards += """
+        <a class="report-card" href="miasorub/">
+            <h3>Мʼясоруб</h3>
+            <p>Львів / Тернопіль / Хмельницький / Чернівці / Івано-Франківськ</p>
             <span class="badge">Тижневий звіт</span>
         </a>"""
 
