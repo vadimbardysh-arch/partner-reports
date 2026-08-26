@@ -792,7 +792,7 @@ def generate_html(data, generated_at):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>COFFEE LAB | тижневий звіт</title>
+<title>МʼЯСОРУБ | тижневий звіт</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -961,7 +961,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
 <header class="header">
   <div class="header-left">
     <span class="brand-dot"></span>
-    <h1>COFFEE LAB | тижневий звіт</h1>
+    <h1>МʼЯСОРУБ | тижневий звіт</h1>
   </div>
   <div class="header-right">
     <div class="ms-wrap" id="city-ms"><button class="ms-btn" id="city-btn">Всі міста</button><div class="ms-panel" id="city-panel"></div></div>
