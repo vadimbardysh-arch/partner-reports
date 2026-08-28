@@ -302,7 +302,11 @@ def build_enrollments(enrollment_df):
 
 def main():
     print("Smart Promo Traits — generating dashboard data...")
-    conn = connect()
+    try:
+        conn = connect()
+    except Exception as e:
+        print(f"WARN: Smart Promo skipped (Databricks unavailable): {e}")
+        return
 
     try:
         traits_df = fetch_traits(conn)
@@ -311,6 +315,9 @@ def main():
         enrollment_df = fetch_enrollments(conn)
         offers_df = fetch_offers(conn, enrollment_df)
         dd_orders_df = fetch_dd_orders(conn)
+    except Exception as e:
+        print(f"WARN: Smart Promo skipped (query failed): {e}")
+        return
     finally:
         conn.close()
 
