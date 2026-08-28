@@ -2748,4 +2748,7 @@ h1 {{ font-size:28px; font-weight:700; margin-bottom:6px; }}
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"WARN: generation skipped: {e}")
