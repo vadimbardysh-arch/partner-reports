@@ -18,6 +18,9 @@ import pandas as pd
 
 from config import SERVER_HOSTNAME, HTTP_PATH
 
+# Classic SQL warehouse is often stopped; fall back to Shared Growth Analytics cluster.
+HTTP_PATH_FALLBACK = "sql/protocolv1/o/2472566184436351/0505-112942-d3yviznw"
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEEKS_BACK = 52
 
@@ -46,15 +49,35 @@ FAULT_UA = {"provider": "Заклад", "courier": "Кур'єр", "bolt": "Bolt"
 ORDER_STATE_UA = {"delivered": "Доставлено", "cancelled": "Скасовано", "rejected": "Відхилено", "failed": "Помилка"}
 
 
-def connect():
+def _load_token():
     token = os.environ.get("DATABRICKS_TOKEN")
-    if not token:
-        raise RuntimeError("DATABRICKS_TOKEN env var is required")
-    return sql.connect(
-        server_hostname=SERVER_HOSTNAME,
-        http_path=HTTP_PATH,
-        access_token=token,
-    )
+    if token:
+        return token
+    for env_path in (
+        Path("/Users/vadymbardysh/Downloads/Vadym_Cursor/.env"),
+        Path("/Users/vadymbardysh/Library/CloudStorage/GoogleDrive-vadim.bardysh@bolt.eu/My Drive/Vadym_Cursor/.env"),
+    ):
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if line.startswith("DATABRICKS_TOKEN="):
+                    return line.split("=", 1)[1].strip()
+    raise RuntimeError("DATABRICKS_TOKEN env var is required")
+
+
+def connect():
+    token = _load_token()
+    last_err = None
+    for path in (HTTP_PATH_FALLBACK, HTTP_PATH):
+        try:
+            return sql.connect(
+                server_hostname=SERVER_HOSTNAME,
+                http_path=path,
+                access_token=token,
+            )
+        except Exception as e:
+            last_err = e
+            print(f"  Connect failed on {path}: {e}")
+    raise last_err
 
 
 def query(conn, q):
@@ -115,7 +138,7 @@ def fetch_weekly_per_store(conn):
       ROUND(AVG(f.order_gmv), 0) AS avg_check,
       ROUND(AVG(f.order_actual_cooking_time_minutes), 1) AS avg_cooking,
       SUM(CASE WHEN f.is_bad_order = true THEN 1 ELSE 0 END) AS bad_orders
-    FROM ng_delivery_spark.fact_order_delivery f
+    FROM main.ng_delivery.fact_order_delivery f
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
       AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
@@ -133,7 +156,7 @@ def fetch_ops_metrics(conn):
       ROUND(availability_rate_last_7d * 100, 1) AS availability,
       ROUND(acceptance_rate_last_7d * 100, 1) AS acceptance,
       ROUND(image_coverage_rate * 100, 1) AS photo_coverage
-    FROM ng_public_spark.etl_incentives_provider_targeting_features
+    FROM main.ng_public.etl_incentives_provider_targeting_features
     WHERE provider_id IN ({PROVIDER_IDS})
       AND date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
     ORDER BY date, provider_id
@@ -150,8 +173,8 @@ def fetch_top_items(conn):
         COUNT(*) AS qty,
         ROUND(SUM(b.item_price_before_discount_with_vat_local), 0) AS revenue,
         ROW_NUMBER() OVER (PARTITION BY f.provider_id, f.order_week ORDER BY COUNT(*) DESC) AS rn
-      FROM ng_delivery_spark.dim_basket_item_delivery b
-      JOIN ng_delivery_spark.fact_order_delivery f ON b.order_id = f.order_id
+      FROM main.ng_delivery.dim_basket_item_delivery b
+      JOIN main.ng_delivery.fact_order_delivery f ON b.order_id = f.order_id
       WHERE f.provider_id IN ({PROVIDER_IDS})
         AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
         AND b.basket_item_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
@@ -193,8 +216,8 @@ def fetch_orders_detail(conn):
         WHEN f.order_state = 'cancelled' THEN 'Скасовано клієнтом'
         ELSE 'Інше'
       END AS fail_reason
-    FROM ng_delivery_spark.fact_order_delivery f
-    LEFT JOIN ng_public_spark.etl_delivery_order_monetary_metrics m
+    FROM main.ng_delivery.fact_order_delivery f
+    LEFT JOIN main.ng_public.etl_delivery_order_monetary_metrics m
       ON f.order_id = m.order_id
       AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
     WHERE f.provider_id IN ({PROVIDER_IDS})
@@ -212,8 +235,8 @@ def fetch_complaints(conn):
       d.bad_order_type, d.bad_order_actor_at_fault AS fault,
       d.provider_rating_value AS rating,
       d.provider_rating_comment
-    FROM ng_delivery_spark.dim_order_delivery d
-    JOIN ng_delivery_spark.fact_order_delivery f ON d.order_id = f.order_id
+    FROM main.ng_delivery.dim_order_delivery d
+    JOIN main.ng_delivery.fact_order_delivery f ON d.order_id = f.order_id
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
       AND (d.is_bad_order = true OR d.is_cs_ticket_order = true)
@@ -233,8 +256,8 @@ def fetch_cancelled(conn):
         ELSE 'Скасовано'
       END AS reason,
       d.failed_order_comment AS comment
-    FROM ng_delivery_spark.fact_order_delivery f
-    LEFT JOIN ng_delivery_spark.dim_order_delivery d ON f.order_id = d.order_id
+    FROM main.ng_delivery.fact_order_delivery f
+    LEFT JOIN main.ng_delivery.dim_order_delivery d ON f.order_id = d.order_id
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
       AND f.order_state IN ('rejected', 'cancelled', 'failed')
@@ -251,7 +274,7 @@ def fetch_revenue_weekly(conn):
       ROUND(SUM(f.commission_local * 1.2), 0) AS total_fee_gross,
       ROUND(SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS refund,
       ROUND(SUM(f.provider_price_after_discount) - SUM(f.commission_local * 1.2) - SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS net_income
-    FROM ng_delivery_spark.fact_order_delivery f
+    FROM main.ng_delivery.fact_order_delivery f
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
       AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
@@ -273,7 +296,7 @@ def fetch_monthly_per_store(conn):
       ROUND(AVG(f.order_gmv), 0) AS avg_check,
       ROUND(AVG(f.order_actual_cooking_time_minutes), 1) AS avg_cooking,
       SUM(CASE WHEN f.is_bad_order = true THEN 1 ELSE 0 END) AS bad_orders
-    FROM ng_delivery_spark.fact_order_delivery f
+    FROM main.ng_delivery.fact_order_delivery f
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
       AND f.order_created_date < DATE_FORMAT(DATE_TRUNC('MONTH', CURRENT_DATE()), 'yyyy-MM-dd')
@@ -293,7 +316,7 @@ def fetch_monthly_revenue(conn):
       ROUND(SUM(f.commission_local * 1.2), 0) AS total_fee_gross,
       ROUND(SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS refund,
       ROUND(SUM(f.provider_price_after_discount) - SUM(f.commission_local * 1.2) - SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS net_income
-    FROM ng_delivery_spark.fact_order_delivery f
+    FROM main.ng_delivery.fact_order_delivery f
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
       AND f.order_created_date < DATE_FORMAT(DATE_TRUNC('MONTH', CURRENT_DATE()), 'yyyy-MM-dd')
@@ -319,7 +342,7 @@ def fetch_campaigns(conn):
       ROUND(SUM(c.discount_value_local), 0) AS total_discount_uah,
       ROUND(SUM(c.bolt_spend_local), 0) AS bolt_spend_uah,
       ROUND(SUM(c.provider_spend_local), 0) AS provider_spend_uah
-    FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+    FROM main.ng_public.etl_delivery_campaign_order_metrics c
     WHERE c.provider_id IN ({PROVIDER_IDS})
       AND c.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
     GROUP BY c.campaign_id, c.name, c.spend_objective, c.target,
@@ -335,7 +358,7 @@ def fetch_smart_promo_orders(conn):
     """Order IDs that were part of a Smart Promo campaign (spend_objective 'sp_%')."""
     return query(conn, f"""
     SELECT DISTINCT c.order_id
-    FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+    FROM main.ng_public.etl_delivery_campaign_order_metrics c
     WHERE c.provider_id IN ({PROVIDER_IDS})
       AND c.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
       AND c.spend_objective LIKE 'sp\\_%'
