@@ -967,6 +967,10 @@ def main():
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
     print(f"Starting report generation at {generated_at}")
 
+    print("\n--- ULOV SUSHI & MAESTRO PIZZA multi-store report ---")
+    from generate_ulov_maestro import main as generate_ulov_maestro_report
+    generate_ulov_maestro_report()
+
     conn = connect()
     try:
         for pid, info in PROVIDERS.items():
@@ -1011,9 +1015,6 @@ def main():
     print("\n--- FROG & DOG multi-store report ---")
     from generate_frog_dog import main as generate_frog_dog_report
     generate_frog_dog_report()
-    print("\n--- ULOV SUSHI & MAESTRO PIZZA multi-store report ---")
-    from generate_ulov_maestro import main as generate_ulov_maestro_report
-    generate_ulov_maestro_report()
     print("\nDone!")
 
 
