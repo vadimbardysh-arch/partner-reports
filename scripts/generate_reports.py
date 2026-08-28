@@ -13,7 +13,9 @@ from decimal import Decimal
 from databricks import sql
 import pandas as pd
 
-from config import SERVER_HOSTNAME, HTTP_PATH, PROVIDERS, WEEKS_BACK
+from config import SERVER_HOSTNAME, HTTP_PATH
+
+HTTP_PATH_FALLBACK = "sql/protocolv1/o/2472566184436351/0505-112942-d3yviznw", PROVIDERS, WEEKS_BACK
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -22,11 +24,18 @@ def connect():
     token = os.environ.get("DATABRICKS_TOKEN")
     if not token:
         raise RuntimeError("DATABRICKS_TOKEN env var is required")
-    return sql.connect(
-        server_hostname=SERVER_HOSTNAME,
-        http_path=HTTP_PATH,
-        access_token=token,
-    )
+    last_err = None
+    for path in (HTTP_PATH_FALLBACK, HTTP_PATH):
+        try:
+            return sql.connect(
+                server_hostname=SERVER_HOSTNAME,
+                http_path=path,
+                access_token=token,
+            )
+        except Exception as e:
+            last_err = e
+            print(f"  Connect failed on {path}: {e}")
+    raise last_err
 
 
 def query(conn, q):
@@ -971,7 +980,14 @@ def main():
     from generate_ulov_maestro import main as generate_ulov_maestro_report
     generate_ulov_maestro_report()
 
-    conn = connect()
+    try:
+        conn = connect()
+    except Exception as e:
+        print(f"WARN: Skipping legacy single-provider reports: {e}")
+        update_index()
+        print("\nDone!")
+        return
+
     try:
         for pid, info in PROVIDERS.items():
             print(f"\n--- {info['name']} (ID: {pid}) ---")
