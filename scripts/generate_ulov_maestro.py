@@ -1,6 +1,6 @@
 """
-Generate a multi-store weekly HTML report for Ваш Лаваш by querying Databricks.
-Produces vash-lavash/index.html — identical structure to the BUREK dashboard.
+Generate a multi-store weekly HTML report for ULOV SUSHI & MAESTRO PIZZA by querying Databricks.
+Produces ulov-maestro-vinnytsia/index.html — identical structure to the Стумарі dashboard.
 """
 
 import os
@@ -18,54 +18,21 @@ import pandas as pd
 
 from config import SERVER_HOSTNAME, HTTP_PATH
 
+# Classic SQL warehouse is often stopped; fall back to Shared Growth Analytics cluster.
+HTTP_PATH_FALLBACK = "sql/protocolv1/o/2472566184436351/0505-112942-d3yviznw"
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEEKS_BACK = 52
 
-VASH_LAVASH_PROVIDERS = {
-    60918:  {"name": "Ваш Лаваш вул. Костомарова", "short": "Костомарова", "city": "Lviv"},
-    63369:  {"name": "Ваш Лаваш Шувар", "short": "Шувар", "city": "Lviv"},
-    63550:  {"name": "Ваш Лаваш Городоцька", "short": "Городоцька", "city": "Lviv"},
-    62676:  {"name": "Ваш Лаваш Великого", "short": "Великого", "city": "Lviv"},
-    62203:  {"name": "Ваш Лаваш вул. Бандери", "short": "Бандери", "city": "Lviv"},
-    114843: {"name": "Ваш Лаваш вул. Трудова", "short": "Трудова", "city": "Khmelnytskyi"},
-    154836: {"name": "Ваш Лаваш вул. Тернопільська", "short": "Тернопільська", "city": "Khmelnytskyi"},
-    117457: {"name": "Ваш Лаваш вул. Грушевського", "short": "Грушевського", "city": "Rivne"},
-    176277: {"name": "Ваш Лаваш вул. Чорновола", "short": "Чорновола", "city": "Rivne"},
-    117465: {"name": "Ваш Лаваш вул. Валова", "short": "Валова", "city": "Ternopil"},
-    117466: {"name": "Ваш Лаваш вул. Шептицького", "short": "Шептицького", "city": "Ternopil"},
-    117474: {"name": "Ваш Лаваш вул. Київська", "short": "Київська", "city": "Zhytomyr"},
-    117473: {"name": "Ваш Лаваш просп. Миру 37", "short": "пр. Миру 37", "city": "Zhytomyr"},
-    167163: {"name": "Ваш Лаваш просп. Шевченка", "short": "пр. Шевченка", "city": "Vyshhorod"},
-    185860: {"name": "Ваш Лаваш просп. Байрона", "short": "пр. Байрона", "city": "Kharkiv"},
-    185731: {"name": "Ваш Лаваш вул. В. Бердичівська", "short": "Бердичівська", "city": "Zhytomyr"},
-    185738: {"name": "Ваш Лаваш вул. І. Кочерги", "short": "Кочерги", "city": "Zhytomyr"},
-    185758: {"name": "Ваш Лаваш вул. Вітрука", "short": "Вітрука", "city": "Zhytomyr"},
-    185759: {"name": "Ваш Лаваш просп. Миру", "short": "пр. Миру", "city": "Zhytomyr"},
-    185781: {"name": "Ваш Лаваш вул. Корольова", "short": "Корольова", "city": "Zhytomyr"},
-    185784: {"name": "Ваш Лаваш вул. Покровська", "short": "Покровська", "city": "Zhytomyr"},
-    185658: {"name": "Ваш Лаваш вул. Домбровського", "short": "Домбровського", "city": "Zhytomyr"},
-    185651: {"name": "Ваш Лаваш вул. Лесі Українки", "short": "Л. Українки", "city": "Zhytomyr"},
-    185782: {"name": "Ваш Лаваш вул. Чуднівська", "short": "Чуднівська", "city": "Zhytomyr"},
-    185188: {"name": "Ваш Лаваш вул. Святошинська", "short": "Святошинська", "city": "Kyiv"},
-    179394: {"name": "Ваш Лаваш вул. Івана Мазепи", "short": "Мазепи", "city": "Kolomyia"},
-    652601:  {"name": "Ваш Лаваш вул. Шевченка", "short": "Шевченка", "city": "Irpin"},
-    1372495: {"name": "Ваш Лаваш просп. Волі", "short": "пр. Волі", "city": "Lutsk"},
+ULOV_MAESTRO_PROVIDERS = {
+    150183: {"name": "ULOV sushi", "short": "ULOV sushi", "city": "Vinnytsia"},
+    150186: {"name": "Maestro pizza", "short": "Maestro pizza", "city": "Vinnytsia"},
 }
 
-PROVIDER_IDS = ",".join(str(k) for k in VASH_LAVASH_PROVIDERS)
+PROVIDER_IDS = ",".join(str(k) for k in ULOV_MAESTRO_PROVIDERS)
 
 CITY_UA = {
-    "Lviv": "Львів",
-    "Zhytomyr": "Житомир",
-    "Khmelnytskyi": "Хмельницький",
-    "Rivne": "Рівне",
-    "Ternopil": "Тернопіль",
-    "Kyiv": "Київ",
-    "Kharkiv": "Харків",
-    "Vyshhorod": "Вишгород",
-    "Kolomyia": "Коломия",
-    "Irpin": "Ірпінь",
-    "Lutsk": "Луцьк",
+    "Vinnytsia": "Вінниця",
 }
 
 BAD_ORDER_TYPE_UA = {
@@ -81,15 +48,35 @@ FAULT_UA = {"provider": "Заклад", "courier": "Кур'єр", "bolt": "Bolt"
 ORDER_STATE_UA = {"delivered": "Доставлено", "cancelled": "Скасовано", "rejected": "Відхилено", "failed": "Помилка"}
 
 
-def connect():
+def _load_token():
     token = os.environ.get("DATABRICKS_TOKEN")
-    if not token:
-        raise RuntimeError("DATABRICKS_TOKEN env var is required")
-    return sql.connect(
-        server_hostname=SERVER_HOSTNAME,
-        http_path=HTTP_PATH,
-        access_token=token,
-    )
+    if token:
+        return token
+    for env_path in (
+        Path("/Users/vadymbardysh/Downloads/Vadym_Cursor/.env"),
+        Path("/Users/vadymbardysh/Library/CloudStorage/GoogleDrive-vadim.bardysh@bolt.eu/My Drive/Vadym_Cursor/.env"),
+    ):
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                if line.startswith("DATABRICKS_TOKEN="):
+                    return line.split("=", 1)[1].strip()
+    raise RuntimeError("DATABRICKS_TOKEN env var is required")
+
+
+def connect():
+    token = _load_token()
+    last_err = None
+    for path in (HTTP_PATH_FALLBACK, HTTP_PATH):
+        try:
+            return sql.connect(
+                server_hostname=SERVER_HOSTNAME,
+                http_path=path,
+                access_token=token,
+            )
+        except Exception as e:
+            last_err = e
+            print(f"  Connect failed on {path}: {e}")
+    raise last_err
 
 
 def query(conn, q):
@@ -150,9 +137,10 @@ def fetch_weekly_per_store(conn):
       ROUND(AVG(f.order_gmv), 0) AS avg_check,
       ROUND(AVG(f.order_actual_cooking_time_minutes), 1) AS avg_cooking,
       SUM(CASE WHEN f.is_bad_order = true THEN 1 ELSE 0 END) AS bad_orders
-    FROM ng_delivery_spark.fact_order_delivery f
+    FROM main.ng_delivery.fact_order_delivery f
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
       AND f.order_state = 'delivered'
     GROUP BY f.provider_id, f.provider_name, f.city_name, f.order_week
     ORDER BY f.order_week, f.provider_id
@@ -167,7 +155,7 @@ def fetch_ops_metrics(conn):
       ROUND(availability_rate_last_7d * 100, 1) AS availability,
       ROUND(acceptance_rate_last_7d * 100, 1) AS acceptance,
       ROUND(image_coverage_rate * 100, 1) AS photo_coverage
-    FROM ng_public_spark.etl_incentives_provider_targeting_features
+    FROM main.ng_public.etl_incentives_provider_targeting_features
     WHERE provider_id IN ({PROVIDER_IDS})
       AND date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
     ORDER BY date, provider_id
@@ -184,8 +172,8 @@ def fetch_top_items(conn):
         COUNT(*) AS qty,
         ROUND(SUM(b.item_price_before_discount_with_vat_local), 0) AS revenue,
         ROW_NUMBER() OVER (PARTITION BY f.provider_id, f.order_week ORDER BY COUNT(*) DESC) AS rn
-      FROM ng_delivery_spark.dim_basket_item_delivery b
-      JOIN ng_delivery_spark.fact_order_delivery f ON b.order_id = f.order_id
+      FROM main.ng_delivery.dim_basket_item_delivery b
+      JOIN main.ng_delivery.fact_order_delivery f ON b.order_id = f.order_id
       WHERE f.provider_id IN ({PROVIDER_IDS})
         AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
         AND b.basket_item_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
@@ -227,8 +215,8 @@ def fetch_orders_detail(conn):
         WHEN f.order_state = 'cancelled' THEN 'Скасовано клієнтом'
         ELSE 'Інше'
       END AS fail_reason
-    FROM ng_delivery_spark.fact_order_delivery f
-    LEFT JOIN ng_public_spark.etl_delivery_order_monetary_metrics m
+    FROM main.ng_delivery.fact_order_delivery f
+    LEFT JOIN main.ng_public.etl_delivery_order_monetary_metrics m
       ON f.order_id = m.order_id
       AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
     WHERE f.provider_id IN ({PROVIDER_IDS})
@@ -246,8 +234,8 @@ def fetch_complaints(conn):
       d.bad_order_type, d.bad_order_actor_at_fault AS fault,
       d.provider_rating_value AS rating,
       d.provider_rating_comment
-    FROM ng_delivery_spark.dim_order_delivery d
-    JOIN ng_delivery_spark.fact_order_delivery f ON d.order_id = f.order_id
+    FROM main.ng_delivery.dim_order_delivery d
+    JOIN main.ng_delivery.fact_order_delivery f ON d.order_id = f.order_id
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
       AND (d.is_bad_order = true OR d.is_cs_ticket_order = true)
@@ -267,8 +255,8 @@ def fetch_cancelled(conn):
         ELSE 'Скасовано'
       END AS reason,
       d.failed_order_comment AS comment
-    FROM ng_delivery_spark.fact_order_delivery f
-    LEFT JOIN ng_delivery_spark.dim_order_delivery d ON f.order_id = d.order_id
+    FROM main.ng_delivery.fact_order_delivery f
+    LEFT JOIN main.ng_delivery.dim_order_delivery d ON f.order_id = d.order_id
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
       AND f.order_state IN ('rejected', 'cancelled', 'failed')
@@ -285,14 +273,56 @@ def fetch_revenue_weekly(conn):
       ROUND(SUM(f.commission_local * 1.2), 0) AS total_fee_gross,
       ROUND(SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS refund,
       ROUND(SUM(f.provider_price_after_discount) - SUM(f.commission_local * 1.2) - SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS net_income
-    FROM ng_delivery_spark.fact_order_delivery f
+    FROM main.ng_delivery.fact_order_delivery f
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_created_date < DATE_TRUNC('WEEK', CURRENT_DATE())
       AND f.order_state = 'delivered'
     GROUP BY f.order_week, f.provider_id
     ORDER BY f.order_week, f.provider_id
     """)
 
+
+
+def fetch_monthly_per_store(conn):
+    return query(conn, f"""
+    SELECT
+      f.provider_id,
+      f.provider_name,
+      f.city_name,
+      DATE_FORMAT(f.order_created_date, 'yyyy-MM') AS order_month,
+      COUNT(*) AS orders,
+      ROUND(AVG(f.order_gmv), 0) AS avg_check,
+      ROUND(AVG(f.order_actual_cooking_time_minutes), 1) AS avg_cooking,
+      SUM(CASE WHEN f.is_bad_order = true THEN 1 ELSE 0 END) AS bad_orders
+    FROM main.ng_delivery.fact_order_delivery f
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_created_date < DATE_FORMAT(DATE_TRUNC('MONTH', CURRENT_DATE()), 'yyyy-MM-dd')
+      AND f.order_state = 'delivered'
+    GROUP BY f.provider_id, f.provider_name, f.city_name, DATE_FORMAT(f.order_created_date, 'yyyy-MM')
+    ORDER BY order_month, f.provider_id
+    """)
+
+
+def fetch_monthly_revenue(conn):
+    return query(conn, f"""
+    SELECT
+      DATE_FORMAT(f.order_created_date, 'yyyy-MM') AS order_month,
+      f.provider_id,
+      COUNT(*) AS orders,
+      ROUND(SUM(f.provider_price_after_discount), 0) AS food_revenue,
+      ROUND(SUM(f.commission_local * 1.2), 0) AS total_fee_gross,
+      ROUND(SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS refund,
+      ROUND(SUM(f.provider_price_after_discount) - SUM(f.commission_local * 1.2) - SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS net_income
+    FROM main.ng_delivery.fact_order_delivery f
+    WHERE f.provider_id IN ({PROVIDER_IDS})
+      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      AND f.order_created_date < DATE_FORMAT(DATE_TRUNC('MONTH', CURRENT_DATE()), 'yyyy-MM-dd')
+      AND f.order_state = 'delivered'
+    GROUP BY DATE_FORMAT(f.order_created_date, 'yyyy-MM'), f.provider_id
+    ORDER BY order_month, f.provider_id
+    """)
 
 def fetch_campaigns(conn):
     return query(conn, f"""
@@ -311,7 +341,7 @@ def fetch_campaigns(conn):
       ROUND(SUM(c.discount_value_local), 0) AS total_discount_uah,
       ROUND(SUM(c.bolt_spend_local), 0) AS bolt_spend_uah,
       ROUND(SUM(c.provider_spend_local), 0) AS provider_spend_uah
-    FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+    FROM main.ng_public.etl_delivery_campaign_order_metrics c
     WHERE c.provider_id IN ({PROVIDER_IDS})
       AND c.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
     GROUP BY c.campaign_id, c.name, c.spend_objective, c.target,
@@ -323,39 +353,11 @@ def fetch_campaigns(conn):
     """)
 
 
-def fetch_sponsored_listings(conn):
-    """Cost per provider per campaign period from dim_sponsored_listing."""
-    return query(conn, f"""
-    SELECT
-      sl.provider_id,
-      sl.offer_name,
-      sl.sponsored_listing_state AS state,
-      sl.sponsored_listing_placement_reporting AS placement,
-      DATE(sl.sponsored_listing_start_ts_local) AS start_date,
-      DATE(COALESCE(sl.sponsored_listing_actual_end_ts_local, sl.sponsored_listing_default_end_ts_local)) AS end_date,
-      ROUND(SUM(sl.offer_price_per_day_local * (
-        DATEDIFF(
-          DATE(COALESCE(sl.sponsored_listing_actual_end_ts_local, sl.sponsored_listing_default_end_ts_local)),
-          DATE(sl.sponsored_listing_start_ts_local)
-        ) + 1
-      )), 2) AS total_cost_uah
-    FROM ng_delivery_spark.dim_sponsored_listing sl
-    WHERE sl.provider_id IN ({PROVIDER_IDS})
-      AND sl.sponsored_listing_start_ts_local >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
-      AND sl.sponsored_listing_state IN ('finished', 'active')
-    GROUP BY sl.provider_id, sl.offer_name, sl.sponsored_listing_state,
-             sl.sponsored_listing_placement_reporting,
-             DATE(sl.sponsored_listing_start_ts_local),
-             DATE(COALESCE(sl.sponsored_listing_actual_end_ts_local, sl.sponsored_listing_default_end_ts_local))
-    ORDER BY start_date DESC, sl.provider_id
-    """)
-
-
 def fetch_smart_promo_orders(conn):
     """Order IDs that were part of a Smart Promo campaign (spend_objective 'sp_%')."""
     return query(conn, f"""
     SELECT DISTINCT c.order_id
-    FROM ng_public_spark.etl_delivery_campaign_order_metrics c
+    FROM main.ng_public.etl_delivery_campaign_order_metrics c
     WHERE c.provider_id IN ({PROVIDER_IDS})
       AND c.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
       AND c.spend_objective LIKE 'sp\\_%'
@@ -382,28 +384,8 @@ TARGET_UA = {"delivery_price": "Доставка", "item_price": "Знижка �
 
 # ── Build data for HTML ──────────────────────────────────────────────────
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df=None, sponsored_df=None):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df=None, monthly_df=None, monthly_revenue_df=None):
     data = {}
-
-    # Build set of (provider_id, iso_week) that had an active sponsored listing
-    sponsored_provider_weeks = set()
-    if sponsored_df is not None and len(sponsored_df):
-        from datetime import date as _date, timedelta as _td
-        def _iso_week(d):
-            iso = d.isocalendar()
-            return f"{iso.year}-W{iso.week}"
-        for _, r in sponsored_df.iterrows():
-            try:
-                from datetime import datetime as _dt
-                start = _dt.strptime(str(r["start_date"]), "%Y-%m-%d").date()
-                end = _dt.strptime(str(r["end_date"]), "%Y-%m-%d").date()
-            except Exception:
-                continue
-            pid = int(to_native(r["provider_id"]))
-            d = start
-            while d <= end:
-                sponsored_provider_weeks.add((pid, _iso_week(d)))
-                d += _td(days=1)
 
     smart_promo_order_ids = set()
     if smart_promo_df is not None:
@@ -418,7 +400,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
     stores_map = {}
     for _, r in weekly_df.iterrows():
         pid = to_native(r["provider_id"])
-        info = VASH_LAVASH_PROVIDERS.get(int(pid), {})
+        info = ULOV_MAESTRO_PROVIDERS.get(int(pid), {})
         stores_map[int(pid)] = {
             "name": info.get("name", r["provider_name"]),
             "short": info.get("short", r["provider_name"]),
@@ -442,29 +424,42 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
     weekly = dict(sorted(weekly.items(), key=lambda x: week_sort_key(x[0])))
     data["weekly"] = weekly
 
-    # --- Monthly aggregation from weekly ---
+    # --- Monthly orders (direct DB query for accuracy) ---
     monthly = {}
-    for wk, stores_data in weekly.items():
-        mk = week_to_month(wk)
-        if mk not in monthly:
-            monthly[mk] = {}
-        for pid, vals in stores_data.items():
-            if pid not in monthly[mk]:
-                monthly[mk][pid] = {"orders": 0, "_check_sum": 0, "_cook_sum": 0, "_cook_cnt": 0, "bad_orders": 0}
-            monthly[mk][pid]["orders"] += vals["orders"]
-            monthly[mk][pid]["_check_sum"] += vals["avg_check"] * vals["orders"]
-            if vals["avg_cooking"] and vals["avg_cooking"] > 0:
-                monthly[mk][pid]["_cook_sum"] += vals["avg_cooking"] * vals["orders"]
-                monthly[mk][pid]["_cook_cnt"] += vals["orders"]
-            monthly[mk][pid]["bad_orders"] += vals["bad_orders"]
-    for mk in monthly:
-        for pid in monthly[mk]:
-            d = monthly[mk][pid]
-            d["avg_check"] = round(d["_check_sum"] / d["orders"]) if d["orders"] else 0
-            d["avg_cooking"] = round(d["_cook_sum"] / d["_cook_cnt"], 1) if d["_cook_cnt"] else 0
-            del d["_check_sum"]
-            del d["_cook_sum"]
-            del d["_cook_cnt"]
+    if monthly_df is not None and len(monthly_df):
+        for _, r in monthly_df.iterrows():
+            pid = int(to_native(r["provider_id"]))
+            mk = str(r["order_month"])
+            if mk not in monthly:
+                monthly[mk] = {}
+            monthly[mk][pid] = {
+                "orders": to_native(r["orders"]),
+                "avg_check": to_native(r["avg_check"]),
+                "avg_cooking": to_native(r["avg_cooking"]),
+                "bad_orders": to_native(r["bad_orders"]),
+            }
+    else:
+        for wk, stores_data in weekly.items():
+            mk = week_to_month(wk)
+            if mk not in monthly:
+                monthly[mk] = {}
+            for pid, vals in stores_data.items():
+                if pid not in monthly[mk]:
+                    monthly[mk][pid] = {"orders": 0, "_check_sum": 0, "_cook_sum": 0, "_cook_cnt": 0, "bad_orders": 0}
+                monthly[mk][pid]["orders"] += vals["orders"]
+                monthly[mk][pid]["_check_sum"] += vals["avg_check"] * vals["orders"]
+                if vals["avg_cooking"] and vals["avg_cooking"] > 0:
+                    monthly[mk][pid]["_cook_sum"] += vals["avg_cooking"] * vals["orders"]
+                    monthly[mk][pid]["_cook_cnt"] += vals["orders"]
+                monthly[mk][pid]["bad_orders"] += vals["bad_orders"]
+        for mk in monthly:
+            for pid in monthly[mk]:
+                d = monthly[mk][pid]
+                d["avg_check"] = round(d["_check_sum"] / d["orders"]) if d["orders"] else 0
+                d["avg_cooking"] = round(d["_cook_sum"] / d["_cook_cnt"], 1) if d["_cook_cnt"] else 0
+                del d["_check_sum"]
+                del d["_cook_sum"]
+                del d["_cook_cnt"]
     monthly = dict(sorted(monthly.items(), key=lambda x: month_sort_key(x[0])))
     data["monthly"] = monthly
 
@@ -572,12 +567,9 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
                 row["is_smart_promo"] = int(oid) in smart_promo_order_ids
             except (TypeError, ValueError):
                 row["is_smart_promo"] = False
-        pid_row = row.get("provider_id")
-        ow_row = str(row.get("order_week", "") or "")
-        row["is_sponsored_listing"] = bool(pid_row and ow_row and (int(pid_row), ow_row) in sponsored_provider_weeks)
         pid = row.get("provider_id")
-        if pid and int(pid) in VASH_LAVASH_PROVIDERS:
-            row["provider_short"] = VASH_LAVASH_PROVIDERS[int(pid)]["short"]
+        if pid and int(pid) in ULOV_MAESTRO_PROVIDERS:
+            row["provider_short"] = ULOV_MAESTRO_PROVIDERS[int(pid)]["short"]
         else:
             row["provider_short"] = row.get("provider_name", "")
         ow = row.get("order_week", "")
@@ -592,8 +584,8 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         raw_fault = row.get("fault", "") or ""
         row["fault"] = FAULT_UA.get(str(raw_fault).lower(), raw_fault)
         pid = row.get("provider_id")
-        if pid and int(pid) in VASH_LAVASH_PROVIDERS:
-            row["provider_short"] = VASH_LAVASH_PROVIDERS[int(pid)]["short"]
+        if pid and int(pid) in ULOV_MAESTRO_PROVIDERS:
+            row["provider_short"] = ULOV_MAESTRO_PROVIDERS[int(pid)]["short"]
         else:
             row["provider_short"] = row.get("provider_name", "")
         ow = row.get("order_week", "")
@@ -606,8 +598,8 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         raw_state = row.get("order_state", "") or ""
         row["order_state"] = ORDER_STATE_UA.get(raw_state, raw_state)
         pid = row.get("provider_id")
-        if pid and int(pid) in VASH_LAVASH_PROVIDERS:
-            row["provider_short"] = VASH_LAVASH_PROVIDERS[int(pid)]["short"]
+        if pid and int(pid) in ULOV_MAESTRO_PROVIDERS:
+            row["provider_short"] = ULOV_MAESTRO_PROVIDERS[int(pid)]["short"]
         else:
             row["provider_short"] = row.get("provider_name", "")
         ow = row.get("order_week", "")
@@ -631,17 +623,31 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
     revenue = dict(sorted(revenue.items(), key=lambda x: week_sort_key(x[0])))
     data["revenue"] = revenue
 
-    # --- Monthly revenue ---
+    # --- Monthly revenue (direct DB query for accuracy) ---
     monthly_revenue = {}
-    for wk, stores_data in revenue.items():
-        mk = week_to_month(wk)
-        if mk not in monthly_revenue:
-            monthly_revenue[mk] = {}
-        for pid, vals in stores_data.items():
-            if pid not in monthly_revenue[mk]:
-                monthly_revenue[mk][pid] = {"orders": 0, "food_revenue": 0, "total_fee_gross": 0, "refund": 0, "net_income": 0}
-            for k in ("orders", "food_revenue", "total_fee_gross", "refund", "net_income"):
-                monthly_revenue[mk][pid][k] += vals.get(k, 0)
+    if monthly_revenue_df is not None and len(monthly_revenue_df):
+        for _, r in monthly_revenue_df.iterrows():
+            mk = str(r["order_month"])
+            pid = int(to_native(r["provider_id"]))
+            if mk not in monthly_revenue:
+                monthly_revenue[mk] = {}
+            monthly_revenue[mk][pid] = {
+                "orders": to_native(r["orders"]),
+                "food_revenue": to_native(r["food_revenue"]),
+                "total_fee_gross": to_native(r["total_fee_gross"]),
+                "refund": to_native(r["refund"]),
+                "net_income": to_native(r["net_income"]),
+            }
+    else:
+        for wk, stores_data in revenue.items():
+            mk = week_to_month(wk)
+            if mk not in monthly_revenue:
+                monthly_revenue[mk] = {}
+            for pid, vals in stores_data.items():
+                if pid not in monthly_revenue[mk]:
+                    monthly_revenue[mk][pid] = {"orders": 0, "food_revenue": 0, "total_fee_gross": 0, "refund": 0, "net_income": 0}
+                for k in ("orders", "food_revenue", "total_fee_gross", "refund", "net_income"):
+                    monthly_revenue[mk][pid][k] += vals.get(k, 0)
     monthly_revenue = dict(sorted(monthly_revenue.items(), key=lambda x: month_sort_key(x[0])))
     data["monthly_revenue"] = monthly_revenue
 
@@ -671,7 +677,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             "start_date": str(r["start_date"]),
             "end_date": str(r["end_date"]),
             "provider_id": pid,
-            "provider_short": VASH_LAVASH_PROVIDERS.get(pid, {}).get("short", str(pid)),
+            "provider_short": ULOV_MAESTRO_PROVIDERS.get(pid, {}).get("short", str(pid)),
             "order_week": str(r["order_week"]),
             "order_month": week_to_month(str(r["order_week"])),
             "orders": to_native(r["orders"]),
@@ -681,97 +687,6 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         })
     data["campaigns"] = campaigns
 
-    # ── Sponsored Listings (from Databricks dim_sponsored_listing) ──────
-    sponsored_listings = []
-    if sponsored_df is not None and len(sponsored_df):
-        from datetime import date, timedelta
-
-        def iso_week_key(d):
-            iso = d.isocalendar()
-            return f"{iso.year}-W{iso.week}"
-
-        def days_in_week(start, end, week_key):
-            """Count days of [start, end] that fall in the given ISO week."""
-            year, wnum = week_key.split("-W")
-            from datetime import datetime
-            # Monday of that ISO week
-            week_start = datetime.strptime(f"{year} {wnum} 1", "%G %V %u").date()
-            week_end = week_start + timedelta(days=6)
-            overlap_start = max(start, week_start)
-            overlap_end = min(end, week_end)
-            delta = (overlap_end - overlap_start).days + 1
-            return max(delta, 0)
-
-        # Group by (provider_id, start_date, end_date, offer_name, placement)
-        from collections import defaultdict
-        grouped = defaultdict(lambda: {"total_cost": 0.0, "placement": "", "state": "", "offer_name": ""})
-        for _, r in sponsored_df.iterrows():
-            pid = int(to_native(r["provider_id"]))
-            key = (pid, str(r["start_date"]), str(r["end_date"]))
-            grouped[key]["total_cost"] += float(r["total_cost_uah"]) if r["total_cost_uah"] is not None else 0
-            grouped[key]["placement"] = str(r["placement"] or "")
-            grouped[key]["state"] = str(r["state"] or "")
-            grouped[key]["offer_name"] = str(r["offer_name"] or "")
-
-        # Build per-provider entries with week breakdown
-        for (pid, start_str, end_str), vals in grouped.items():
-            try:
-                from datetime import datetime
-                start = datetime.strptime(start_str, "%Y-%m-%d").date()
-                end = datetime.strptime(end_str, "%Y-%m-%d").date()
-            except Exception:
-                continue
-            total_days = (end - start).days + 1
-
-            # Find all ISO weeks this campaign spans
-            week_keys = []
-            d = start
-            seen = set()
-            while d <= end:
-                wk = iso_week_key(d)
-                if wk not in seen:
-                    seen.add(wk)
-                    week_keys.append(wk)
-                d += timedelta(days=1)
-
-            weeks_data = []
-            for wk in week_keys:
-                d_in_wk = days_in_week(start, end, wk)
-                if d_in_wk <= 0:
-                    continue
-                cost_in_wk = round(vals["total_cost"] * d_in_wk / total_days, 2) if total_days > 0 else 0
-                # Build human label
-                year, wnum = wk.split("-W")
-                from datetime import datetime as dt2
-                wmon = dt2.strptime(f"{year} {wnum} 1", "%G %V %u").date()
-                wsun = wmon + timedelta(days=6)
-                wmon_c = max(wmon, start)
-                wsun_c = min(wsun, end)
-                MONTH_UA = ["","січ","лют","бер","кві","тра","чер","лип","сер","вер","жов","лис","гру"]
-                days_label = f"{d_in_wk} дн. ({wmon_c.day} {MONTH_UA[wmon_c.month]}–{wsun_c.day} {MONTH_UA[wsun_c.month]})"
-                weeks_data.append({"week": wk, "days": d_in_wk, "days_label": days_label, "cost": cost_in_wk})
-
-            provider_short = VASH_LAVASH_PROVIDERS.get(pid, {}).get("short", str(pid))
-            placement_ua = {"bundle": "Пакет (5 місць)", "home_screen": "Головний екран", "search_result": "Пошук", "main_feed": "Головна стрічка", "order_again": "Замовити знову", "home_category": "Категорія"}.get(vals["placement"], vals["placement"])
-            state_ua = "Виконано" if vals["state"] == "finished" else "Активний" if vals["state"] == "active" else vals["state"]
-            sponsored_listings.append({
-                "provider_id": pid,
-                "provider_short": provider_short,
-                "offer_name": vals["offer_name"],
-                "placement": placement_ua,
-                "state": state_ua,
-                "state_color": "green" if vals["state"] == "finished" else "orange",
-                "start_date": start_str,
-                "end_date": end_str,
-                "total_days": total_days,
-                "total_cost": round(vals["total_cost"], 2),
-                "weeks": weeks_data,
-            })
-
-        # Sort by start_date desc, then provider
-        sponsored_listings.sort(key=lambda x: (x["start_date"], x["provider_short"]), reverse=True)
-
-    data["sponsored_listings"] = sponsored_listings
     return data
 
 
@@ -785,7 +700,7 @@ def generate_html(data, generated_at):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ВАШ ЛАВАШ | тижневий звіт</title>
+<title>ULOV SUSHI & MAESTRO PIZZA | тижневий звіт</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -818,24 +733,6 @@ a{{text-decoration:none;color:inherit}}
 .ms-count{{display:inline-block;background:var(--orange);color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 6px;margin-left:4px}}
 .reset-btn{{background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:7px 11px;font-size:14px;cursor:pointer;transition:all .15s;line-height:1}}
 .reset-btn:hover{{background:var(--neg);color:#fff;border-color:var(--neg)}}
-.calc-card{{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 24px;margin-top:20px}}
-.calc-title{{font-size:15px;font-weight:700;color:var(--text);margin:0 0 16px}}
-.calc-controls{{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}}
-.calc-field label{{display:block;font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}}
-.calc-field input,.calc-field select{{padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;background:var(--bg);color:var(--text);min-width:160px}}
-.calc-field input:focus,.calc-field select:focus{{outline:none;border-color:var(--orange);box-shadow:0 0 0 3px rgba(249,115,22,.12)}}
-.calc-store-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}}
-.calc-store{{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px}}
-.calc-store-name{{font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px}}
-.calc-store-city{{font-size:11px;color:var(--text2);margin-bottom:10px}}
-.calc-bar-wrap{{height:8px;background:rgba(0,0,0,.06);border-radius:4px;overflow:hidden;margin-bottom:8px}}
-.calc-bar{{height:100%;border-radius:4px;transition:width .3s}}
-.calc-metrics{{display:flex;justify-content:space-between;font-size:12px}}
-.calc-spent{{font-weight:700}}
-.calc-left{{font-weight:600}}
-.calc-total-row{{margin-top:16px;padding:14px 16px;background:var(--card);border:2px solid var(--orange);border-radius:10px;display:flex;flex-wrap:wrap;gap:24px;align-items:center}}
-.calc-total-label{{font-size:13px;font-weight:700;color:var(--text)}}
-.calc-total-val{{font-size:18px;font-weight:800}}
 .period-toggle-wrap{{display:flex;align-items:center;padding:0 20px;margin-top:-4px}}
 .period-select{{padding:6px 32px 6px 14px;font-size:13px;font-weight:600;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;border-radius:8px;font-family:inherit;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;transition:all .15s}}
 .period-select:hover{{border-color:var(--orange)}}
@@ -954,7 +851,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
 <header class="header">
   <div class="header-left">
     <span class="brand-dot"></span>
-    <h1>ВАШ ЛАВАШ | тижневий звіт</h1>
+    <h1>ULOV SUSHI & MAESTRO PIZZA | тижневий звіт</h1>
   </div>
   <div class="header-right">
     <div class="ms-wrap" id="city-ms"><button class="ms-btn" id="city-btn">Всі міста</button><div class="ms-panel" id="city-panel"></div></div>
@@ -1032,21 +929,6 @@ body.dark .revenue-summary-table th{{background:#111827}}
       <div class="chart-card"><h3>Витрати Bolt на кампанії по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-campaign-bolt"></canvas></div></div>
     </div>
     <div class="table-wrap scroll-table" id="campaigns-wrap"></div>
-
-    <div class="calc-card" id="budget-calc">
-      <h3 class="calc-title">💰 Калькулятор бюджету на кампанії</h3>
-      <div class="calc-controls">
-        <div class="calc-field">
-          <label for="calc-budget">Бюджет на точку / міс. (₴)</label>
-          <input type="number" id="calc-budget" value="2500" min="0" step="100">
-        </div>
-        <div class="calc-field">
-          <label for="calc-period-select">Період</label>
-          <select id="calc-period-select"></select>
-        </div>
-      </div>
-      <div id="calc-results"></div>
-    </div>
   </section>
 
   <section id="orders-detail-section" class="section">
@@ -1058,8 +940,6 @@ body.dark .revenue-summary-table th{{background:#111827}}
       <select id="state-filter"><option value="__all__">Всі</option><option value="delivered">Доставлені</option><option value="failed">Невдалі / Скасовані</option></select>
       <label style="margin-left:12px">Smart Promo:</label>
       <select id="sp-filter"><option value="__all__">Всі</option><option value="yes">Smart Promo</option><option value="no">Без Smart Promo</option></select>
-      <label style="margin-left:12px">Sponsored Listing:</label>
-      <select id="sl-filter"><option value="__all__">Всі</option><option value="yes">Sponsored Listing</option><option value="no">Без Sponsored Listing</option></select>
     </div>
     <div class="table-wrap scroll-table" id="orders-detail-wrap"></div>
   </section>
@@ -1099,7 +979,6 @@ let selectedStores = new Set();
 let selectedBP = '__all__';
 let selectedState = '__all__';
 let selectedSP = '__all__';
-let selectedSL = '__all__';
 let chartInstances = {{}};
 
 function weekSortCmp(a, b) {{
@@ -1728,8 +1607,6 @@ function renderOrdersDetail() {{
   else if (selectedState === 'failed') rows = rows.filter(r => r.order_state_raw !== 'delivered');
   if (selectedSP === 'yes') rows = rows.filter(r => r.is_smart_promo);
   else if (selectedSP === 'no') rows = rows.filter(r => !r.is_smart_promo);
-  if (selectedSL === 'yes') rows = rows.filter(r => r.is_sponsored_listing);
-  else if (selectedSL === 'no') rows = rows.filter(r => !r.is_sponsored_listing);
 
   let t = '<table class="data-table"><thead><tr>';
   t += '<th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Bolt+</th>';
@@ -1764,10 +1641,9 @@ function renderOrdersDetail() {{
 
     const nc = (r.net_income || 0) < 0 ? ' style="color:var(--neg)"' : '';
     const spBadge = r.is_smart_promo ? ' <span style="display:inline-block;background:var(--orange);color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle;letter-spacing:.3px" title="Замовлення в межах Smart Promo кампанії">SMART PROMO</span>' : '';
-    const slBadge = r.is_sponsored_listing ? ' <span style="display:inline-block;background:#7C3AED;color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle;letter-spacing:.3px" title="Заклад мав активний Sponsored Listing в цей тиждень">SL</span>' : '';
     t += '<tr' + (isFailed ? ' style="background:rgba(239,68,68,.04)"' : '') + '><td>' + date + '</td>';
     t += '<td>' + (r.order_reference_id || '') + '</td>';
-    t += '<td>' + (r.provider_short || '') + spBadge + slBadge + '</td>';
+    t += '<td>' + (r.provider_short || '') + spBadge + '</td>';
     t += '<td' + stateColor + '>' + (r.order_state || '') + '</td>';
     t += '<td' + bpClass + '>' + bpLabel + '</td>';
     t += '<td class="text-right">' + (r.food_before_discount || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
@@ -1847,68 +1723,6 @@ function renderCancelled() {{
   document.getElementById('cancelled-wrap').innerHTML = t;
 }}
 
-function renderBudgetCalc() {{
-  const ids = getFilteredStoreIds();
-  const camps = D.campaigns || [];
-
-  const periodSel = document.getElementById('calc-period-select');
-  const months = [...new Set(camps.map(c => c.order_month))].filter(Boolean).sort();
-  const curVal = periodSel.value;
-  periodSel.innerHTML = months.map(m => {{
-    const [y, mo] = m.split('-');
-    const mNames = ['Січ','Лют','Бер','Кві','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру'];
-    return '<option value="' + m + '"' + (m === curVal ? ' selected' : '') + '>' + mNames[parseInt(mo) - 1] + ' ' + y + '</option>';
-  }}).join('');
-  if (!curVal && months.length) periodSel.value = months[months.length - 1];
-
-  const selMonth = periodSel.value;
-  const budget = parseFloat(document.getElementById('calc-budget').value) || 0;
-
-  const storeSpend = {{}};
-  camps.forEach(c => {{
-    if (c.order_month !== selMonth || !ids.includes(c.provider_id)) return;
-    if (!storeSpend[c.provider_id]) storeSpend[c.provider_id] = 0;
-    storeSpend[c.provider_id] += c.provider_spend || 0;
-  }});
-
-  let html = '<div class="calc-store-grid">';
-  let totalSpent = 0, totalBudget = 0, storeCount = 0;
-
-  ids.forEach(id => {{
-    const s = D.stores[id];
-    if (!s) return;
-    const spent = Math.round(storeSpend[id] || 0);
-    totalSpent += spent;
-    totalBudget += budget;
-    storeCount++;
-    const pct = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
-    const left = budget - spent;
-    const barColor = pct >= 100 ? 'var(--neg)' : pct >= 75 ? 'var(--warn)' : 'var(--pos)';
-    const leftColor = left < 0 ? 'color:var(--neg)' : 'color:var(--pos)';
-    html += '<div class="calc-store">';
-    html += '<div class="calc-store-name">' + s.short + '</div>';
-    html += '<div class="calc-store-city">' + s.city + '</div>';
-    html += '<div class="calc-bar-wrap"><div class="calc-bar" style="width:' + pct.toFixed(1) + '%;background:' + barColor + '"></div></div>';
-    html += '<div class="calc-metrics">';
-    html += '<span class="calc-spent" style="color:var(--neg)">Витрачено: ₴' + spent.toLocaleString('uk-UA') + '</span>';
-    html += '<span class="calc-left" style="' + leftColor + '">Залишок: ₴' + left.toLocaleString('uk-UA') + '</span>';
-    html += '</div></div>';
-  }});
-  html += '</div>';
-
-  const totalLeft = totalBudget - totalSpent;
-  const totalPct = totalBudget > 0 ? (totalSpent / totalBudget * 100) : 0;
-  html += '<div class="calc-total-row">';
-  html += '<div><div class="calc-total-label">Загальний бюджет</div><div class="calc-total-val" style="color:var(--text)">₴' + totalBudget.toLocaleString('uk-UA') + '</div></div>';
-  html += '<div><div class="calc-total-label">Витрачено</div><div class="calc-total-val" style="color:var(--neg)">₴' + totalSpent.toLocaleString('uk-UA') + ' <span style="font-size:13px;font-weight:600">(' + totalPct.toFixed(1) + '%)</span></div></div>';
-  html += '<div><div class="calc-total-label">Залишок</div><div class="calc-total-val" style="color:' + (totalLeft >= 0 ? 'var(--pos)' : 'var(--neg)') + '">₴' + totalLeft.toLocaleString('uk-UA') + '</div></div>';
-  html += '</div>';
-
-  document.getElementById('calc-results').innerHTML = html;
-}}
-
-document.getElementById('calc-budget').addEventListener('input', renderBudgetCalc);
-document.getElementById('calc-period-select').addEventListener('change', renderBudgetCalc);
 
 function renderTopItems() {{
   const ids = getFilteredStoreIds();
@@ -1939,7 +1753,6 @@ function renderAll() {{
   renderRevenueChart();
   renderCampaignsChart();
   renderCampaigns();
-  renderBudgetCalc();
   renderOrdersDetail();
   renderComplaints();
   renderCancelled();
@@ -1984,20 +1797,15 @@ document.getElementById('sp-filter').addEventListener('change', function() {{
   renderOrdersDetail();
 }});
 
-document.getElementById('sl-filter').addEventListener('change', function() {{
-  selectedSL = this.value;
-  renderOrdersDetail();
-}});
-
 window.toggleDark = function() {{
   document.body.classList.toggle('dark');
   const isDark = document.body.classList.contains('dark');
   document.getElementById('theme-toggle').textContent = isDark ? '☀️' : '🌙';
-  try {{ localStorage.setItem('vash-lavash-dark', isDark ? '1' : '0') }} catch(e) {{}}
+  try {{ localStorage.setItem('ulov-maestro-vinnytsia-dark', isDark ? '1' : '0') }} catch(e) {{}}
   Chart.defaults.color = isDark ? '#D1D5DB' : '#374151';
   renderAll();
 }};
-(function() {{ try {{ if (localStorage.getItem('vash-lavash-dark') === '1') {{ document.body.classList.add('dark'); document.getElementById('theme-toggle').textContent = '☀️'; Chart.defaults.color = '#D1D5DB'; }} }} catch(e) {{}} }})();
+(function() {{ try {{ if (localStorage.getItem('ulov-maestro-vinnytsia-dark') === '1') {{ document.body.classList.add('dark'); document.getElementById('theme-toggle').textContent = '☀️'; Chart.defaults.color = '#D1D5DB'; }} }} catch(e) {{}} }})();
 
 document.getElementById('period-select').addEventListener('change', function() {{
   periodMode = this.value;
@@ -2021,7 +1829,7 @@ renderAll();
 
 def main():
     generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    print(f"Starting Ваш Лаваш report generation at {generated_at}")
+    print(f"Starting ULOV SUSHI & MAESTRO PIZZA report generation at {generated_at}")
 
     conn = connect()
     try:
@@ -2053,6 +1861,14 @@ def main():
         revenue_df = fetch_revenue_weekly(conn)
         print(f"  → {len(revenue_df)} rows")
 
+        print("  Fetching monthly per-store data…")
+        monthly_df = fetch_monthly_per_store(conn)
+        print(f"  → {len(monthly_df)} rows")
+
+        print("  Fetching monthly revenue…")
+        monthly_revenue_df = fetch_monthly_revenue(conn)
+        print(f"  → {len(monthly_revenue_df)} rows")
+
         print("  Fetching campaigns…")
         campaigns_df = fetch_campaigns(conn)
         print(f"  → {len(campaigns_df)} rows")
@@ -2060,32 +1876,17 @@ def main():
         print("  Fetching Smart Promo order ids…")
         smart_promo_df = fetch_smart_promo_orders(conn)
         print(f"  → {len(smart_promo_df)} rows")
-
-        print("  Fetching Sponsored Listings…")
-        sponsored_df = fetch_sponsored_listings(conn)
-        print(f"  → {len(sponsored_df)} rows")
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df, sponsored_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df, monthly_df=monthly_df, monthly_revenue_df=monthly_revenue_df)
     html = generate_html(data, generated_at)
 
-    out_dir = REPO_ROOT / "vash-lavash"
+    out_dir = REPO_ROOT / "ulov-maestro-vinnytsia"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "index.html"
     out_path.write_text(html, encoding="utf-8")
     print(f"  Saved: {out_path}")
-
-    # Chained run: CI token lacks `workflow` scope to add a dedicated step
-    # for Стумарі and Akhali in update-reports.yml, so they are generated here.
-    import subprocess
-    print("\nRunning generate_ulov_maestro.py…")
-    subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "generate_ulov_maestro.py")], check=True)
-    print("\nRunning generate_stumari.py…")
-    subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "generate_stumari.py")], check=True)
-    print("\nRunning generate_akhali.py…")
-    subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "generate_akhali.py")], check=True)
-
     print("\nDone!")
 
 
