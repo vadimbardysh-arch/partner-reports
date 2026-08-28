@@ -1011,6 +1011,9 @@ def main():
     print("\n--- FROG & DOG multi-store report ---")
     from generate_frog_dog import main as generate_frog_dog_report
     generate_frog_dog_report()
+    print("\n--- ULOV SUSHI & MAESTRO PIZZA multi-store report ---")
+    from generate_ulov_maestro import main as generate_ulov_maestro_report
+    generate_ulov_maestro_report()
     print("\nDone!")
 
 
@@ -1032,6 +1035,11 @@ def update_index():
         <a class="report-card" href="frog-dog/">
             <h3>FROG &amp; DOG</h3>
             <p>Львів · 7 закладів</p>
+            <span class="badge">Тижневий звіт</span>
+        </a>
+        <a class="report-card" href="ulov-maestro-vinnytsia/">
+            <h3>ULOV SUSHI &amp; MAESTRO PIZZA</h3>
+            <p>Вінниця</p>
             <span class="badge">Тижневий звіт</span>
         </a>"""
 

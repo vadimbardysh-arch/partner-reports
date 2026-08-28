@@ -2079,8 +2079,6 @@ def main():
     # Chained run: CI token lacks `workflow` scope to add a dedicated step
     # for Стумарі and Akhali in update-reports.yml, so they are generated here.
     import subprocess
-    print("\nRunning generate_ulov_maestro.py…")
-    subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "generate_ulov_maestro.py")], check=True)
     print("\nRunning generate_stumari.py…")
     subprocess.run([sys.executable, str(Path(__file__).resolve().parent / "generate_stumari.py")], check=True)
     print("\nRunning generate_akhali.py…")
