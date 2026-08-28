@@ -13,9 +13,9 @@ from decimal import Decimal
 from databricks import sql
 import pandas as pd
 
-from config import SERVER_HOSTNAME, HTTP_PATH
+from config import SERVER_HOSTNAME, HTTP_PATH, PROVIDERS, WEEKS_BACK
 
-HTTP_PATH_FALLBACK = "sql/protocolv1/o/2472566184436351/0505-112942-d3yviznw", PROVIDERS, WEEKS_BACK
+HTTP_PATH_FALLBACK = "sql/protocolv1/o/2472566184436351/0505-112942-d3yviznw"
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
