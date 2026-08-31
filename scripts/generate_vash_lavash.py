@@ -16,7 +16,7 @@ sys.stdout.reconfigure(line_buffering=True)
 from databricks import sql
 import pandas as pd
 
-from config import SERVER_HOSTNAME, HTTP_PATH
+from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEEKS_BACK = 52
@@ -85,16 +85,20 @@ def connect():
     token = os.environ.get("DATABRICKS_TOKEN")
     if not token:
         raise RuntimeError("DATABRICKS_TOKEN env var is required")
+    kwargs = {}
+    if CATALOG:
+        kwargs["catalog"] = CATALOG
     return sql.connect(
         server_hostname=SERVER_HOSTNAME,
         http_path=HTTP_PATH,
         access_token=token,
+        **kwargs,
     )
 
 
 def query(conn, q):
     with conn.cursor() as cur:
-        cur.execute(q)
+        cur.execute(resolve_sql(q))
         cols = [d[0] for d in cur.description]
         return pd.DataFrame(cur.fetchall(), columns=cols)
 
