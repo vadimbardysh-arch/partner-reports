@@ -17,7 +17,9 @@ sys.stdout.reconfigure(line_buffering=True)
 from databricks import sql
 import pandas as pd
 
-from config import SERVER_HOSTNAME, HTTP_PATH
+from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql
+
+HTTP_PATH_FALLBACK = "sql/protocolv1/o/2472566184436351/0505-112942-d3yviznw"
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEEKS_BACK = 52
@@ -53,20 +55,54 @@ FAULT_UA = {"provider": "Заклад", "courier": "Кур'єр", "bolt": "Bolt"
 ORDER_STATE_UA = {"delivered": "Доставлено", "cancelled": "Скасовано", "rejected": "Відхилено", "failed": "Помилка"}
 
 
+_REWRITE_TO_UC = bool(CATALOG)
+
+
 def connect():
+    global _REWRITE_TO_UC
     token = os.environ.get("DATABRICKS_TOKEN")
     if not token:
         raise RuntimeError("DATABRICKS_TOKEN env var is required")
-    return sql.connect(
-        server_hostname=SERVER_HOSTNAME,
-        http_path=HTTP_PATH,
-        access_token=token,
-    )
+    last_err = None
+    attempts = [
+        (HTTP_PATH, CATALOG),
+        (HTTP_PATH_FALLBACK, CATALOG or "main"),
+    ]
+    seen = set()
+    for path, catalog in attempts:
+        key = (path, catalog)
+        if key in seen:
+            continue
+        seen.add(key)
+        kwargs = {"catalog": catalog} if catalog else {}
+        try:
+            conn = sql.connect(
+                server_hostname=SERVER_HOSTNAME,
+                http_path=path,
+                access_token=token,
+                **kwargs,
+            )
+            _REWRITE_TO_UC = bool(catalog)
+            print(f"  Connected via {path}" + (f" catalog={catalog}" if catalog else ""))
+            return conn
+        except Exception as e:
+            last_err = e
+            print(f"  Connect failed on {path}: {e}")
+    raise last_err
 
 
 def query(conn, q):
+    sql_text = resolve_sql(q) if _REWRITE_TO_UC or CATALOG else q
+    if _REWRITE_TO_UC and sql_text == q:
+        for legacy, unity in {
+            "ng_delivery_store_spark": "ng_delivery_store",
+            "ng_delivery_spark": "ng_delivery",
+            "ng_public_spark": "ng_public",
+            "core_models_spark": "core_models",
+        }.items():
+            sql_text = sql_text.replace(legacy + ".", unity + ".")
     with conn.cursor() as cur:
-        cur.execute(q)
+        cur.execute(sql_text)
         cols = [d[0] for d in cur.description]
         return pd.DataFrame(cur.fetchall(), columns=cols)
 
@@ -1834,7 +1870,4 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"WARN: generation skipped: {e}")
+    main()
