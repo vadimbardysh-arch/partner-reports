@@ -13,7 +13,7 @@ from decimal import Decimal
 from databricks import sql
 import pandas as pd
 
-from config import SERVER_HOSTNAME, HTTP_PATH, PROVIDERS, WEEKS_BACK
+from config import SERVER_HOSTNAME, HTTP_PATH, PROVIDERS, WEEKS_BACK, CATALOG, resolve_sql, db_connect
 
 HTTP_PATH_FALLBACK = "sql/protocolv1/o/2472566184436351/0505-112942-d3yviznw"
 
@@ -21,26 +21,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def connect():
-    token = os.environ.get("DATABRICKS_TOKEN")
-    if not token:
-        raise RuntimeError("DATABRICKS_TOKEN env var is required")
-    last_err = None
-    for path in (HTTP_PATH_FALLBACK, HTTP_PATH):
-        try:
-            return sql.connect(
-                server_hostname=SERVER_HOSTNAME,
-                http_path=path,
-                access_token=token,
-            )
-        except Exception as e:
-            last_err = e
-            print(f"  Connect failed on {path}: {e}")
-    raise last_err
+    return db_connect()
 
 
 def query(conn, q):
+    sql_text = resolve_sql(q)
     with conn.cursor() as cur:
-        cur.execute(q)
+        cur.execute(sql_text)
         cols = [d[0] for d in cur.description]
         return pd.DataFrame(cur.fetchall(), columns=cols)
 

@@ -16,7 +16,7 @@ sys.stdout.reconfigure(line_buffering=True)
 from databricks import sql
 import pandas as pd
 
-from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql
+from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql, db_connect
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEEKS_BACK = 52

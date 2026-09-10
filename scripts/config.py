@@ -5,11 +5,13 @@ import os
 SERVER_HOSTNAME = os.environ.get(
     "DATABRICKS_SERVER_HOSTNAME", "bolt-incentives.cloud.databricks.com"
 )
-# Shared cluster ids change when the compute is rotated; override without editing code.
+# Live Unity Catalog warehouse. The old hive_metastore cluster
+# 0221-081903-9ag4bh69 can no longer be autostarted.
 HTTP_PATH = os.environ.get(
-    "DATABRICKS_HTTP_PATH", "sql/protocolv1/o/2472566184436351/0221-081903-9ag4bh69"
+    "DATABRICKS_HTTP_PATH",
+    "sql/protocolv1/o/2472566184436351/0505-112942-d3yviznw",
 )
-CATALOG = os.environ.get("DATABRICKS_CATALOG") or None
+CATALOG = os.environ.get("DATABRICKS_CATALOG", "main") or None
 
 # Legacy hive_metastore clusters expose these schemas with a `_spark` suffix;
 # Unity Catalog clusters expose the same tables without it.
@@ -28,6 +30,33 @@ def resolve_sql(query):
     for legacy, unity in _UC_SCHEMA_MAP.items():
         query = query.replace(legacy + ".", unity + ".")
     return query
+
+
+def db_connect(token=None):
+    """Connect to the live warehouse with Unity Catalog."""
+    from databricks import sql
+
+    token = token or os.environ.get("DATABRICKS_TOKEN")
+    if not token:
+        raise RuntimeError("DATABRICKS_TOKEN env var is required")
+    kwargs = {"catalog": CATALOG} if CATALOG else {}
+    return sql.connect(
+        server_hostname=SERVER_HOSTNAME,
+        http_path=HTTP_PATH,
+        access_token=token,
+        **kwargs,
+    )
+
+
+def db_query(conn, q):
+    """Run SQL, rewriting legacy `_spark` schema names when CATALOG is set."""
+    import pandas as pd
+
+    sql_text = resolve_sql(q)
+    with conn.cursor() as cur:
+        cur.execute(sql_text)
+        cols = [d[0] for d in cur.description]
+        return pd.DataFrame(cur.fetchall(), columns=cols)
 
 PROVIDERS = {
     31504: {"name": "Epic Cheeseburger", "slug": "epic-cheeseburger", "city": "Львів"},

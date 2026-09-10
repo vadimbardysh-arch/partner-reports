@@ -17,7 +17,7 @@ sys.stdout.reconfigure(line_buffering=True)
 from databricks import sql
 import pandas as pd
 
-from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql
+from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql, db_connect
 
 HTTP_PATH_FALLBACK = "sql/protocolv1/o/2472566184436351/0505-112942-d3yviznw"
 

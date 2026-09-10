@@ -16,7 +16,7 @@ sys.stdout.reconfigure(line_buffering=True)
 from databricks import sql
 import pandas as pd
 
-from config import SERVER_HOSTNAME, HTTP_PATH
+from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql, db_connect
 
 # Classic SQL warehouse is often stopped; fall back to Shared Growth Analytics cluster.
 HTTP_PATH_FALLBACK = "sql/protocolv1/o/2472566184436351/0505-112942-d3yviznw"
@@ -65,24 +65,13 @@ def _load_token():
 
 
 def connect():
-    token = _load_token()
-    last_err = None
-    for path in (HTTP_PATH_FALLBACK, HTTP_PATH):
-        try:
-            return sql.connect(
-                server_hostname=SERVER_HOSTNAME,
-                http_path=path,
-                access_token=token,
-            )
-        except Exception as e:
-            last_err = e
-            print(f"  Connect failed on {path}: {e}")
-    raise last_err
+    return db_connect(_load_token())
 
 
 def query(conn, q):
+    sql_text = resolve_sql(q)
     with conn.cursor() as cur:
-        cur.execute(q)
+        cur.execute(sql_text)
         cols = [d[0] for d in cur.description]
         return pd.DataFrame(cur.fetchall(), columns=cols)
 
