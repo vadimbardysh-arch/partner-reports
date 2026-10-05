@@ -2697,6 +2697,9 @@ def update_root_index():
     all_partners["kulinichi"] = {"name": "Кулиничі", "city": "Львів / Рівне"}
     all_partners["stumari"] = {"name": "Стумарі", "city": "Хмельницький / Черкаси / Рівне / Суми / Вінниця / Львів"}
     all_partners["magic-bowls"] = {"name": "Magic Bowls", "city": "Львів"}
+    all_partners["simeyna-pekarna"] = {"name": "Сімейна Пекарня", "city": "Львів · 4 заклади"}
+    all_partners["simeyna-pekarna-pasichna"] = {"name": "Сімейна Пекарня Пасічна", "city": "Львів"}
+    all_partners["simeyna-pizza"] = {"name": "Сімейна Піца", "city": "Львів / Рівне / Ковель / Дрогобич"}
 
     cards = ""
     for slug in sorted(all_partners, key=lambda s: all_partners[s]["name"]):

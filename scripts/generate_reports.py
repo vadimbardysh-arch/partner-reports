@@ -1010,6 +1010,15 @@ def main():
         print("\n--- FROG & DOG multi-store report ---")
         from generate_frog_dog import main as generate_frog_dog_report
         generate_frog_dog_report()
+        print("\n--- Сімейна Пекарня ---")
+        from generate_simeyna_pekarna import main as generate_simeyna_pekarna_report
+        generate_simeyna_pekarna_report()
+        print("\n--- Сімейна Пекарня Пасічна ---")
+        from generate_simeyna_pekarna_pasichna import main as generate_simeyna_pekarna_pasichna_report
+        generate_simeyna_pekarna_pasichna_report()
+        print("\n--- Сімейна Піца ---")
+        from generate_simeyna_pizza import main as generate_simeyna_pizza_report
+        generate_simeyna_pizza_report()
     except Exception as e:
         print(f"WARN: Legacy reports skipped: {e}")
 
@@ -1039,6 +1048,21 @@ def update_index():
         <a class="report-card" href="ulov-maestro-vinnytsia/">
             <h3>ULOV SUSHI &amp; MAESTRO PIZZA</h3>
             <p>Вінниця</p>
+            <span class="badge">Тижневий звіт</span>
+        </a>
+        <a class="report-card" href="simeyna-pekarna/">
+            <h3>Сімейна Пекарня</h3>
+            <p>Львів · 4 заклади</p>
+            <span class="badge">Тижневий звіт</span>
+        </a>
+        <a class="report-card" href="simeyna-pekarna-pasichna/">
+            <h3>Сімейна Пекарня Пасічна</h3>
+            <p>Львів</p>
+            <span class="badge">Тижневий звіт</span>
+        </a>
+        <a class="report-card" href="simeyna-pizza/">
+            <h3>Сімейна Піца</h3>
+            <p>Львів / Рівне / Ковель / Дрогобич</p>
             <span class="badge">Тижневий звіт</span>
         </a>"""
 
