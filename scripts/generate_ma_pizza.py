@@ -188,13 +188,21 @@ def fetch_orders_detail(conn):
       ROUND(COALESCE((COALESCE(m.bolt_delivery_campaign_cost_eur, 0) + COALESCE(m.bolt_menu_campaign_cost_eur, 0)) * m.currency_rate, 0), 2) AS bolt_discount,
       ROUND(COALESCE((COALESCE(m.provider_delivery_campaign_cost_eur, 0) + COALESCE(m.provider_menu_campaign_cost_eur, 0)) * m.currency_rate, 0), 2) AS provider_discount,
       ROUND(COALESCE(f.provider_price_after_discount, 0), 2) AS food_revenue,
+ROUND(COALESCE(m.bolt_menu_campaign_cost_eur * m.currency_rate, 0), 2) AS bolt_menu_comp,
+      ROUND(COALESCE(m.provider_delivery_campaign_cost_eur * m.currency_rate * 1.2, 0), 2) AS venue_df_vat,
       ROUND(COALESCE(m.provider_commission_net_eur * m.currency_rate, 0), 2) AS fee_net,
       ROUND(COALESCE(m.provider_commission_gross_eur * m.currency_rate, 0), 2) AS fee_gross,
       ROUND(COALESCE(f.commission_local - COALESCE(m.provider_commission_net_eur * m.currency_rate, 0), 0), 2) AS bp_fee_net,
       ROUND(COALESCE((f.commission_local - COALESCE(m.provider_commission_net_eur * m.currency_rate, 0)) * 1.2, 0), 2) AS bp_fee_gross,
       ROUND(COALESCE(f.commission_local * 1.2, 0), 2) AS total_fee_gross,
       ROUND(COALESCE(f.total_refunded_amount, 0), 2) AS refund,
-      ROUND(COALESCE(f.provider_price_after_discount, 0) - COALESCE(f.commission_local * 1.2, 0) - COALESCE(f.total_refunded_amount, 0), 2) AS net_income,
+ROUND(
+        COALESCE(f.provider_price_after_discount, 0)
+        + COALESCE(m.bolt_menu_campaign_cost_eur * m.currency_rate, 0)
+        - COALESCE(f.commission_local * 1.2, 0)
+        - COALESCE(m.provider_delivery_campaign_cost_eur * m.currency_rate * 1.2, 0)
+        - COALESCE(f.total_refunded_amount, 0)
+      , 2) AS net_income,
       CASE
         WHEN f.order_state = 'delivered' THEN NULL
         WHEN f.is_rejected_by_provider = true THEN 'Відхилено закладом'
@@ -257,11 +265,22 @@ def fetch_revenue_weekly(conn):
     SELECT
       f.order_week, f.provider_id,
       COUNT(*) AS orders,
-      ROUND(SUM(f.provider_price_after_discount), 0) AS food_revenue,
+            ROUND(SUM(f.provider_price_after_discount), 0) AS food_revenue,
+      ROUND(SUM(COALESCE(m.bolt_menu_campaign_cost_eur * m.currency_rate, 0)), 0) AS bolt_menu_comp,
       ROUND(SUM(f.commission_local * 1.2), 0) AS total_fee_gross,
+      ROUND(SUM(COALESCE(m.provider_delivery_campaign_cost_eur * m.currency_rate * 1.2, 0)), 0) AS venue_df_vat,
       ROUND(SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS refund,
-      ROUND(SUM(f.provider_price_after_discount) - SUM(f.commission_local * 1.2) - SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS net_income
+      ROUND(
+        SUM(f.provider_price_after_discount)
+        + SUM(COALESCE(m.bolt_menu_campaign_cost_eur * m.currency_rate, 0))
+        - SUM(f.commission_local * 1.2)
+        - SUM(COALESCE(m.provider_delivery_campaign_cost_eur * m.currency_rate * 1.2, 0))
+        - SUM(COALESCE(f.total_refunded_amount, 0))
+      , 0) AS net_income
     FROM ng_delivery_spark.fact_order_delivery f
+    LEFT JOIN ng_public_spark.etl_delivery_order_monetary_metrics m
+        ON f.order_id = m.order_id
+        AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
       AND f.order_state = 'delivered'
@@ -542,12 +561,19 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
         pid = int(to_native(r["provider_id"]))
         if week not in revenue:
             revenue[week] = {}
+        food = to_native(r["food_revenue"])
+        bolt = to_native(r["bolt_menu_comp"])
+        fee = to_native(r["total_fee_gross"])
+        df_vat = to_native(r["venue_df_vat"])
+        refund = to_native(r["refund"])
         revenue[week][pid] = {
             "orders": to_native(r["orders"]),
-            "food_revenue": to_native(r["food_revenue"]),
-            "total_fee_gross": to_native(r["total_fee_gross"]),
-            "refund": to_native(r["refund"]),
-            "net_income": to_native(r["net_income"]),
+            "food_revenue": food,
+            "bolt_menu_comp": bolt,
+            "total_fee_gross": fee,
+            "venue_df_vat": df_vat,
+            "refund": refund,
+            "net_income": round(food + bolt - fee - df_vat - refund),
         }
     revenue = dict(sorted(revenue.items(), key=lambda x: week_sort_key(x[0])))
     data["revenue"] = revenue
@@ -559,8 +585,8 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             monthly_revenue[mk] = {}
         for pid, vals in stores_data.items():
             if pid not in monthly_revenue[mk]:
-                monthly_revenue[mk][pid] = {"orders": 0, "food_revenue": 0, "total_fee_gross": 0, "refund": 0, "net_income": 0}
-            for k in ("orders", "food_revenue", "total_fee_gross", "refund", "net_income"):
+                monthly_revenue[mk][pid] = {"orders": 0, "food_revenue": 0, "bolt_menu_comp": 0, "total_fee_gross": 0, "venue_df_vat": 0, "refund": 0, "net_income": 0}
+            for k in ("orders", "food_revenue", "bolt_menu_comp", "total_fee_gross", "venue_df_vat", "refund", "net_income"):
                 monthly_revenue[mk][pid][k] += vals.get(k, 0)
     monthly_revenue = dict(sorted(monthly_revenue.items(), key=lambda x: month_sort_key(x[0])))
     data["monthly_revenue"] = monthly_revenue
@@ -866,10 +892,10 @@ body.dark .alert-box{{background:#1F2937;border-color:#374151;color:#FCA5A5}}
 
   <section id="revenue-section" class="section">
     <div class="section-title"><span class="section-icon">💰</span> Дохідність по тижнях</div>
-    <div class="charts-grid">
-      <div class="chart-card"><h3>Дохід по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-revenue"></canvas></div></div>
-      <div class="chart-card"><h3>Замовлення — деталі по закладах</h3><div class="chart-wrap" style="min-height:auto"><div id="revenue-summary"></div></div></div>
-    </div>
+    <div class="section-insight">Чистий дохід = їжа після знижки + компенсація Bolt за меню − комісія з ПДВ − кофінанс доставки з ПДВ − повернення. Частка закладу в знижці меню вже знята з їжі після знижки.</div>
+    <div class="chart-card" style="margin-bottom:16px"><h3>Дохід по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-revenue"></canvas></div></div>
+    <div class="section-title" style="font-size:16px">Замовлення — деталі по закладах</div>
+    <div class="table-wrap scroll-table" id="revenue-summary"></div>
   </section>
 
   <section id="campaigns-section" class="section">
@@ -897,6 +923,7 @@ body.dark .alert-box{{background:#1F2937;border-color:#374151;color:#FCA5A5}}
 
   <section id="orders-detail-section" class="section">
     <div class="section-title"><span class="section-icon">🧾</span> Дохідність по замовленнях <span id="orders-detail-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
+    <div class="section-insight">Чистий дохід = їжа після знижки + компенсація Bolt за меню − комісія з ПДВ − кофінанс доставки з ПДВ − повернення. Частка закладу в знижці меню вже знята з їжі після знижки.</div>
     <div class="store-filter-wrap">
       <label>Bolt Plus:</label>
       <select id="bp-filter"><option value="__all__">Всі</option><option value="yes">Bolt Plus</option><option value="no">Без Bolt Plus</option></select>
@@ -1194,10 +1221,10 @@ function renderRevenueChart() {{
   const feeData=pkeys.map(k=>{{const rw=revStore[k]||{{}};return ids.reduce((s,id)=>s+((rw[id]&&rw[id].total_fee_gross)||0),0);}});
   const netData=pkeys.map(k=>{{const rw=revStore[k]||{{}};return ids.reduce((s,id)=>s+((rw[id]&&rw[id].net_income)||0),0);}});
   chartInstances['chart-revenue']=new Chart(document.getElementById('chart-revenue'),{{type:'bar',data:{{labels,datasets:[{{label:'Дохід від їжі',data:foodData,backgroundColor:'rgba(59,130,246,.7)',borderRadius:4,barPercentage:.7}},{{label:'Комісія (брутто)',data:feeData,backgroundColor:'rgba(239,68,68,.6)',borderRadius:4,barPercentage:.7}},{{label:'Чистий дохід',data:netData,backgroundColor:'rgba(16,185,129,.7)',borderRadius:4,barPercentage:.7}}]}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{position:'bottom',labels:{{usePointStyle:true,padding:12,font:{{size:11}}}}}}}},scales:{{x:{{stacked:false,grid:{{display:false}}}},y:{{beginAtZero:true,grid:{{color:'rgba(0,0,0,.05)'}},ticks:{{callback:v=>'₴'+v.toLocaleString('uk-UA')}}}}}}}}}});
-  let sumHtml='<table class="revenue-summary-table"><thead><tr><th>Заклад</th><th class="text-right">Замовлення</th><th class="text-right">Дохід їжі</th><th class="text-right">Комісія</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th></tr></thead><tbody>';
-  const rw=revStore[selK]||{{}};let tOrd=0,tFood=0,tFee=0,tRef=0,tNet=0;
-  ids.filter(id=>rw[id]).sort((a,b)=>(rw[b].net_income||0)-(rw[a].net_income||0)).forEach(id=>{{const r=rw[id];const s=D.stores[id];tOrd+=r.orders||0;tFood+=r.food_revenue||0;tFee+=r.total_fee_gross||0;tRef+=r.refund||0;tNet+=r.net_income||0;sumHtml+='<tr><td>'+(s?s.short:id)+'</td><td class="text-right">'+(r.orders||0)+'</td><td class="text-right">₴'+(r.food_revenue||0).toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">₴'+(r.total_fee_gross||0).toLocaleString('uk-UA')+'</td><td class="text-right">₴'+(r.refund||0).toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--pos)">₴'+(r.net_income||0).toLocaleString('uk-UA')+'</td></tr>';}});
-  sumHtml+='<tr class="total-row"><td>Всього</td><td class="text-right">'+tOrd+'</td><td class="text-right">₴'+tFood.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">₴'+tFee.toLocaleString('uk-UA')+'</td><td class="text-right">₴'+tRef.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--pos)">₴'+tNet.toLocaleString('uk-UA')+'</td></tr>';
+  let sumHtml='<table class="revenue-summary-table"><thead><tr><th>Заклад</th><th class="text-right">Замовлення</th><th class="text-right">Їжа після знижки</th><th class="text-right">Компенсація Bolt</th><th class="text-right">Комісія</th><th class="text-right">Доставка з ПДВ</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th></tr></thead><tbody>';
+  const rw=revStore[selK]||{{}};let tOrd=0,tFood=0,tBolt=0,tFee=0,tDf=0,tRef=0,tNet=0;
+  ids.filter(id=>rw[id]).sort((a,b)=>(rw[b].net_income||0)-(rw[a].net_income||0)).forEach(id=>{{const r=rw[id];const s=D.stores[id];tOrd+=r.orders||0;tFood+=r.food_revenue||0;tBolt+=r.bolt_menu_comp||0;tFee+=r.total_fee_gross||0;tDf+=r.venue_df_vat||0;tRef+=r.refund||0;tNet+=r.net_income||0;sumHtml+='<tr><td>'+(s?s.short:id)+'</td><td class="text-right">'+(r.orders||0)+'</td><td class="text-right">₴'+(r.food_revenue||0).toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--blue)">₴'+(r.bolt_menu_comp||0).toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">₴'+(r.total_fee_gross||0).toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">₴'+(r.venue_df_vat||0).toLocaleString('uk-UA')+'</td><td class="text-right">₴'+(r.refund||0).toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--pos)">₴'+(r.net_income||0).toLocaleString('uk-UA')+'</td></tr>';}});
+  sumHtml+='<tr class="total-row"><td>Всього</td><td class="text-right">'+tOrd+'</td><td class="text-right">₴'+tFood.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--blue)">₴'+tBolt.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">₴'+tFee.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--neg)">₴'+tDf.toLocaleString('uk-UA')+'</td><td class="text-right">₴'+tRef.toLocaleString('uk-UA')+'</td><td class="text-right" style="color:var(--pos)">₴'+tNet.toLocaleString('uk-UA')+'</td></tr>';
   sumHtml+='</tbody></table>';document.getElementById('revenue-summary').innerHTML=sumHtml;
 }}
 
@@ -1280,11 +1307,11 @@ function renderOrdersDetail() {{
   if(selectedBP==='yes')rows=rows.filter(r=>r.bolt_plus==='Bolt Plus');else if(selectedBP==='no')rows=rows.filter(r=>r.bolt_plus!=='Bolt Plus');
   if(selectedState==='delivered')rows=rows.filter(r=>r.order_state_raw==='delivered');else if(selectedState==='failed')rows=rows.filter(r=>r.order_state_raw!=='delivered');
   if(selectedSP==='yes')rows=rows.filter(r=>r.is_smart_promo);else if(selectedSP==='no')rows=rows.filter(r=>!r.is_smart_promo);
-  let t='<table class="data-table"><thead><tr><th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Bolt+</th><th class="text-right">Ціна до знижки</th><th class="text-right">Знижка (за чий рахунок)</th><th class="text-right">Дохід від їжі</th><th class="text-right">Комісія (нетто+ПДВ=брутто)</th><th class="text-right">Bolt Plus комісія</th><th class="text-right">Всього комісія</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th><th>Причина</th></tr></thead><tbody>';
-  let totFood=0,totRev=0,totFee=0,totBpFee=0,totRef=0,totNet=0;
-  rows.forEach(r=>{{const date=r.order_created_date?String(r.order_created_date).substring(0,10):'';totFood+=r.food_before_discount||0;totRev+=r.food_revenue||0;totFee+=r.total_fee_gross||0;totBpFee+=r.bp_fee_gross||0;totRef+=r.refund||0;totNet+=r.net_income||0;const isBp=(r.bp_fee_net||0)>0.5;const bpLabel=r.bolt_plus||'Ні';const bpClass=isBp?' class="bp"':'';const feeNet=r.fee_net||0;const feeGross=r.fee_gross||0;const bpFeeNet=r.bp_fee_net||0;const bpFeeGross=r.bp_fee_gross||0;const bpText=(isBp&&bpFeeNet>0.5)?fmtFee(bpFeeNet,bpFeeGross):'—';const isFailed=r.order_state_raw!=='delivered';const stateColor=isFailed?' style="color:var(--neg);font-weight:600"':'';const failReason=r.fail_reason||'';const nc=(r.net_income||0)<0?' style="color:var(--neg)"':'';const spBadge=r.is_smart_promo?' <span style="display:inline-block;background:var(--orange);color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle;letter-spacing:.3px" title="Замовлення в межах Smart Promo кампанії">SMART PROMO</span>':'';t+='<tr'+(isFailed?' style="background:rgba(239,68,68,.04)"':'')+'><td>'+date+'</td><td>'+(r.order_reference_id||'')+'</td><td>'+(r.provider_short||'')+spBadge+'</td><td'+stateColor+'>'+(r.order_state||'')+'</td><td'+bpClass+'>'+bpLabel+'</td><td class="text-right">'+(r.food_before_discount||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+fmtDiscount(r)+'</td><td class="text-right">'+(r.food_revenue||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="font-size:11px">'+(isFailed?'—':fmtFee(feeNet,feeGross))+'</td><td class="text-right" style="font-size:11px">'+(isFailed?'—':bpText)+'</td><td class="text-right" style="color:var(--neg)">'+(r.total_fee_gross||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+(r.refund||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right"'+nc+'>'+(r.net_income||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="comment-cell"'+(isFailed?' style="color:var(--neg)"':'')+'>'+failReason+'</td></tr>';}});
+  let t='<table class="data-table"><thead><tr><th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Bolt+</th><th class="text-right">Ціна до знижки</th><th class="text-right">Знижка (за чий рахунок)</th><th class="text-right">Їжа після знижки</th><th class="text-right">Компенсація Bolt</th><th class="text-right">Комісія (нетто+ПДВ=брутто)</th><th class="text-right">Bolt Plus комісія</th><th class="text-right">Всього комісія</th><th class="text-right">Доставка з ПДВ</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th><th>Причина</th></tr></thead><tbody>';
+  let totFood=0,totRev=0,totBolt=0,totFee=0,totBpFee=0,totDf=0,totRef=0,totNet=0;
+  rows.forEach(r=>{{const date=r.order_created_date?String(r.order_created_date).substring(0,10):'';totFood+=r.food_before_discount||0;totRev+=r.food_revenue||0;totBolt+=r.bolt_menu_comp||0;totFee+=r.total_fee_gross||0;totBpFee+=r.bp_fee_gross||0;totDf+=r.venue_df_vat||0;totRef+=r.refund||0;totNet+=r.net_income||0;const isBp=(r.bp_fee_net||0)>0.5;const bpLabel=r.bolt_plus||'Ні';const bpClass=isBp?' class="bp"':'';const feeNet=r.fee_net||0;const feeGross=r.fee_gross||0;const bpFeeNet=r.bp_fee_net||0;const bpFeeGross=r.bp_fee_gross||0;const bpText=(isBp&&bpFeeNet>0.5)?fmtFee(bpFeeNet,bpFeeGross):'—';const isFailed=r.order_state_raw!=='delivered';const stateColor=isFailed?' style="color:var(--neg);font-weight:600"':'';const failReason=r.fail_reason||'';const nc=(r.net_income||0)<0?' style="color:var(--neg)"':'';const spBadge=r.is_smart_promo?' <span style="display:inline-block;background:var(--orange);color:#fff;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;vertical-align:middle;letter-spacing:.3px" title="Замовлення в межах Smart Promo кампанії">SMART PROMO</span>':'';t+='<tr'+(isFailed?' style="background:rgba(239,68,68,.04)"':'')+'><td>'+date+'</td><td>'+(r.order_reference_id||'')+'</td><td>'+(r.provider_short||'')+spBadge+'</td><td'+stateColor+'>'+(r.order_state||'')+'</td><td'+bpClass+'>'+bpLabel+'</td><td class="text-right">'+(r.food_before_discount||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+fmtDiscount(r)+'</td><td class="text-right">'+(r.food_revenue||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="color:var(--blue)">'+(r.bolt_menu_comp||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="font-size:11px">'+(isFailed?'—':fmtFee(feeNet,feeGross))+'</td><td class="text-right" style="font-size:11px">'+(isFailed?'—':bpText)+'</td><td class="text-right" style="color:var(--neg)">'+(r.total_fee_gross||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="color:var(--neg)">'+(r.venue_df_vat||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+(r.refund||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right"'+nc+'>'+(r.net_income||0).toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="comment-cell"'+(isFailed?' style="color:var(--neg)"':'')+'>'+failReason+'</td></tr>';}});
   const failedCount=rows.filter(r=>r.order_state_raw!=='delivered').length;const deliveredCount=rows.length-failedCount;
-  t+='<tr class="total-row"><td colspan="5">Всього ('+rows.length+' зам., '+deliveredCount+' дост., '+failedCount+' невдал.)</td><td class="text-right">'+totFood.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td><td class="text-right">'+totRev.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td><td class="text-right">'+totBpFee.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="color:var(--neg)">'+totFee.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+totRef.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+totNet.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td></tr>';
+  t+='<tr class="total-row"><td colspan="5">Всього ('+rows.length+' зам., '+deliveredCount+' дост., '+failedCount+' невдал.)</td><td class="text-right">'+totFood.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td><td class="text-right">'+totRev.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="color:var(--blue)">'+totBolt.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td><td class="text-right">'+totBpFee.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="color:var(--neg)">'+totFee.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right" style="color:var(--neg)">'+totDf.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+totRef.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td class="text-right">'+totNet.toLocaleString('uk-UA',{{minimumFractionDigits:2,maximumFractionDigits:2}})+'</td><td></td></tr>';
   t+='</tbody></table>';document.getElementById('orders-detail-wrap').innerHTML=t;
 }}
 
