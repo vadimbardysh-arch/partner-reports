@@ -17,6 +17,13 @@ from databricks import sql
 import pandas as pd
 
 from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql, db_connect
+from invoice_payout import (
+    REVENUE_SUM_KEYS,
+    build_revenue,
+    empty_invoice_row,
+    listings_sql,
+    weekly_components_sql,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEEKS_BACK = 52
@@ -248,32 +255,11 @@ def fetch_cancelled(conn):
 
 
 def fetch_revenue_weekly(conn):
-    return query(conn, f"""
-    SELECT
-      f.order_week, f.provider_id,
-      COUNT(*) AS orders,
-      ROUND(SUM(f.provider_price_after_discount), 0) AS food_revenue,
-      ROUND(SUM(COALESCE(m.bolt_menu_campaign_cost_eur * m.currency_rate, 0)), 0) AS bolt_menu_comp,
-      ROUND(SUM(f.commission_local * 1.2), 0) AS total_fee_gross,
-      ROUND(SUM(COALESCE(m.provider_delivery_campaign_cost_eur * m.currency_rate * 1.2, 0)), 0) AS venue_df_vat,
-      ROUND(SUM(COALESCE(f.total_refunded_amount, 0)), 0) AS refund,
-      ROUND(
-        SUM(f.provider_price_after_discount)
-        + SUM(COALESCE(m.bolt_menu_campaign_cost_eur * m.currency_rate, 0))
-        - SUM(f.commission_local * 1.2)
-        - SUM(COALESCE(m.provider_delivery_campaign_cost_eur * m.currency_rate * 1.2, 0))
-        - SUM(COALESCE(f.total_refunded_amount, 0))
-      , 0) AS net_income
-    FROM main.ng_delivery.fact_order_delivery f
-    LEFT JOIN main.ng_public.etl_delivery_order_monetary_metrics m
-      ON f.order_id = m.order_id
-      AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
-    WHERE f.provider_id IN ({PROVIDER_IDS})
-      AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
-      AND f.order_state = 'delivered'
-    GROUP BY f.order_week, f.provider_id
-    ORDER BY f.order_week, f.provider_id
-    """)
+    return query(conn, weekly_components_sql(PROVIDER_IDS, WEEKS_BACK * 7))
+
+
+def fetch_listings(conn):
+    return query(conn, listings_sql(PROVIDER_IDS, WEEKS_BACK * 7))
 
 
 def fetch_campaigns(conn):
@@ -336,7 +322,7 @@ TARGET_UA = {"delivery_price": "Доставка", "item_price": "Знижка �
 
 # ── Build data for HTML ──────────────────────────────────────────────────
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df=None):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df=None, listings_df=None):
     data = {}
 
     smart_promo_order_ids = set()
@@ -546,31 +532,11 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             row["order_month"] = week_to_month(str(ow))
     data["cancelled"] = canc_list
 
-    revenue = {}
-    for _, r in revenue_df.iterrows():
-        week = str(r["order_week"])
-        pid = int(to_native(r["provider_id"]))
-        if week not in revenue:
-            revenue[week] = {}
-        food = to_native(r["food_revenue"])
-        bolt = to_native(r["bolt_menu_comp"])
-        fee = to_native(r["total_fee_gross"])
-        df_vat = to_native(r["venue_df_vat"])
-        refund = to_native(r["refund"])
-        revenue[week][pid] = {
-            "orders": to_native(r["orders"]),
-            "food_revenue": food,
-            "bolt_menu_comp": bolt,
-            "total_fee_gross": fee,
-            "venue_df_vat": df_vat,
-            "refund": refund,
-            # Round from the displayed columns so the venue row adds up.
-            "net_income": round(food + bolt - fee - df_vat - refund),
-        }
+    revenue = build_revenue(revenue_df, listings_df, WEEKS_BACK * 7)
     revenue = dict(sorted(revenue.items(), key=lambda x: week_sort_key(x[0])))
     data["revenue"] = revenue
 
-    # --- Monthly revenue ---
+    # --- Monthly revenue: sum of the weekly invoice lines ---
     monthly_revenue = {}
     for wk, stores_data in revenue.items():
         mk = week_to_month(wk)
@@ -578,9 +544,14 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             monthly_revenue[mk] = {}
         for pid, vals in stores_data.items():
             if pid not in monthly_revenue[mk]:
-                monthly_revenue[mk][pid] = {"orders": 0, "food_revenue": 0, "bolt_menu_comp": 0, "total_fee_gross": 0, "venue_df_vat": 0, "refund": 0, "net_income": 0}
-            for k in ("orders", "food_revenue", "bolt_menu_comp", "total_fee_gross", "venue_df_vat", "refund", "net_income"):
+                monthly_revenue[mk][pid] = empty_invoice_row()
+            for k in REVENUE_SUM_KEYS:
                 monthly_revenue[mk][pid][k] += vals.get(k, 0)
+    for stores_data in monthly_revenue.values():
+        for vals in stores_data.values():
+            for k in REVENUE_SUM_KEYS:
+                if k != "orders":
+                    vals[k] = round(vals[k], 2)
     monthly_revenue = dict(sorted(monthly_revenue.items(), key=lambda x: month_sort_key(x[0])))
     data["monthly_revenue"] = monthly_revenue
 
@@ -866,8 +837,8 @@ body.dark .revenue-summary-table th{{background:#111827}}
 
   <section id="revenue-section" class="section">
     <div class="section-title"><span class="section-icon">💰</span> Дохідність по тижнях</div>
-    <div class="section-insight">Чистий дохід = їжа після знижки + компенсація Bolt за меню − комісія з ПДВ − кофінанс доставки з ПДВ − повернення. Частка закладу в знижці меню вже знята з їжі після знижки. Комісія береться з суми, яку заклад отримує за їжу.</div>
-    <div class="chart-card" style="margin-bottom:16px"><h3>Дохід по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-revenue"></canvas></div></div>
+    <div class="section-insight">Рядки збігаються з тижневим інвойсом. Заробіток = обсяг продажів − агентська винагорода + зменшення винагороди − маркетингові витрати − доставка з ПДВ − платне просування − повернення. Просування рахується за тиждень і в окремі замовлення не входить.</div>
+    <div class="chart-card" style="margin-bottom:16px"><h3>Заробіток по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-revenue"></canvas></div></div>
     <div class="section-title" style="font-size:16px">Замовлення — деталі по закладах</div>
     <div class="table-wrap scroll-table" id="revenue-summary"></div>
   </section>
@@ -899,7 +870,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
 
   <section id="orders-detail-section" class="section">
     <div class="section-title"><span class="section-icon">🧾</span> Дохідність по замовленнях <span id="orders-detail-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
-    <div class="section-insight">Та сама формула, що в таблиці по закладах. Для замовлення з акцією 50/50 компенсація Bolt за меню додається до виплати, а частка закладу в доставці (з ПДВ 20%) знімається.</div>
+    <div class="section-insight">Рядок замовлення: їжа після знижки + компенсація Bolt за меню − комісія з ПДВ − доставка з ПДВ − повернення. Платне просування сюди не входить. Його знімають у таблиці закладів, і саме там заробіток дорівнює інвойсу.</div>
     <div class="store-filter-wrap">
       <label>Bolt Plus:</label>
       <select id="bp-filter"><option value="__all__">Всі</option><option value="yes">Bolt Plus</option><option value="no">Без Bolt Plus</option></select>
@@ -1352,6 +1323,10 @@ function renderStoresTable() {{
   document.getElementById('stores-table-wrap').innerHTML = t;
 }}
 
+function uah(n) {{
+  return (Number(n) || 0).toLocaleString('uk-UA', {{minimumFractionDigits: 2, maximumFractionDigits: 2}});
+}}
+
 function renderRevenueChart() {{
   const ids = getFilteredStoreIds();
   const pkeys = getFilteredPeriodKeys();
@@ -1378,9 +1353,9 @@ function renderRevenueChart() {{
     data: {{
       labels,
       datasets: [
-        {{ label: 'Дохід від їжі', data: foodData, backgroundColor: 'rgba(59,130,246,.7)', borderRadius: 4, barPercentage: .7 }},
-        {{ label: 'Комісія (брутто)', data: feeData, backgroundColor: 'rgba(239,68,68,.6)', borderRadius: 4, barPercentage: .7 }},
-        {{ label: 'Чистий дохід', data: netData, backgroundColor: 'rgba(16,185,129,.7)', borderRadius: 4, barPercentage: .7 }}
+        {{ label: 'Обсяг продажів', data: foodData, backgroundColor: 'rgba(59,130,246,.7)', borderRadius: 4, barPercentage: .7 }},
+        {{ label: 'Комісія з ПДВ', data: feeData, backgroundColor: 'rgba(239,68,68,.6)', borderRadius: 4, barPercentage: .7 }},
+        {{ label: 'Заробіток', data: netData, backgroundColor: 'rgba(16,185,129,.7)', borderRadius: 4, barPercentage: .7 }}
       ]
     }},
     options: {{
@@ -1393,16 +1368,16 @@ function renderRevenueChart() {{
     }}
   }});
 
-  let sumHtml = '<table class="revenue-summary-table"><thead><tr><th>Заклад</th><th class="text-right">Замовлення</th><th class="text-right">Їжа після знижки</th><th class="text-right">Компенсація Bolt</th><th class="text-right">Комісія</th><th class="text-right">Доставка з ПДВ</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th></tr></thead><tbody>';
+  let sumHtml = '<table class="revenue-summary-table"><thead><tr><th>Заклад</th><th class="text-right">Замовлення</th><th class="text-right" title="Загальний обсяг продажів">Обсяг продажів</th><th class="text-right" title="Агентська винагорода за звітний період (з ПДВ)">Агентська винагорода</th><th class="text-right" title="Зменшення агентської винагороди за маркетингову кампанію">Зменшення винагороди</th><th class="text-right" title="Маркетингові витрати">Маркетингові витрати</th><th class="text-right" title="Маркетингові витрати для Доставки">Доставка з ПДВ</th><th class="text-right" title="Платне просування закладу">Просування</th><th class="text-right" title="Відшкодування скарг">Повернення</th><th class="text-right" title="Тижневі заробітки">Заробіток</th></tr></thead><tbody>';
   const rw = revStore[selK] || {{}};
-  let tOrd = 0, tFood = 0, tBolt = 0, tFee = 0, tDf = 0, tRef = 0, tNet = 0;
+  let tOrd = 0, tSales = 0, tAgency = 0, tBolt = 0, tMkt = 0, tDf = 0, tSl = 0, tRef = 0, tNet = 0;
   ids.filter(id => rw[id]).sort((a, b) => (rw[b].net_income || 0) - (rw[a].net_income || 0)).forEach(id => {{
     const r = rw[id];
     const s = D.stores[id];
-    tOrd += r.orders || 0; tFood += r.food_revenue || 0; tBolt += r.bolt_menu_comp || 0; tFee += r.total_fee_gross || 0; tDf += r.venue_df_vat || 0; tRef += r.refund || 0; tNet += r.net_income || 0;
-    sumHtml += '<tr><td>' + (s ? s.short : id) + '</td><td class="text-right">' + (r.orders || 0) + '</td><td class="text-right">₴' + (r.food_revenue || 0).toLocaleString('uk-UA') + '</td><td class="text-right" style="color:var(--blue)">₴' + (r.bolt_menu_comp || 0).toLocaleString('uk-UA') + '</td><td class="text-right" style="color:var(--neg)">₴' + (r.total_fee_gross || 0).toLocaleString('uk-UA') + '</td><td class="text-right" style="color:var(--neg)">₴' + (r.venue_df_vat || 0).toLocaleString('uk-UA') + '</td><td class="text-right">₴' + (r.refund || 0).toLocaleString('uk-UA') + '</td><td class="text-right" style="color:var(--pos)">₴' + (r.net_income || 0).toLocaleString('uk-UA') + '</td></tr>';
+    tOrd += r.orders || 0; tSales += r.sales || 0; tAgency += r.agency_fee || 0; tBolt += r.bolt_menu_comp || 0; tMkt += r.marketing_fee || 0; tDf += r.venue_df_vat || 0; tSl += r.sponsored || 0; tRef += r.refund || 0; tNet += r.net_income || 0;
+    sumHtml += '<tr><td>' + (s ? s.short : id) + '</td><td class="text-right">' + (r.orders || 0) + '</td><td class="text-right">₴' + uah(r.sales) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(r.agency_fee) + '</td><td class="text-right" style="color:var(--blue)">₴' + uah(r.bolt_menu_comp) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(r.marketing_fee) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(r.venue_df_vat) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(r.sponsored) + '</td><td class="text-right">₴' + uah(r.refund) + '</td><td class="text-right" style="color:var(--pos)">₴' + uah(r.net_income) + '</td></tr>';
   }});
-  sumHtml += '<tr class="total-row"><td>Всього</td><td class="text-right">' + tOrd + '</td><td class="text-right">₴' + tFood.toLocaleString('uk-UA') + '</td><td class="text-right" style="color:var(--blue)">₴' + tBolt.toLocaleString('uk-UA') + '</td><td class="text-right" style="color:var(--neg)">₴' + tFee.toLocaleString('uk-UA') + '</td><td class="text-right" style="color:var(--neg)">₴' + tDf.toLocaleString('uk-UA') + '</td><td class="text-right">₴' + tRef.toLocaleString('uk-UA') + '</td><td class="text-right" style="color:var(--pos)">₴' + tNet.toLocaleString('uk-UA') + '</td></tr>';
+  sumHtml += '<tr class="total-row"><td>Всього</td><td class="text-right">' + tOrd + '</td><td class="text-right">₴' + uah(tSales) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(tAgency) + '</td><td class="text-right" style="color:var(--blue)">₴' + uah(tBolt) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(tMkt) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(tDf) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(tSl) + '</td><td class="text-right">₴' + uah(tRef) + '</td><td class="text-right" style="color:var(--pos)">₴' + uah(tNet) + '</td></tr>';
   sumHtml += '</tbody></table>';
   document.getElementById('revenue-summary').innerHTML = sumHtml;
 }}
@@ -1898,6 +1873,10 @@ def main():
         revenue_df = fetch_revenue_weekly(conn)
         print(f"  → {len(revenue_df)} rows")
 
+        print("  Fetching sponsored listings…")
+        listings_df = fetch_listings(conn)
+        print(f"  → {len(listings_df)} rows")
+
         print("  Fetching campaigns…")
         campaigns_df = fetch_campaigns(conn)
         print(f"  → {len(campaigns_df)} rows")
@@ -1908,7 +1887,7 @@ def main():
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df, listings_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "akhali"
