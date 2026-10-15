@@ -141,6 +141,7 @@ REVENUE_SUM_KEYS = (
     "orders",
     "sales",
     "agency_fee",
+    "bolt_plus_fee",
     "bolt_menu_comp",
     "marketing_fee",
     "venue_df_vat",
@@ -261,9 +262,9 @@ def period_week(value) -> str:
 def billing_weekly_sql(provider_ids: str, days_back: int) -> str:
     """One row per venue and invoicing week, using the invoice's own amounts.
 
-    Agency fee includes the Bolt Plus subset, the way the invoice prints the
-    main line. Sponsored listing sits on a single row of the week, so it is
-    summed, not taken from campaign timestamps.
+    The invoice prints marketplace commission and the Bolt Plus commission as
+    two lines, each rounded on its own. Sponsored listing sits on a single
+    row of the week, so it is summed, not taken from campaign timestamps.
     """
     return f"""
     SELECT
@@ -271,7 +272,8 @@ def billing_weekly_sql(provider_ids: str, days_back: int) -> str:
       DATE(invoicing_period_start) AS period_start,
       COUNT(order_id) AS orders,
       ROUND(SUM(COALESCE(sales_sum_with_vat, 0)), 2) AS sales,
-      ROUND(SUM(COALESCE(marketplace_fee_sum_with_vat, 0) + COALESCE(bolt_plus_agency_fee_sum_with_vat, 0)), 2) AS agency,
+      ROUND(SUM(COALESCE(marketplace_fee_sum_with_vat, 0)), 2) AS agency,
+      ROUND(SUM(COALESCE(bolt_plus_agency_fee_sum_with_vat, 0)), 2) AS bolt_plus,
       ROUND(SUM(COALESCE(reduction_for_campaigns_sum_with_vat, 0)), 2) AS reduction,
       ROUND(SUM(COALESCE(campaign_fee_sum_with_vat, 0)), 2) AS marketing,
       ROUND(SUM(COALESCE(marketing_cost_delivery_sum_with_vat, 0)), 2) AS delivery,
@@ -315,23 +317,25 @@ def revenue_from_billing(df) -> dict:
         pid = int(r["provider_id"])
         sales = money(r["sales"])
         agency = money(r["agency"])
+        bolt_plus = money(r["bolt_plus"])
         reduction = money(r["reduction"])
         marketing = money(r["marketing"])
         delivery = money(r["delivery"])
         refund = money(r["refund"])
         sponsored = money(r["sponsored"])
-        earnings = money(sales - agency - refund - delivery + reduction - marketing - sponsored)
+        earnings = money(sales - agency - bolt_plus - refund - delivery + reduction - marketing - sponsored)
         revenue.setdefault(week, {})[pid] = {
             "orders": int(r["orders"] or 0),
             "sales": num(sales),
             "agency_fee": num(agency),
+            "bolt_plus_fee": num(bolt_plus),
             "bolt_menu_comp": num(reduction),
             "marketing_fee": num(marketing),
             "venue_df_vat": num(delivery),
             "sponsored": num(sponsored),
             "refund": num(refund),
             "food_revenue": num(sales),
-            "total_fee_gross": num(agency),
+            "total_fee_gross": num(agency + bolt_plus),
             "net_income": num(earnings),
             "invoice_links": _links(
                 r.get("invoice_id"), r.get("invoice_link"),
