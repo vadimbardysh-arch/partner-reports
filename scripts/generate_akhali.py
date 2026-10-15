@@ -190,6 +190,8 @@ def fetch_orders_detail(conn):
       ROUND(COALESCE(b.invoice_reduction, 0), 2) AS invoice_reduction,
       ROUND(COALESCE(b.invoice_campaign_fee, 0), 2) AS invoice_campaign_fee,
       ROUND(COALESCE(b.invoice_delivery, 0), 2) AS invoice_delivery,
+      ROUND(COALESCE(b.invoice_marketplace_fee, 0), 2) AS invoice_marketplace_fee,
+      ROUND(COALESCE(b.invoice_bolt_plus, 0), 2) AS invoice_bolt_plus,
       -- Payout matches the partner invoice: client-paid food + Bolt menu compensation
       -- − commission gross (already includes VAT on Bolt's menu share) − venue DF cofinance with VAT − refunds.
       -- Venue's own menu discount is already out of provider_price_after_discount. Delivery is not food revenue.
@@ -217,7 +219,9 @@ def fetch_orders_detail(conn):
         order_id,
         SUM(reduction_for_campaigns_sum_with_vat) AS invoice_reduction,
         SUM(campaign_fee_sum_with_vat) AS invoice_campaign_fee,
-        SUM(marketing_cost_delivery_sum_with_vat) AS invoice_delivery
+        SUM(marketing_cost_delivery_sum_with_vat) AS invoice_delivery,
+        SUM(marketplace_fee_sum_with_vat) AS invoice_marketplace_fee,
+        SUM(bolt_plus_agency_fee_sum_with_vat) AS invoice_bolt_plus
       FROM main.ng_commerce_billing.reporting_billing_delivery_provider_sales_report
       WHERE provider_id IN ({PROVIDER_IDS})
         AND created_date_local >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
@@ -884,7 +888,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
 
   <section id="orders-detail-section" class="section">
     <div class="section-title"><span class="section-icon">🧾</span> Дохідність по замовленнях <span id="orders-detail-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
-    <div class="section-insight">Рядок замовлення: їжа після знижки + компенсація Bolt за меню − комісія з ПДВ − доставка з ПДВ − повернення. Платне просування сюди не входить. Його знімають у таблиці закладів, і саме там заробіток дорівнює інвойсу. Знижка в інвойсі: Bolt — зменшення винагороди, заклад — комісія на меню Bolt плюс доставка з ПДВ.</div>
+    <div class="section-insight">Комісія в рядку — агентська винагорода з інвойсу. Комісія на меню Bolt в неї не входить: вона вже в знижці закладу. Знижка: Bolt — зменшення винагороди, заклад — комісія на меню плюс доставка з ПДВ. Платне просування в замовлення не входить, його знімають у таблиці закладів.</div>
     <div class="store-filter-wrap">
       <label>Bolt Plus:</label>
       <select id="bp-filter"><option value="__all__">Всі</option><option value="yes">Bolt Plus</option><option value="no">Без Bolt Plus</option></select>
@@ -1568,8 +1572,8 @@ function renderOrdersDetail() {{
   t += '<th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Bolt+</th>';
   t += '<th class="text-right">Ціна до знижки</th><th class="text-right" title="Bolt — зменшення винагороди. Заклад — комісія на меню плюс доставка з ПДВ">Знижка в інвойсі</th>';
   t += '<th class="text-right">Їжа після знижки</th><th class="text-right">Компенсація Bolt</th>';
-  t += '<th class="text-right">Комісія (нетто+ПДВ=брутто)</th>';
-  t += '<th class="text-right">Bolt Plus комісія</th><th class="text-right">Всього комісія</th>';
+  t += '<th class="text-right" title="Агентська винагорода з інвойсу">Комісія</th>';
+  t += '<th class="text-right">Bolt Plus комісія</th>';
   t += '<th class="text-right">Доставка з ПДВ</th><th class="text-right">Повернення</th><th class="text-right">Чистий дохід</th>';
   t += '<th>Причина</th>';
   t += '</tr></thead><tbody>';
@@ -1580,8 +1584,8 @@ function renderOrdersDetail() {{
     totFood += r.food_before_discount || 0;
     totRev += r.food_revenue || 0;
     totBolt += r.bolt_menu_comp || 0;
-    totFee += r.total_fee_gross || 0;
-    totBpFee += r.bp_fee_gross || 0;
+    totFee += r.invoice_marketplace_fee || 0;
+    totBpFee += r.invoice_bolt_plus || 0;
     totDf += r.venue_df_vat || 0;
     totRef += r.refund || 0;
     totNet += r.net_income || 0;
@@ -1589,11 +1593,9 @@ function renderOrdersDetail() {{
     const isBp = (r.bp_fee_net || 0) > 0.5;
     const bpLabel = r.bolt_plus || 'Ні';
     const bpClass = isBp ? ' class="bp"' : '';
-    const feeNet = r.fee_net || 0;
-    const feeGross = r.fee_gross || 0;
-    const bpFeeNet = r.bp_fee_net || 0;
-    const bpFeeGross = r.bp_fee_gross || 0;
-    const bpText = (isBp && bpFeeNet > 0.5) ? fmtFee(bpFeeNet, bpFeeGross) : '—';
+    const agency = Number(r.invoice_marketplace_fee) || 0;
+    const bpInv = Number(r.invoice_bolt_plus) || 0;
+    const bpText = bpInv > 0.004 ? uah(bpInv) : '—';
     const isFailed = r.order_state_raw !== 'delivered';
     const stateColor = isFailed ? ' style="color:var(--neg);font-weight:600"' : '';
     const failReason = r.fail_reason || '';
@@ -1609,9 +1611,8 @@ function renderOrdersDetail() {{
     t += '<td class="text-right">' + fmtDiscount(r) + '</td>';
     t += '<td class="text-right">' + (r.food_revenue || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
     t += '<td class="text-right" style="color:var(--blue)">' + (r.bolt_menu_comp || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
-    t += '<td class="text-right" style="font-size:11px">' + (isFailed ? '—' : fmtFee(feeNet, feeGross)) + '</td>';
+    t += '<td class="text-right" style="color:var(--neg)">' + (isFailed ? '—' : uah(agency)) + '</td>';
     t += '<td class="text-right" style="font-size:11px">' + (isFailed ? '—' : bpText) + '</td>';
-    t += '<td class="text-right" style="color:var(--neg)">' + (r.total_fee_gross || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
     t += '<td class="text-right" style="color:var(--neg)">' + (r.venue_df_vat || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
     t += '<td class="text-right">' + (r.refund || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
     t += '<td class="text-right"' + nc + '>' + (r.net_income || 0).toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
@@ -1625,9 +1626,8 @@ function renderOrdersDetail() {{
   t += '<td></td>';
   t += '<td class="text-right">' + totRev.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
   t += '<td class="text-right" style="color:var(--blue)">' + totBolt.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
-  t += '<td></td>';
-  t += '<td class="text-right">' + totBpFee.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
-  t += '<td class="text-right" style="color:var(--neg)">' + totFee.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
+  t += '<td class="text-right" style="color:var(--neg)">' + uah(totFee) + '</td>';
+  t += '<td class="text-right">' + uah(totBpFee) + '</td>';
   t += '<td class="text-right" style="color:var(--neg)">' + totDf.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
   t += '<td class="text-right">' + totRef.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
   t += '<td class="text-right">' + totNet.toLocaleString('uk-UA', {{minimumFractionDigits:2, maximumFractionDigits:2}}) + '</td>';
