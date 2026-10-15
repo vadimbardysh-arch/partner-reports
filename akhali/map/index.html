@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AKHALI / Айда — карта доставок</title>
+<meta http-equiv="Cache-Control" content="no-store">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root {
@@ -92,10 +93,24 @@ const onVenues = new Set(DATA.venues.map(v => v.id));
 let band = 'all';
 let zoneOn = true;
 const map = L.map('map', { zoomControl: true });
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+const osmDe = L.tileLayer('https://tile.openstreetmap.de/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap'
+});
+const osmFr = L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
+  maxZoom: 20,
+  attribution: '&copy; OpenStreetMap, OSM France'
+});
+const esri = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
   maxZoom: 19,
   attribution: 'Tiles &copy; Esri'
-}).addTo(map);
+});
+osmDe.addTo(map);
+L.control.layers(
+  { 'Вулиці (OSM DE)': osmDe, 'Вулиці (OSM FR)': osmFr, 'Esri': esri },
+  {},
+  { collapsed: true }
+).addTo(map);
 
 const dropLayer = L.layerGroup().addTo(map);
 const restLayer = L.layerGroup().addTo(map);
