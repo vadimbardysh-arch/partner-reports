@@ -187,6 +187,9 @@ def fetch_orders_detail(conn):
       ROUND(COALESCE((f.commission_local - COALESCE(m.provider_commission_net_eur * m.currency_rate, 0)) * 1.2, 0), 2) AS bp_fee_gross,
       ROUND(COALESCE(f.commission_local * 1.2, 0), 2) AS total_fee_gross,
       ROUND(COALESCE(f.total_refunded_amount, 0), 2) AS refund,
+      ROUND(COALESCE(b.invoice_reduction, 0), 2) AS invoice_reduction,
+      ROUND(COALESCE(b.invoice_campaign_fee, 0), 2) AS invoice_campaign_fee,
+      ROUND(COALESCE(b.invoice_delivery, 0), 2) AS invoice_delivery,
       -- Payout matches the partner invoice: client-paid food + Bolt menu compensation
       -- − commission gross (already includes VAT on Bolt's menu share) − venue DF cofinance with VAT − refunds.
       -- Venue's own menu discount is already out of provider_price_after_discount. Delivery is not food revenue.
@@ -209,6 +212,17 @@ def fetch_orders_detail(conn):
     LEFT JOIN main.ng_public.etl_delivery_order_monetary_metrics m
       ON f.order_id = m.order_id
       AND m.order_created_date >= DATE_FORMAT(DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7}), 'yyyy-MM-dd')
+    LEFT JOIN (
+      SELECT
+        order_id,
+        SUM(reduction_for_campaigns_sum_with_vat) AS invoice_reduction,
+        SUM(campaign_fee_sum_with_vat) AS invoice_campaign_fee,
+        SUM(marketing_cost_delivery_sum_with_vat) AS invoice_delivery
+      FROM main.ng_commerce_billing.reporting_billing_delivery_provider_sales_report
+      WHERE provider_id IN ({PROVIDER_IDS})
+        AND created_date_local >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
+      GROUP BY order_id
+    ) b ON f.order_id = b.order_id
     WHERE f.provider_id IN ({PROVIDER_IDS})
       AND f.order_created_date >= DATE_SUB(CURRENT_DATE(), {WEEKS_BACK * 7})
     ORDER BY f.order_created_date DESC, f.order_id DESC
@@ -870,7 +884,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
 
   <section id="orders-detail-section" class="section">
     <div class="section-title"><span class="section-icon">🧾</span> Дохідність по замовленнях <span id="orders-detail-week-label" style="font-size:13px;font-weight:500;color:var(--text2);margin-left:8px"></span></div>
-    <div class="section-insight">Рядок замовлення: їжа після знижки + компенсація Bolt за меню − комісія з ПДВ − доставка з ПДВ − повернення. Платне просування сюди не входить. Його знімають у таблиці закладів, і саме там заробіток дорівнює інвойсу.</div>
+    <div class="section-insight">Рядок замовлення: їжа після знижки + компенсація Bolt за меню − комісія з ПДВ − доставка з ПДВ − повернення. Платне просування сюди не входить. Його знімають у таблиці закладів, і саме там заробіток дорівнює інвойсу. Знижка в інвойсі: Bolt — зменшення винагороди, заклад — комісія на меню Bolt плюс доставка з ПДВ.</div>
     <div class="store-filter-wrap">
       <label>Bolt Plus:</label>
       <select id="bp-filter"><option value="__all__">Всі</option><option value="yes">Bolt Plus</option><option value="no">Без Bolt Plus</option></select>
@@ -1520,14 +1534,14 @@ function renderCampaigns() {{
 }}
 
 function fmtDiscount(r) {{
-  const bolt = r.bolt_discount || 0;
-  const prov = r.provider_discount || 0;
-  const total = r.total_discount || 0;
-  if (total <= 0) return '—';
+  const bolt = Number(r.invoice_reduction) || 0;
+  const menuFee = Number(r.invoice_campaign_fee) || 0;
+  const delivery = Number(r.invoice_delivery) || 0;
+  const venue = menuFee + delivery;
+  if (bolt <= 0.004 && venue <= 0.004) return '—';
   const parts = [];
-  if (bolt > 0) parts.push('Bolt: ' + Math.round(bolt));
-  if (prov > 0) parts.push('Заклад: ' + Math.round(prov));
-  if (!parts.length) parts.push(Math.round(total));
+  if (bolt > 0.004) parts.push('Bolt: ' + uah(bolt));
+  if (venue > 0.004) parts.push('<span title="Комісія на меню ' + uah(menuFee) + ' + доставка з ПДВ ' + uah(delivery) + '">Заклад: ' + uah(venue) + '</span>');
   return parts.join(' / ');
 }}
 
@@ -1552,7 +1566,7 @@ function renderOrdersDetail() {{
 
   let t = '<table class="data-table"><thead><tr>';
   t += '<th>Дата</th><th>Order Ref</th><th>Заклад</th><th>Статус</th><th>Bolt+</th>';
-  t += '<th class="text-right">Ціна до знижки</th><th class="text-right">Знижка (за чий рахунок)</th>';
+  t += '<th class="text-right">Ціна до знижки</th><th class="text-right" title="Bolt — зменшення винагороди. Заклад — комісія на меню плюс доставка з ПДВ">Знижка в інвойсі</th>';
   t += '<th class="text-right">Їжа після знижки</th><th class="text-right">Компенсація Bolt</th>';
   t += '<th class="text-right">Комісія (нетто+ПДВ=брутто)</th>';
   t += '<th class="text-right">Bolt Plus комісія</th><th class="text-right">Всього комісія</th>';
