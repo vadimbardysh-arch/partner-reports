@@ -19,10 +19,9 @@ import pandas as pd
 from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql, db_connect
 from invoice_payout import (
     REVENUE_SUM_KEYS,
-    build_revenue,
+    billing_weekly_sql,
     empty_invoice_row,
-    listings_sql,
-    weekly_components_sql,
+    revenue_from_billing,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -273,11 +272,7 @@ def fetch_cancelled(conn):
 
 
 def fetch_revenue_weekly(conn):
-    return query(conn, weekly_components_sql(PROVIDER_IDS, WEEKS_BACK * 7))
-
-
-def fetch_listings(conn):
-    return query(conn, listings_sql(PROVIDER_IDS, WEEKS_BACK * 7))
+    return query(conn, billing_weekly_sql(PROVIDER_IDS, WEEKS_BACK * 7))
 
 
 def fetch_campaigns(conn):
@@ -340,7 +335,7 @@ TARGET_UA = {"delivery_price": "Доставка", "item_price": "Знижка �
 
 # ── Build data for HTML ──────────────────────────────────────────────────
 
-def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df=None, listings_df=None):
+def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df=None):
     data = {}
 
     smart_promo_order_ids = set()
@@ -550,7 +545,7 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             row["order_month"] = week_to_month(str(ow))
     data["cancelled"] = canc_list
 
-    revenue = build_revenue(revenue_df, listings_df, WEEKS_BACK * 7)
+    revenue = revenue_from_billing(revenue_df)
     revenue = dict(sorted(revenue.items(), key=lambda x: week_sort_key(x[0])))
     data["revenue"] = revenue
 
@@ -562,9 +557,17 @@ def build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_
             monthly_revenue[mk] = {}
         for pid, vals in stores_data.items():
             if pid not in monthly_revenue[mk]:
-                monthly_revenue[mk][pid] = empty_invoice_row()
+                bucket = empty_invoice_row()
+                bucket["invoice_links"] = []
+                monthly_revenue[mk][pid] = bucket
+            bucket = monthly_revenue[mk][pid]
             for k in REVENUE_SUM_KEYS:
-                monthly_revenue[mk][pid][k] += vals.get(k, 0)
+                bucket[k] += vals.get(k, 0)
+            seen = {link["id"] for link in bucket["invoice_links"]}
+            for link in vals.get("invoice_links") or []:
+                if link["id"] not in seen:
+                    bucket["invoice_links"].append(link)
+                    seen.add(link["id"])
     for stores_data in monthly_revenue.values():
         for vals in stores_data.values():
             for k in REVENUE_SUM_KEYS:
@@ -855,7 +858,7 @@ body.dark .revenue-summary-table th{{background:#111827}}
 
   <section id="revenue-section" class="section">
     <div class="section-title"><span class="section-icon">💰</span> Дохідність по тижнях</div>
-    <div class="section-insight">Рядки збігаються з тижневим інвойсом. Заробіток = обсяг продажів − агентська винагорода + зменшення винагороди − маркетингові витрати − доставка з ПДВ − платне просування − повернення. Просування рахується за тиждень і в окремі замовлення не входить.</div>
+    <div class="section-insight">Кожен рядок узятий з тижневого інвойсу закладу. Заробіток = обсяг продажів − агентська винагорода + зменшення винагороди − маркетингові витрати − доставка з ПДВ − платне просування − повернення. Посилання відкриває той самий інвойс.</div>
     <div class="chart-card" style="margin-bottom:16px"><h3>Заробіток по тижнях (₴)</h3><div class="chart-wrap"><canvas id="chart-revenue"></canvas></div></div>
     <div class="section-title" style="font-size:16px">Замовлення — деталі по закладах</div>
     <div class="table-wrap scroll-table" id="revenue-summary"></div>
@@ -1386,16 +1389,24 @@ function renderRevenueChart() {{
     }}
   }});
 
-  let sumHtml = '<table class="revenue-summary-table"><thead><tr><th>Заклад</th><th class="text-right">Замовлення</th><th class="text-right" title="Загальний обсяг продажів">Обсяг продажів</th><th class="text-right" title="Агентська винагорода за звітний період (з ПДВ)">Агентська винагорода</th><th class="text-right" title="Зменшення агентської винагороди за маркетингову кампанію">Зменшення винагороди</th><th class="text-right" title="Маркетингові витрати">Маркетингові витрати</th><th class="text-right" title="Маркетингові витрати для Доставки">Доставка з ПДВ</th><th class="text-right" title="Платне просування закладу">Просування</th><th class="text-right" title="Відшкодування скарг">Повернення</th><th class="text-right" title="Тижневі заробітки">Заробіток</th></tr></thead><tbody>';
+  function invoiceCell(r) {{
+    const links = (r && r.invoice_links) || [];
+    if (!links.length) return '—';
+    return links.map(function(l) {{
+      const url = String(l.url || '').replace(/"/g, '');
+      return '<a href="' + url + '" target="_blank" rel="noopener">' + (l.id || 'інвойс') + '</a>';
+    }}).join('<br>');
+  }}
+  let sumHtml = '<table class="revenue-summary-table"><thead><tr><th>Заклад</th><th>Інвойс</th><th class="text-right">Замовлення</th><th class="text-right" title="Загальний обсяг продажів">Обсяг продажів</th><th class="text-right" title="Агентська винагорода за звітний період (з ПДВ)">Агентська винагорода</th><th class="text-right" title="Зменшення агентської винагороди за маркетингову кампанію">Зменшення винагороди</th><th class="text-right" title="Маркетингові витрати">Маркетингові витрати</th><th class="text-right" title="Маркетингові витрати для Доставки">Доставка з ПДВ</th><th class="text-right" title="Платне просування закладу">Просування</th><th class="text-right" title="Відшкодування скарг">Повернення</th><th class="text-right" title="Тижневі заробітки">Заробіток</th></tr></thead><tbody>';
   const rw = revStore[selK] || {{}};
   let tOrd = 0, tSales = 0, tAgency = 0, tBolt = 0, tMkt = 0, tDf = 0, tSl = 0, tRef = 0, tNet = 0;
   ids.filter(id => rw[id]).sort((a, b) => (rw[b].net_income || 0) - (rw[a].net_income || 0)).forEach(id => {{
     const r = rw[id];
     const s = D.stores[id];
     tOrd += r.orders || 0; tSales += r.sales || 0; tAgency += r.agency_fee || 0; tBolt += r.bolt_menu_comp || 0; tMkt += r.marketing_fee || 0; tDf += r.venue_df_vat || 0; tSl += r.sponsored || 0; tRef += r.refund || 0; tNet += r.net_income || 0;
-    sumHtml += '<tr><td>' + (s ? s.short : id) + '</td><td class="text-right">' + (r.orders || 0) + '</td><td class="text-right">₴' + uah(r.sales) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(r.agency_fee) + '</td><td class="text-right" style="color:var(--blue)">₴' + uah(r.bolt_menu_comp) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(r.marketing_fee) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(r.venue_df_vat) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(r.sponsored) + '</td><td class="text-right">₴' + uah(r.refund) + '</td><td class="text-right" style="color:var(--pos)">₴' + uah(r.net_income) + '</td></tr>';
+    sumHtml += '<tr><td>' + (s ? s.short : id) + '</td><td>' + invoiceCell(r) + '</td><td class="text-right">' + (r.orders || 0) + '</td><td class="text-right">₴' + uah(r.sales) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(r.agency_fee) + '</td><td class="text-right" style="color:var(--blue)">₴' + uah(r.bolt_menu_comp) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(r.marketing_fee) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(r.venue_df_vat) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(r.sponsored) + '</td><td class="text-right">₴' + uah(r.refund) + '</td><td class="text-right" style="color:var(--pos)">₴' + uah(r.net_income) + '</td></tr>';
   }});
-  sumHtml += '<tr class="total-row"><td>Всього</td><td class="text-right">' + tOrd + '</td><td class="text-right">₴' + uah(tSales) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(tAgency) + '</td><td class="text-right" style="color:var(--blue)">₴' + uah(tBolt) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(tMkt) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(tDf) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(tSl) + '</td><td class="text-right">₴' + uah(tRef) + '</td><td class="text-right" style="color:var(--pos)">₴' + uah(tNet) + '</td></tr>';
+  sumHtml += '<tr class="total-row"><td>Всього</td><td></td><td class="text-right">' + tOrd + '</td><td class="text-right">₴' + uah(tSales) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(tAgency) + '</td><td class="text-right" style="color:var(--blue)">₴' + uah(tBolt) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(tMkt) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(tDf) + '</td><td class="text-right" style="color:var(--neg)">₴' + uah(tSl) + '</td><td class="text-right">₴' + uah(tRef) + '</td><td class="text-right" style="color:var(--pos)">₴' + uah(tNet) + '</td></tr>';
   sumHtml += '</tbody></table>';
   document.getElementById('revenue-summary').innerHTML = sumHtml;
 }}
@@ -1887,10 +1898,6 @@ def main():
         revenue_df = fetch_revenue_weekly(conn)
         print(f"  → {len(revenue_df)} rows")
 
-        print("  Fetching sponsored listings…")
-        listings_df = fetch_listings(conn)
-        print(f"  → {len(listings_df)} rows")
-
         print("  Fetching campaigns…")
         campaigns_df = fetch_campaigns(conn)
         print(f"  → {len(campaigns_df)} rows")
@@ -1901,7 +1908,7 @@ def main():
     finally:
         conn.close()
 
-    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df, listings_df)
+    data = build_data(weekly_df, ops_df, items_df, orders_df, complaints_df, cancelled_df, revenue_df, campaigns_df, smart_promo_df)
     html = generate_html(data, generated_at)
 
     out_dir = REPO_ROOT / "akhali"

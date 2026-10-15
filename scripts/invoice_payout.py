@@ -26,7 +26,7 @@ Monday 00:00 UTC fall on the previous statement because Ukraine is UTC+3.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 # States that never ran and must not be charged.
@@ -240,4 +240,102 @@ def build_revenue(components_df, listings_df, days_back: int) -> dict:
         if not in_report_window(week, days_back):
             continue
         revenue.setdefault(week, {})[pid] = invoice_row(0, 0, 0, 0, 0, 0, 0, sl)
+    return revenue
+
+
+def period_week(value) -> str:
+    """ISO week of an invoicing period start. Monday 2026-09-21 is 2026-W39."""
+    if value is None:
+        return ""
+    if hasattr(value, "to_pydatetime"):
+        value = value.to_pydatetime()
+    if isinstance(value, datetime):
+        value = value.date()
+    if isinstance(value, date):
+        day = value
+    else:
+        day = datetime.fromisoformat(str(value)[:10]).date()
+    return week_key(day)
+
+
+def billing_weekly_sql(provider_ids: str, days_back: int) -> str:
+    """One row per venue and invoicing week, using the invoice's own amounts.
+
+    Agency fee includes the Bolt Plus subset, the way the invoice prints the
+    main line. Sponsored listing sits on a single row of the week, so it is
+    summed, not taken from campaign timestamps.
+    """
+    return f"""
+    SELECT
+      provider_id,
+      DATE(invoicing_period_start) AS period_start,
+      COUNT(order_id) AS orders,
+      ROUND(SUM(COALESCE(sales_sum_with_vat, 0)), 2) AS sales,
+      ROUND(SUM(COALESCE(marketplace_fee_sum_with_vat, 0) + COALESCE(bolt_plus_agency_fee_sum_with_vat, 0)), 2) AS agency,
+      ROUND(SUM(COALESCE(reduction_for_campaigns_sum_with_vat, 0)), 2) AS reduction,
+      ROUND(SUM(COALESCE(campaign_fee_sum_with_vat, 0)), 2) AS marketing,
+      ROUND(SUM(COALESCE(marketing_cost_delivery_sum_with_vat, 0)), 2) AS delivery,
+      ROUND(SUM(COALESCE(refund_deduction_sum_with_vat, 0)), 2) AS refund,
+      ROUND(SUM(COALESCE(invoice_ads_monetisation_sum_with_vat, 0)), 2) AS sponsored,
+      MAX(weekly_payout_sum) AS weekly_payout,
+      MAX(aggregated_invoice_public_id) AS invoice_id,
+      MIN(aggregated_invoice_public_id) AS invoice_id_min,
+      MAX(aggregated_invoice_link) AS invoice_link,
+      MIN(aggregated_invoice_link) AS invoice_link_min
+    FROM main.ng_commerce_billing.reporting_billing_delivery_provider_sales_report
+    WHERE provider_id IN ({provider_ids})
+      AND created_date_local >= DATE_SUB(CURRENT_DATE(), {days_back})
+      AND invoicing_period_start IS NOT NULL
+    GROUP BY provider_id, DATE(invoicing_period_start)
+    """
+
+
+def _links(invoice_id, invoice_url, invoice_id_min, invoice_url_min) -> list:
+    links = []
+    seen = set()
+    for inv_id, url in ((invoice_id, invoice_url), (invoice_id_min, invoice_url_min)):
+        inv_id = "" if inv_id is None else str(inv_id)
+        url = "" if url is None else str(url)
+        if not inv_id or inv_id in seen or inv_id.lower() == "none":
+            continue
+        seen.add(inv_id)
+        links.append({"id": inv_id, "url": url})
+    return links
+
+
+def revenue_from_billing(df) -> dict:
+    """Venue-week rows whose figures are the summed invoice lines."""
+    revenue: dict = {}
+    if df is None:
+        return revenue
+    for _, r in df.iterrows():
+        week = period_week(r["period_start"])
+        if not week:
+            continue
+        pid = int(r["provider_id"])
+        sales = money(r["sales"])
+        agency = money(r["agency"])
+        reduction = money(r["reduction"])
+        marketing = money(r["marketing"])
+        delivery = money(r["delivery"])
+        refund = money(r["refund"])
+        sponsored = money(r["sponsored"])
+        earnings = money(sales - agency - refund - delivery + reduction - marketing - sponsored)
+        revenue.setdefault(week, {})[pid] = {
+            "orders": int(r["orders"] or 0),
+            "sales": num(sales),
+            "agency_fee": num(agency),
+            "bolt_menu_comp": num(reduction),
+            "marketing_fee": num(marketing),
+            "venue_df_vat": num(delivery),
+            "sponsored": num(sponsored),
+            "refund": num(refund),
+            "food_revenue": num(sales),
+            "total_fee_gross": num(agency),
+            "net_income": num(earnings),
+            "invoice_links": _links(
+                r.get("invoice_id"), r.get("invoice_link"),
+                r.get("invoice_id_min"), r.get("invoice_link_min"),
+            ),
+        }
     return revenue
