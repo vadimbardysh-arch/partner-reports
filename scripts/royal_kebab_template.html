@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Royal Kebab Group × Bolt Food</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --ac:#2A9C64;--acd:#0C2C1C;--gold:#8FD3AC;
+  --green:#34D186;--dark:#1A1A1A;--gray:#F5F5F5;--border:#E8E8E8;--muted:#6B7280;
+  --red:#EF4444;--orange:#F59E0B;--blue:#3B82F6;
+  --sh:0 2px 12px rgba(0,0,0,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#F8F9FA;color:#1A1A1A;line-height:1.6;margin-left:250px;}
+#sb{position:fixed;top:0;left:0;bottom:0;width:250px;background:#0C2C1C;display:flex;flex-direction:column;z-index:1000;overflow-y:auto;}
+.sb-hd{padding:14px;border-bottom:1px solid rgba(255,255,255,.08);}
+.sb-hd .ttl{color:#fff;font-weight:800;font-size:14px;}
+.sb-hd .sub{color:rgba(255,255,255,.45);font-size:11px;margin-top:4px;}
+.sb-lbl{font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:rgba(255,255,255,.28);padding:10px 14px 4px;}
+.sb-nav a,.grain-btn,.brand-btn{
+  display:block;width:100%;text-align:left;border:0;background:transparent;color:rgba(255,255,255,.55);
+  font:inherit;font-size:12px;font-weight:500;padding:7px 12px;border-radius:7px;margin:0 8px 2px;width:calc(100% - 16px);cursor:pointer;text-decoration:none;
+}
+.sb-nav a:hover,.grain-btn:hover,.brand-btn:hover,.sb-nav a.on,.grain-btn.on,.brand-btn.on{
+  background:rgba(42,156,100,.22);color:#8FD3AC;font-weight:600;
+}
+.sb-ft{padding:10px 14px;border-top:1px solid rgba(255,255,255,.07);font-size:10px;color:rgba(255,255,255,.28);margin-top:auto;}
+select.period{margin:6px 14px 10px;width:calc(100% - 28px);background:#123726;color:#fff;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:7px 8px;font-size:12px;}
+.mbar{display:none;position:fixed;top:0;left:0;right:0;z-index:1001;background:#0C2C1C;padding:8px 12px;gap:8px;align-items:center;}
+.hero{background:linear-gradient(135deg,#0C2C1C 0%,#123726 60%,#1A5C3A 100%);color:#fff;padding:40px 48px 32px;}
+.hbadge{display:inline-block;background:#2A9C64;color:#fff;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:4px 12px;border-radius:4px;margin-bottom:12px;}
+.hero h1{font-size:28px;font-weight:800;line-height:1.15;margin-bottom:8px;}
+.hero h1 span{color:#8FD3AC;}
+.hero-sub{font-size:13px;color:rgba(255,255,255,.55);max-width:820px;margin-bottom:20px;}
+.kpis{display:flex;gap:20px;flex-wrap:wrap;}
+.kpi{font-size:12px;color:rgba(255,255,255,.4);}
+.kpi strong{display:block;font-size:22px;font-weight:700;color:#fff;margin-bottom:1px;}
+.wrap{max-width:1320px;margin:0 auto;padding:0 26px;}
+.sec{padding:32px 0;}
+.sec-t{font-size:20px;font-weight:700;margin-bottom:4px;}
+.sec-s{font-size:13px;color:var(--muted);margin-bottom:16px;}
+.hr{height:1px;background:var(--border);margin:0 0 18px;}
+.card{background:#fff;border-radius:12px;padding:16px;box-shadow:var(--sh);}
+.g5{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+.g2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}
+.cl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:3px;}
+.cv{font-size:24px;font-weight:800;margin-bottom:2px;}
+.cd{font-size:12px;color:var(--muted);}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{background:#F8F9FA;padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--border);}
+td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
+tr:hover td{background:#FAFAFA;}
+.num{text-align:right;font-variant-numeric:tabular-nums;}
+.b{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;}
+.bg{background:rgba(52,209,134,.15);color:#16a057;}
+.bo{background:rgba(245,158,11,.15);color:#b46309;}
+.br{background:rgba(239,68,68,.15);color:#dc2626;}
+.bb{background:rgba(59,130,246,.15);color:#1d4ed8;}
+.call{background:#E8F2EC;border-radius:10px;padding:14px;border-left:4px solid #2A9C64;margin-top:16px;}
+.call-t{font-size:12px;font-weight:700;color:#0C2C1C;margin-bottom:6px;}
+.call-b{font-size:12px;color:#374151;line-height:1.8;}
+.warnbox{background:#FFF3CD;border:1px solid #FBBF24;border-radius:10px;padding:14px;margin-top:14px;}
+.negbox{background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:14px;margin:0 0 16px;}
+.chart-wrap{background:#fff;border-radius:12px;padding:22px;box-shadow:var(--sh);}
+.partial{color:var(--orange);font-weight:700;font-size:11px;}
+.foot{padding:24px;text-align:center;color:var(--muted);font-size:12px;}
+@media(max-width:1100px){.g5{grid-template-columns:repeat(3,1fr);} .g4{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:900px){
+  body{margin-left:0;padding-top:56px;}
+  #sb{display:none;}
+  .mbar{display:flex;}
+  .g5,.g4,.g3,.g2{grid-template-columns:1fr 1fr;}
+  .hero{padding:24px 16px;}
+  .wrap{padding:0 16px;}
+}
+</style>
+</head>
+<body>
+<aside id="sb">
+  <div class="sb-hd">
+    <div class="ttl">Royal Kebab Group</div>
+    <div class="sub" id="sb-sub">Bolt Food · від червня 2023</div>
+  </div>
+  <div class="sb-lbl">Бренд</div>
+  <div id="brand-btns"></div>
+  <div class="sb-lbl">Зріз</div>
+  <div id="grain-btns"></div>
+  <div class="sb-lbl">Період</div>
+  <select class="period" id="period"></select>
+  <div class="sb-lbl">Навігація</div>
+  <nav class="sb-nav">
+    <a href="#hero" class="on">Головна</a>
+    <a href="#overview">Огляд</a>
+    <a href="#locations">Локації</a>
+    <a href="#trend">Динаміка</a>
+    <a href="#promo">Промо</a>
+    <a href="#dishes">Топ страви</a>
+    <a href="#cancels">Скасування</a>
+    <a href="#ops">Операційна</a>
+    <a href="#ratings">Рейтинги</a>
+    <a href="#sl">Sponsored Listing</a>
+  </nav>
+  <div class="sb-ft">Оновлення: понеділок до 13:00 · 1-ше число місяця / кварталу / року</div>
+</aside>
+<div class="mbar">
+  <span style="color:#fff;font-size:12px;font-weight:700;">Royal Kebab</span>
+  <select id="m-brand" class="period" style="margin:0;width:auto;min-width:120px;"></select>
+  <select id="m-grain" class="period" style="margin:0;width:auto;"></select>
+</div>
+
+<div class="hero" id="hero"></div>
+<div class="sec" style="background:#fff;" id="overview"><div class="wrap" id="overview-body"></div></div>
+<div class="sec" id="locations"><div class="wrap" id="locations-body"></div></div>
+<div class="sec" style="background:#fff;" id="trend"><div class="wrap" id="trend-body"></div></div>
+<div class="sec" id="promo"><div class="wrap" id="promo-body"></div></div>
+<div class="sec" style="background:#fff;" id="dishes"><div class="wrap" id="dishes-body"></div></div>
+<div class="sec" id="cancels"><div class="wrap" id="cancels-body"></div></div>
+<div class="sec" style="background:#fff;" id="ops"><div class="wrap" id="ops-body"></div></div>
+<div class="sec" id="ratings"><div class="wrap" id="ratings-body"></div></div>
+<div class="sec" style="background:#0C2C1C;color:#fff;" id="sl"><div class="wrap" id="sl-body"></div></div>
+<div class="foot" id="foot"></div>
+
+<script>
+const DATA = __DATA__;
+const GRAINS = [
+  {id:'week', label:'Тиждень'},
+  {id:'month', label:'Місяць'},
+  {id:'quarter', label:'Квартал'},
+  {id:'year', label:'Рік'}
+];
+const REASON_UA = {
+  air:'Повітряна тривога', no_response:'Заклад не відповів', rejected:'Відхилено закладом',
+  oos:'Немає позиції', closed:'Заклад зачинений', provider:'Вина закладу',
+  courier:'Кур’єр', customer:'Клієнт', other:'Інше'
+};
+const SLOT_UA = {breakfast:'Сніданок до 11:00', lunch:'Обід 11:00–16:00', afternoon:'День 16:00–20:00', evening:'Вечір з 20:00'};
+let brand = 'all', grain = 'month', period = DATA.defaults.month;
+let chart;
+
+function fmt(n){
+  if(n==null || isNaN(n)) return '—';
+  const x = Math.round(n);
+  return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+function uah(n){ return fmt(n) + ' ₴'; }
+function pct(n){ return (n==null||isNaN(n)) ? '—' : (Math.round(n*10)/10) + '%'; }
+function delta(cur, prev){
+  if(prev==null || prev===0) return '';
+  const d = (cur-prev)/Math.abs(prev)*100;
+  const col = d>=0 ? '#16a057' : '#EF4444';
+  const sign = d>=0 ? '▲' : '▼';
+  return `<span style="color:${col};font-weight:700;font-size:11px;">${sign}${Math.abs(d).toFixed(1)}%</span>`;
+}
+function pids(){
+  const all = Object.values(DATA.providers);
+  if(brand==='all') return all.map(p=>p.id);
+  return all.filter(p=>p.brand===brand).map(p=>p.id);
+}
+function factRows(){
+  const set = new Set(pids());
+  return DATA.facts.filter(r=>r.g===grain && r.k===period && set.has(r.p));
+}
+function sumFacts(rows){
+  const o = rows.reduce((s,r)=>s+(r.o||0),0);
+  const r = rows.reduce((s,r)=>s+(r.r||0),0);
+  const bp = rows.reduce((s,r)=>s+(r.bp||0),0);
+  const promo = rows.reduce((s,r)=>s+(r.promo||0),0);
+  const cook_s = rows.reduce((s,r)=>s+(r.cook_s||0),0);
+  const cook_n = rows.reduce((s,r)=>s+(r.cook_n||0),0);
+  const acc_s = rows.reduce((s,r)=>s+(r.acc_s||0),0);
+  const acc_n = rows.reduce((s,r)=>s+(r.acc_n||0),0);
+  const newp = rows.reduce((s,r)=>s+(r.newp||0),0);
+  return {
+    o, r, aov: o? Math.round(r/o):0, bp, promo,
+    cook: cook_n? +(cook_s/cook_n/60).toFixed(1):null,
+    acc: acc_n? +(acc_s/acc_n/60).toFixed(2):null,
+    newp
+  };
+}
+function uniqRow(){
+  const b = brand;
+  return DATA.uniq.find(u=>u.g===grain && u.k===period && u.b===b) || {cust:0,newb:0,newh:0};
+}
+function prevPeriod(){
+  const list = DATA.periods[grain]||[];
+  const i = list.findIndex(p=>p.id===period);
+  return i>0 ? list[i-1].id : null;
+}
+function prevFacts(){
+  const prev = prevPeriod();
+  if(!prev) return null;
+  const set = new Set(pids());
+  return sumFacts(DATA.facts.filter(r=>r.g===grain && r.k===prev && set.has(r.p)));
+}
+function campSum(g,k){
+  const set = new Set(pids());
+  const rows = DATA.camps.filter(c=>c.g===g && c.k===k && set.has(c.p));
+  return {
+    bolt: rows.reduce((s,r)=>s+(r.bolt||0),0),
+    prov: rows.reduce((s,r)=>s+(r.prov||0),0),
+    promo_o: rows.reduce((s,r)=>s+(r.promo_o||0),0)
+  };
+}
+function campSumForView(){
+  if(grain==='week' || grain==='month') return campSum(grain, period);
+  const months = monthsOfPeriod();
+  const set = new Set(pids());
+  const rows = DATA.camps.filter(c=>c.g==='month' && months.includes(c.k) && set.has(c.p));
+  return {
+    bolt: rows.reduce((s,r)=>s+(r.bolt||0),0),
+    prov: rows.reduce((s,r)=>s+(r.prov||0),0),
+    promo_o: rows.reduce((s,r)=>s+(r.promo_o||0),0)
+  };
+}
+function createdSum(){
+  const set = new Set(pids());
+  return DATA.created.filter(r=>r.g===grain && r.k===period && set.has(r.p)).reduce((s,r)=>s+(r.created||0),0);
+}
+function brandName(){
+  return (DATA.brands.find(b=>b.id===brand)||{}).name || 'Холдинг';
+}
+function periodMeta(){
+  return (DATA.periods[grain]||[]).find(p=>p.id===period) || {label:period, partial:false};
+}
+
+function fillControls(){
+  document.getElementById('brand-btns').innerHTML = DATA.brands.map(b=>
+    `<button class="brand-btn ${b.id===brand?'on':''}" data-b="${b.id}">${b.name}</button>`
+  ).join('');
+  document.getElementById('grain-btns').innerHTML = GRAINS.map(g=>
+    `<button class="grain-btn ${g.id===grain?'on':''}" data-g="${g.id}">${g.label}</button>`
+  ).join('');
+  const sel = document.getElementById('period');
+  sel.innerHTML = (DATA.periods[grain]||[]).map(p=>
+    `<option value="${p.id}" ${p.id===period?'selected':''}>${p.label}${p.partial?' · неповний':''}</option>`
+  ).join('');
+  const mb = document.getElementById('m-brand');
+  mb.innerHTML = DATA.brands.map(b=>`<option value="${b.id}" ${b.id===brand?'selected':''}>${b.name}</option>`).join('');
+  const mg = document.getElementById('m-grain');
+  mg.innerHTML = GRAINS.map(g=>`<option value="${g.id}" ${g.id===grain?'selected':''}>${g.label}</option>`).join('');
+  document.querySelectorAll('.brand-btn').forEach(btn=>btn.onclick=()=>{brand=btn.dataset.b; render();});
+  document.querySelectorAll('.grain-btn').forEach(btn=>btn.onclick=()=>{
+    grain=btn.dataset.g;
+    period = DATA.defaults[grain] || ((DATA.periods[grain]||[]).slice(-1)[0]||{}).id;
+    render();
+  });
+  sel.onchange=()=>{period=sel.value; render();};
+  mb.onchange=()=>{brand=mb.value; render();};
+  mg.onchange=()=>{
+    grain=mg.value;
+    period = DATA.defaults[grain] || ((DATA.periods[grain]||[]).slice(-1)[0]||{}).id;
+    render();
+  };
+}
+
+function renderHero(s, prev, u, meta){
+  const venues = pids().length;
+  const active = pids().filter(id => DATA.providers[id].status==='active').length;
+  document.getElementById('hero').innerHTML = `
+    <div class="wrap">
+      <div class="hbadge">${meta.label}${meta.partial?' · неповний період':''}</div>
+      <h1>${brandName()} × <span>Bolt Food</span></h1>
+      <p class="hero-sub">${active} активних з ${venues} локацій у звіті. Дані з червня 2023 — від старту співпраці. Зріз: ${GRAINS.find(g=>g.id===grain).label.toLowerCase()}.</p>
+      <div class="kpis">
+        <div class="kpi"><strong>${fmt(s.o)}</strong>Доставлено</div>
+        <div class="kpi"><strong>${uah(s.r)}</strong>Виручка до зн.</div>
+        <div class="kpi"><strong>${uah(s.aov)}</strong>AOV</div>
+        <div class="kpi"><strong>${s.o?pct(100*s.promo/s.o):'—'}</strong>Частка промо</div>
+        <div class="kpi"><strong>${prev && prev.o ? ((s.o-prev.o)/Math.abs(prev.o)*100>=0?'▲':'▼')+Math.abs((s.o-prev.o)/Math.abs(prev.o)*100).toFixed(1)+'%' : '—'}</strong>vs попередній період</div>
+        <div class="kpi"><strong>${fmt(s.bp)}</strong>Bolt+</div>
+        <div class="kpi"><strong>${fmt(brand==='all'?u.newh:u.newb)}</strong>Нових клієнтів</div>
+      </div>
+    </div>`;
+}
+
+function renderOverview(s, prev, u){
+  const created = createdSum();
+  const failRate = created? (created-s.o)/created*100 : 0;
+  const camp = campSumForView();
+  document.getElementById('overview-body').innerHTML = `
+    <div class="sec-t">Огляд — ${brandName()}</div>
+    <div class="sec-s">${periodMeta().label} · порівняння з попереднім таким самим зрізом</div>
+    <div class="hr"></div>
+    <div class="g5">
+      <div class="card"><div class="cl">Доставлено</div><div class="cv" style="color:#2A9C64;">${fmt(s.o)}</div><div class="cd">${prev? 'попер. '+fmt(prev.o)+' '+delta(s.o,prev.o):''}</div></div>
+      <div class="card"><div class="cl">Виручка до зн.</div><div class="cv">${uah(s.r)}</div><div class="cd">${prev? delta(s.r,prev.r):''}</div></div>
+      <div class="card"><div class="cl">AOV</div><div class="cv">${uah(s.aov)}</div><div class="cd">${prev? 'попер. '+uah(prev.aov):''}</div></div>
+      <div class="card"><div class="cl">Промо замовл.</div><div class="cv">${fmt(s.promo)}</div><div class="cd">${s.o? pct(100*s.promo/s.o)+' від усіх':''}</div></div>
+      <div class="card"><div class="cl">Bolt+</div><div class="cv" style="color:#34D186;">${fmt(s.bp)}</div><div class="cd">${s.o? pct(100*s.bp/s.o):''}</div></div>
+      <div class="card"><div class="cl">Унікальні клієнти</div><div class="cv">${fmt(u.cust||s.newp)}</div><div class="cd">у цьому періоді</div></div>
+      <div class="card"><div class="cl">Нові в бренді</div><div class="cv">${fmt(brand==='all'?u.newh:u.newb)}</div><div class="cd">перше замовлення за весь час</div></div>
+      <div class="card"><div class="cl">Час готування</div><div class="cv">${s.cook!=null? s.cook+' хв':'—'}</div><div class="cd">ціль &lt; 15 хв</div></div>
+      <div class="card"><div class="cl">Час прийому</div><div class="cv">${s.acc!=null? s.acc+' хв':'—'}</div><div class="cd">ціль &lt; 1 хв</div></div>
+      <div class="card"><div class="cl">Fail (не доставлено)</div><div class="cv" style="color:${failRate>5?'#EF4444':'#1A1A1A'}">${pct(failRate)}</div><div class="cd">${fmt(created)} створених</div></div>
+    </div>
+    <div class="call">
+      <div class="call-t">Як читати цифри</div>
+      <div class="call-b">Виручка — до знижок. Новий клієнт — перше доставлене замовлення в ${brand==='all'?'холдингу Royal Kebab Group':'цьому бренді'} за весь час співпраці, не «перше в цьому місяці». Тижні Bolt: понеділок–неділя, поточний тиждень не входить. Календарні місяці / квартали / роки — окремі зрізи, не згорнуті з тижнів.</div>
+    </div>`;
+}
+
+function renderLocations(rows, s){
+  const prev = prevPeriod();
+  const prevMap = {};
+  if(prev){
+    DATA.facts.filter(r=>r.g===grain && r.k===prev).forEach(r=>{ prevMap[r.p]=r.o; });
+  }
+  const sorted = [...rows].sort((a,b)=> (b.o||0)-(a.o||0));
+  const tr = sorted.map(r=>{
+    const p = DATA.providers[r.p];
+    if(!p) return '';
+    const d = prevMap[r.p]!=null ? delta(r.o, prevMap[r.p]) : '';
+    const st = p.status==='active'?'bg':(p.status==='hidden'?'bo':'br');
+    return `<tr>
+      <td><strong>${p.short}</strong></td>
+      <td><span class="b bb">${p.city_ua}</span></td>
+      <td><span class="b ${st}">${p.status_ua}</span></td>
+      <td class="num"><strong>${fmt(r.o)}</strong></td>
+      <td class="num">${uah(r.r)}</td>
+      <td class="num">${uah(r.aov)}</td>
+      <td class="num">${r.o?pct(100*r.promo/r.o):'—'}</td>
+      <td class="num">${r.o?pct(100*r.bp/r.o):'—'}</td>
+      <td class="num">${fmt(r.cust)}</td>
+      <td class="num">${d}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('locations-body').innerHTML = `
+    <div class="sec-t">Локації</div>
+    <div class="sec-s">${sorted.length} точок з замовленнями в цьому періоді</div>
+    <div class="hr"></div>
+    <div style="overflow-x:auto;"><table>
+      <thead><tr>
+        <th>Локація</th><th>Місто</th><th>Статус</th>
+        <th class="num">Доставлено</th><th class="num">Виручка</th><th class="num">AOV</th>
+        <th class="num">Промо</th><th class="num">Bolt+</th><th class="num">Клієнти</th><th class="num">Δ</th>
+      </tr></thead>
+      <tbody>${tr}
+        <tr style="background:#E8F2EC;font-weight:700;">
+          <td colspan="3">Разом</td>
+          <td class="num">${fmt(s.o)}</td>
+          <td class="num">${uah(s.r)}</td>
+          <td class="num">${uah(s.aov)}</td>
+          <td class="num">${s.o?pct(100*s.promo/s.o):'—'}</td>
+          <td class="num">${s.o?pct(100*s.bp/s.o):'—'}</td>
+          <td class="num">${fmt(uniqRow().cust)}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table></div>`;
+}
+
+function renderTrend(){
+  const set = new Set(pids());
+  const list = (DATA.periods[grain]||[]).slice(-16);
+  const labels = list.map(p=>p.label.replace(' 2026','').replace(' 2025','').replace(' 2024','').replace(' 2023',''));
+  const vals = list.map(p=>{
+    return DATA.facts.filter(r=>r.g===grain && r.k===p.id && set.has(r.p)).reduce((s,r)=>s+(r.o||0),0);
+  });
+  const colors = list.map(p=> p.id===period ? '#2A9C64' : (p.partial? '#A3C4B3' : '#5A8F74'));
+  document.getElementById('trend-body').innerHTML = `
+    <div class="sec-t">Динаміка</div>
+    <div class="sec-s">Останні періоди цього зрізу · виділений стовпчик — обраний період</div>
+    <div class="hr"></div>
+    <div class="chart-wrap"><canvas id="trendChart" height="140"></canvas></div>`;
+  if(chart) chart.destroy();
+  const el = document.getElementById('trendChart');
+  if(!el || typeof Chart==='undefined') return;
+  chart = new Chart(el, {
+    type:'bar',
+    data:{labels, datasets:[{data:vals, backgroundColor:colors, borderRadius:6}]},
+    options:{responsive:true, plugins:{legend:{display:false}},
+      scales:{y:{beginAtZero:true,grid:{color:'rgba(0,0,0,.06)'}},x:{grid:{display:false}}}}
+  });
+}
+
+function renderPromo(s){
+  const c = campSumForView();
+  document.getElementById('promo-body').innerHTML = `
+    <div class="sec-t">Промо</div>
+    <div class="sec-s">Витрати Bolt / партнер з кампаній · ${g==='week'?'тиждень':'місяць'}</div>
+    <div class="hr"></div>
+    <div class="g3">
+      <div class="card"><div class="cl">Bolt промо ₴</div><div class="cv" style="color:#34D186;">${uah(c.bolt)}</div></div>
+      <div class="card"><div class="cl">Партнер промо ₴</div><div class="cv" style="color:#3B82F6;">${uah(c.prov)}</div></div>
+      <div class="card"><div class="cl">Промо-замовлення</div><div class="cv">${fmt(c.promo_o)}</div><div class="cd">${s.o? pct(100*s.promo/s.o)+' від доставлених (будь-яка знижка)':''}</div></div>
+    </div>`;
+}
+
+function monthsOfPeriod(){
+  if(grain==='month') return [period];
+  if(grain==='week') return [period.slice(0,7)];
+  if(grain==='year') return (DATA.periods.month||[]).map(p=>p.id).filter(id=>id.startsWith(period));
+  const [y,q] = period.split('-Q');
+  const mm = {1:['01','02','03'],2:['04','05','06'],3:['07','08','09'],4:['10','11','12']}[q]||[];
+  return mm.map(m=>`${y}-${m}`);
+}
+
+function renderDishes(){
+  const months = new Set(monthsOfPeriod());
+  const brands = brand==='all' ? DATA.brands.filter(b=>b.id!=='all').map(b=>b.id) : [brand];
+  const map = {};
+  DATA.dishes.filter(d=>months.has(d.k) && brands.includes(d.b)).forEach(d=>{
+    map[d.item] = (map[d.item]||0)+(d.qty||0);
+  });
+  const top = Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,15);
+  const slots = {};
+  DATA.daypart.filter(d=>months.has(d.k) && (brand==='all'||d.b===brand)).forEach(d=>{
+    slots[d.slot]=(slots[d.slot]||0)+(d.n||0);
+  });
+  const slotSum = Object.values(slots).reduce((a,b)=>a+b,0);
+  document.getElementById('dishes-body').innerHTML = `
+    <div class="sec-t">Топ страви</div>
+    <div class="sec-s">Назви як у застосунку · прибори та пакування прибрані · для тижня береться місяць цього тижня</div>
+    <div class="hr"></div>
+    <div class="g2">
+      <div>${top.map((t,i)=>`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);"><span><strong>#${i+1}</strong> ${t[0]}</span><strong>${fmt(t[1])}</strong></div>`).join('')||'<div class="cd">Немає даних за період</div>'}</div>
+      <div>
+        <div class="sec-t" style="font-size:16px;">Коли замовляють</div>
+        ${['breakfast','lunch','afternoon','evening'].map(sl=>{
+          const n=slots[sl]||0; const p=slotSum? Math.round(100*n/slotSum):0;
+          return `<div class="card" style="margin-bottom:8px;"><div class="cl">${SLOT_UA[sl]}</div><div class="cv">${fmt(n)}</div><div class="cd">${p}%</div></div>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+
+function renderCancels(){
+  const g = (grain==='week'||grain==='month')?grain:'month';
+  const k = g===grain?period:(grain==='year'?null:period.slice(0,7));
+  const set = new Set(pids());
+  const rows = DATA.cancels.filter(c=>c.g===g && set.has(c.p) && (k? c.k===k : monthsOfPeriod().includes(c.k)));
+  const kitchen = rows.filter(r=>['air','no_response','rejected','oos','closed','provider'].includes(r.reason));
+  const byReason = {};
+  kitchen.forEach(r=>{ byReason[r.reason]=(byReason[r.reason]||0)+(r.n||0); });
+  const kitchenN = Object.values(byReason).reduce((a,b)=>a+b,0);
+  const air = byReason.air||0;
+  const opsN = kitchenN-air;
+  const created = createdSum();
+  document.getElementById('cancels-body').innerHTML = `
+    <div class="sec-t">Скасування</div>
+    <div class="sec-s">Операційна вина закладу · тривоги окремо · кур’єр не входить у fail закладу</div>
+    <div class="hr"></div>
+    <div class="g3">
+      <div class="card"><div class="cl">Вина закладу</div><div class="cv" style="color:#EF4444;">${fmt(opsN)}</div><div class="cd">${created? pct(100*opsN/created)+' від створених':''}</div></div>
+      <div class="card"><div class="cl">Повітряна тривога</div><div class="cv" style="color:#2A9C64;">${fmt(air)}</div><div class="cd">не операційна вина</div></div>
+      <div class="card"><div class="cl">Інші (кур’єр / клієнт)</div><div class="cv">${fmt(rows.filter(r=>['courier','customer','other'].includes(r.reason)).reduce((s,r)=>s+(r.n||0),0))}</div></div>
+    </div>
+    <div class="card" style="margin-top:14px;">
+      ${Object.entries(byReason).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px;">
+          <div style="min-width:180px;font-size:12px;font-weight:600;">${REASON_UA[k]||k}</div>
+          <div style="flex:1;"><div style="height:6px;background:#E8E8E8;border-radius:3px;"><div style="height:100%;width:${kitchenN?Math.round(100*v/kitchenN):0}%;background:#2A9C64;border-radius:3px;"></div></div></div>
+          <div style="min-width:40px;text-align:right;font-size:12px;font-weight:700;">${v}</div>
+        </div>`).join('')||'<div class="cd">Немає скасувань за період</div>'}
+    </div>`;
+}
+
+function renderOps(s){
+  const set = new Set(pids());
+  const weeks = grain==='week' ? [period] :
+    (DATA.periods.week||[]).filter(w=>{
+      if(grain==='month') return w.id.startsWith(period);
+      if(grain==='year') return w.id.startsWith(period);
+      const [y,q]=period.split('-Q');
+      const mm={1:['01','02','03'],2:['04','05','06'],3:['07','08','09'],4:['10','11','12']}[q]||[];
+      return mm.some(m=>w.id.startsWith(`${y}-${m}`));
+    }).map(w=>w.id);
+  const weekSet = new Set(weeks);
+  const byP = {};
+  DATA.ops.filter(o=>set.has(o.p) && weekSet.has(o.k)).forEach(o=>{
+    (byP[o.p]=byP[o.p]||[]).push(o);
+  });
+  const avg = arr => arr.length? arr.reduce((a,b)=>a+b,0)/arr.length : null;
+  const rows = Object.keys(byP).map(pid=>{
+    const list = byP[pid];
+    const fact = factRows().find(r=>String(r.p)===String(pid)) || {};
+    return {
+      p:+pid,
+      avail: avg(list.map(x=>x.avail).filter(v=>v!=null)),
+      accept: avg(list.map(x=>x.accept).filter(v=>v!=null)),
+      rating: avg(list.map(x=>x.rating).filter(v=>v!=null)),
+      o: fact.o||0
+    };
+  }).sort((a,b)=>(b.avail||0)-(a.avail||0));
+  const live = rows.filter(r=>r.o>0);
+  const unweighted = avg(rows.map(r=>r.avail).filter(v=>v!=null));
+  const liveAvg = avg(live.map(r=>r.avail).filter(v=>v!=null));
+  document.getElementById('ops-body').innerHTML = `
+    <div class="sec-t">Операційні метрики</div>
+    <div class="sec-s">Доступність зі targeting features · середнє по точках з замовленнями, окремо всі точки</div>
+    <div class="hr"></div>
+    <div class="g4">
+      <div class="card"><div class="cl">Доступність (з замовл.)</div><div class="cv" style="color:${(liveAvg||0)<97?'#EF4444':'#16a057'}">${liveAvg!=null?pct(liveAvg):'—'}</div><div class="cd">ціль ≥97%</div></div>
+      <div class="card"><div class="cl">Доступність (усі точки)</div><div class="cv">${unweighted!=null?pct(unweighted):'—'}</div><div class="cd">включно з тихими кухнями</div></div>
+      <div class="card"><div class="cl">Готування</div><div class="cv">${s.cook!=null?s.cook+' хв':'—'}</div><div class="cd">ціль &lt; 15 хв</div></div>
+      <div class="card"><div class="cl">Прийом</div><div class="cv">${s.acc!=null?s.acc+' хв':'—'}</div><div class="cd">ціль &lt; 1 хв</div></div>
+    </div>
+    <div style="overflow-x:auto;margin-top:16px;"><table>
+      <thead><tr><th>Локація</th><th class="num">Доступність</th><th class="num">Acceptance</th><th class="num">Рейтинг</th><th class="num">Замовлення</th></tr></thead>
+      <tbody>${rows.map(r=>{
+        const p=DATA.providers[r.p]; if(!p) return '';
+        const col=(r.avail||0)<90?'#EF4444':(r.avail||0)<97?'#F59E0B':'#16a057';
+        return `<tr><td><strong>${p.short}</strong></td>
+          <td class="num" style="color:${col};font-weight:700;">${r.avail!=null?pct(r.avail):'—'}</td>
+          <td class="num">${r.accept!=null?pct(r.accept):'—'}</td>
+          <td class="num">${r.rating!=null? r.rating.toFixed(2)+' ★':'—'}</td>
+          <td class="num">${fmt(r.o)}</td></tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
+}
+
+function renderRatings(){
+  const months = new Set(monthsOfPeriod());
+  const set = new Set(pids());
+  const rows = DATA.ratings.filter(r=>months.has(r.k) && set.has(r.p));
+  const agg = {};
+  rows.forEach(r=>{
+    const a = agg[r.p] || {n:0, sum:0, pos:0, neg:0};
+    a.n += r.n||0; a.sum += (r.avg||0)*(r.n||0); a.pos += r.pos||0; a.neg += r.neg||0;
+    agg[r.p]=a;
+  });
+  const list = Object.entries(agg).map(([p,a])=>({p:+p, avg:a.n? a.sum/a.n:null, n:a.n, pos:a.pos, neg:a.neg}))
+    .sort((a,b)=>(b.avg||0)-(a.avg||0));
+  const totN = list.reduce((s,r)=>s+r.n,0);
+  const totAvg = totN? list.reduce((s,r)=>s+(r.avg||0)*r.n,0)/totN : null;
+  const reviews = DATA.reviews.filter(r=>set.has(r.p)).slice(0,12);
+  const good = reviews.filter(r=>r.rating>=4);
+  const bad = reviews.filter(r=>r.rating && r.rating<4);
+  document.getElementById('ratings-body').innerHTML = `
+    <div class="sec-t">Рейтинги та відгуки</div>
+    <div class="sec-s">Середнє з оцінок за місяці цього зрізу · тексти за останні 180 днів</div>
+    <div class="hr"></div>
+    <div class="g3">
+      <div class="card"><div class="cl">Середній рейтинг</div><div class="cv">${totAvg? totAvg.toFixed(2)+' ★':'—'}</div></div>
+      <div class="card"><div class="cl">Оцінок</div><div class="cv">${fmt(totN)}</div></div>
+      <div class="card"><div class="cl">Позитивних ≥4★</div><div class="cv" style="color:#16a057;">${fmt(list.reduce((s,r)=>s+r.pos,0))}</div></div>
+    </div>
+    <div style="overflow-x:auto;margin:16px 0;"><table>
+      <thead><tr><th>Локація</th><th class="num">Рейтинг</th><th class="num">Оцінок</th><th class="num">≥4★</th><th class="num">&lt;3★</th></tr></thead>
+      <tbody>${list.map(r=>{
+        const p=DATA.providers[r.p]; if(!p) return '';
+        return `<tr><td><strong>${p.short}</strong></td><td class="num">${r.avg? r.avg.toFixed(2)+' ★':'—'}</td>
+          <td class="num">${fmt(r.n)}</td><td class="num">${fmt(r.pos)}</td><td class="num">${fmt(r.neg)}</td></tr>`;
+      }).join('')}</tbody>
+    </table></div>
+    <div class="g2">
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;">Відгуки 4–5★</div>
+        ${good.slice(0,4).map(r=>`<div class="call" style="margin-bottom:8px;"><div class="call-t">${r.rating}★ · ${DATA.providers[r.p]?DATA.providers[r.p].short:''} · ${r.dt}</div><div class="call-b">${r.text}</div></div>`).join('')||'<div class="cd">Немає текстових відгуків</div>'}
+      </div>
+      <div>
+        <div style="font-weight:700;margin-bottom:8px;color:#EF4444;">До опрацювання</div>
+        ${bad.slice(0,4).map(r=>`<div class="negbox"><div class="call-t">${r.rating}★ · ${DATA.providers[r.p]?DATA.providers[r.p].short:''} · ${r.dt}</div><div class="call-b">${r.text}</div></div>`).join('')||'<div class="cd">Немає текстових відгуків</div>'}
+      </div>
+    </div>`;
+}
+
+function renderSL(){
+  const set = new Set(pids());
+  const today = new Date().toISOString().slice(0,10);
+  const rows = DATA.sl.filter(s=>set.has(s.p));
+  const live = rows.filter(s=>s.start_d && (!s.end_d || s.end_d>=today));
+  document.getElementById('sl-body').innerHTML = `
+    <div class="sec-t" style="color:#fff;">Sponsored Listing</div>
+    <div class="sec-s" style="color:rgba(255,255,255,.5);">Рекламна видимість у стрічці Bolt Food</div>
+    <div style="height:2px;background:rgba(255,255,255,.1);margin:0 0 18px;"></div>
+    <div class="g3">
+      <div class="card"><div class="cl">Записів у історії</div><div class="cv">${fmt(rows.length)}</div></div>
+      <div class="card"><div class="cl">Зараз активні</div><div class="cv">${fmt(live.length)}</div></div>
+      <div class="card"><div class="cl">Локацій з історією SL</div><div class="cv">${fmt(new Set(rows.map(r=>r.p)).size)}</div></div>
+    </div>
+    <p style="color:rgba(255,255,255,.55);font-size:12px;margin-top:16px;line-height:1.7;">
+      Після падіння органічних показів listing — найшвидший важіль видимості. Детальний дашборд по Україні:
+      <a href="../sponsored-listings/" style="color:#8FD3AC;">Sponsored Listings</a>.
+      Рекомендація: запускати на точках з рейтингом ≥4.5★ і доступністю ≥97%.
+    </p>`;
+}
+
+function render(){
+  fillControls();
+  const rows = factRows();
+  const s = sumFacts(rows);
+  const prev = prevFacts();
+  const u = uniqRow();
+  const meta = periodMeta();
+  document.getElementById('sb-sub').textContent = brandName() + ' · ' + meta.label;
+  renderHero(s, prev, u, meta);
+  renderOverview(s, prev, u);
+  renderLocations(rows, s);
+  renderTrend();
+  renderPromo(s);
+  renderDishes();
+  renderCancels();
+  renderOps(s);
+  renderRatings();
+  renderSL();
+  document.getElementById('foot').innerHTML =
+    `Bolt Food Ukraine × Royal Kebab Group · згенеровано ${DATA.generated} · конфіденційно<br>
+     <span style="font-size:10px;">Тижні оновлюються щопонеділка до 13:00 Києва · місяці / квартали / роки — першого дня періоду</span>`;
+}
+
+document.querySelectorAll('#sb a[href^="#"]').forEach(a=>{
+  a.addEventListener('click', e=>{
+    e.preventDefault();
+    const t=document.querySelector(a.getAttribute('href'));
+    if(t) t.scrollIntoView({behavior:'smooth'});
+  });
+});
+render();
+</script>
+</body>
+</html>
