@@ -102,7 +102,6 @@ tr:hover td{background:#FAFAFA;}
     <a href="#cancels">Скасування</a>
     <a href="#ops">Операційна</a>
     <a href="#ratings">Рейтинги</a>
-    <a href="#sl">Sponsored Listing</a>
   </nav>
   <div class="sb-ft">Оновлення: понеділок до 13:00 · 1-ше число місяця / кварталу / року</div>
 </aside>
@@ -121,7 +120,6 @@ tr:hover td{background:#FAFAFA;}
 <div class="sec" id="cancels"><div class="wrap" id="cancels-body"></div></div>
 <div class="sec" style="background:#fff;" id="ops"><div class="wrap" id="ops-body"></div></div>
 <div class="sec" id="ratings"><div class="wrap" id="ratings-body"></div></div>
-<div class="sec" style="background:#0C2C1C;color:#fff;" id="sl"><div class="wrap" id="sl-body"></div></div>
 <div class="foot" id="foot"></div>
 
 <script>
@@ -133,10 +131,37 @@ const GRAINS = [
   {id:'year', label:'Рік'}
 ];
 const REASON_UA = {
-  air:'Повітряна тривога', no_response:'Заклад не відповів', rejected:'Відхилено закладом',
-  oos:'Немає позиції', closed:'Заклад зачинений', provider:'Вина закладу',
-  courier:'Кур’єр', customer:'Клієнт', other:'Інше'
+  air:'Повітряна тривога',
+  no_response:'Заклад не відповів',
+  did_not_respond:'Заклад не відповів',
+  rejected:'Відхилено закладом',
+  rejected_by_provider:'Відхилено закладом',
+  oos:'Немає позиції',
+  items_out_of_stock:'Немає позиції',
+  closed:'Заклад зачинений',
+  too_many:'Забагато замовлень',
+  too_many_orders:'Забагато замовлень',
+  refuse:'Відмова обслуговувати клієнта',
+  do_not_wish_to_serve_this_client:'Відмова обслуговувати клієнта',
+  tech:'Технічна проблема закладу',
+  provider:'Вина закладу (інше)',
+  courier:'Кур’єр',
+  customer:'Клієнт',
+  customer_cancel:'Скасовано клієнтом',
+  manually_failed_by_user:'Скасовано клієнтом',
+  manually_failed_by_cs:'Скасовано підтримкою',
+  cannot_find_courier:'Немає вільного кур’єра',
+  automatically_failed:'Автоматичне скасування',
+  device_issue:'Проблема з пристроєм / планшетом',
+  failed_due_to_provider_not_accepting:'Заклад не прийняв замовлення',
+  failed_during_first_courier_assignment:'Немає вільного кур’єра',
+  failed_during_non_first_courier_assignment:'Повторний пошук кур’єра',
+  failed_during_courier_to_provider_travel:'Збій по дорозі кур’єра в заклад',
+  failed_during_courier_pickup:'Збій при видачі кур’єру',
+  failed_after_courier_rejection_at_provider:'Кур’єр не забрав замовлення в закладі',
+  other:'Інше'
 };
+const ACTOR_UA = {air:'Тривога', provider:'Заклад', courier:'Кур’єр', customer:'Клієнт', other:'Інше'};
 const SLOT_UA = {breakfast:'Сніданок до 11:00', lunch:'Обід 11:00–16:00', afternoon:'День 16:00–20:00', evening:'Вечір з 20:00'};
 let brand = 'all', grain = 'month', period = DATA.defaults.month;
 let chart;
@@ -440,35 +465,96 @@ function renderDishes(){
     </div>`;
 }
 
-function renderCancels(){
+function reasonLabel(code){
+  if(!code) return 'Інше';
+  const k = String(code).toLowerCase().trim();
+  if(REASON_UA[k]) return REASON_UA[k];
+  return k.replace(/_/g,' ').replace(/\beater\b/g,'').replace(/\s+/g,' ').trim() || 'Інше';
+}
+function cancelActor(r){
+  const reason = String(r.reason||'').toLowerCase();
+  if(reason==='air') return 'air';
+  if(['no_response','did_not_respond','rejected','rejected_by_provider','oos','items_out_of_stock','closed','too_many','too_many_orders','refuse','do_not_wish_to_serve_this_client','tech','device_issue','provider'].includes(reason)) return 'provider';
+  if(['manually_failed_by_user','customer','customer_cancel'].includes(reason)) return 'customer';
+  if(reason==='courier' || reason.includes('courier')) return 'courier';
+  if(r.actor && r.actor!=='other') return r.actor;
+  return 'other';
+}
+function isProviderFault(r){
+  return cancelActor(r)==='provider';
+}
+function cancelRows(){
   const g = (grain==='week'||grain==='month')?grain:'month';
   const k = g===grain?period:(grain==='year'?null:period.slice(0,7));
-  const set = new Set(pids());
-  const rows = DATA.cancels.filter(c=>c.g===g && set.has(c.p) && (k? c.k===k : monthsOfPeriod().includes(c.k)));
-  const kitchen = rows.filter(r=>['air','no_response','rejected','oos','closed','provider'].includes(r.reason));
+  const set = new Set(pids().map(String));
+  return (DATA.cancels||[]).filter(c=>c.g===g && set.has(String(c.p)) && (k? String(c.k)===String(k) : monthsOfPeriod().includes(String(c.k))));
+}
+
+function renderCancels(){
+  const rows = cancelRows();
   const byReason = {};
-  kitchen.forEach(r=>{ byReason[r.reason]=(byReason[r.reason]||0)+(r.n||0); });
-  const kitchenN = Object.values(byReason).reduce((a,b)=>a+b,0);
-  const air = byReason.air||0;
-  const opsN = kitchenN-air;
+  const byActor = {provider:0, air:0, courier:0, customer:0, other:0};
+  rows.forEach(r=>{
+    const actor = cancelActor(r);
+    byActor[actor] = (byActor[actor]||0)+(r.n||0);
+    const key = r.reason||'other';
+    if(!byReason[key]) byReason[key] = {n:0, actor};
+    byReason[key].n += (r.n||0);
+  });
+  const total = Object.values(byActor).reduce((a,b)=>a+b,0);
+  const opsN = byActor.provider||0;
+  const air = byActor.air||0;
+  const otherN = (byActor.courier||0)+(byActor.customer||0)+(byActor.other||0);
   const created = createdSum();
+  const reasonList = Object.entries(byReason).sort((a,b)=>b[1].n-a[1].n);
+  const maxN = reasonList.length ? reasonList[0][1].n : 0;
+  const barCol = a => a==='provider'?'#EF4444':(a==='air'?'#2A9C64':(a==='courier'?'#3B82F6':'#6B7280'));
+  const locMap = {};
+  rows.filter(isProviderFault).forEach(r=>{
+    const id = String(r.p);
+    if(!locMap[id]) locMap[id] = {n:0, reasons:{}};
+    locMap[id].n += (r.n||0);
+    locMap[id].reasons[r.reason]=(locMap[id].reasons[r.reason]||0)+(r.n||0);
+  });
+  const locRows = Object.entries(locMap).sort((a,b)=>b[1].n-a[1].n);
   document.getElementById('cancels-body').innerHTML = `
     <div class="sec-t">Скасування</div>
-    <div class="sec-s">Операційна вина закладу · тривоги окремо · кур’єр не входить у fail закладу</div>
+    <div class="sec-s">Детальні причини з адмінки · тривоги окремо · кур’єр не входить у fail закладу</div>
     <div class="hr"></div>
     <div class="g3">
       <div class="card"><div class="cl">Вина закладу</div><div class="cv" style="color:#EF4444;">${fmt(opsN)}</div><div class="cd">${created? pct(100*opsN/created)+' від створених':''}</div></div>
       <div class="card"><div class="cl">Повітряна тривога</div><div class="cv" style="color:#2A9C64;">${fmt(air)}</div><div class="cd">не операційна вина</div></div>
-      <div class="card"><div class="cl">Інші (кур’єр / клієнт)</div><div class="cv">${fmt(rows.filter(r=>['courier','customer','other'].includes(r.reason)).reduce((s,r)=>s+(r.n||0),0))}</div></div>
+      <div class="card"><div class="cl">Кур’єр / клієнт / інше</div><div class="cv">${fmt(otherN)}</div><div class="cd">${fmt(total)} скасувань разом</div></div>
     </div>
     <div class="card" style="margin-top:14px;">
-      ${Object.entries(byReason).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`
-        <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px;">
-          <div style="min-width:180px;font-size:12px;font-weight:600;">${REASON_UA[k]||k}</div>
-          <div style="flex:1;"><div style="height:6px;background:#E8E8E8;border-radius:3px;"><div style="height:100%;width:${kitchenN?Math.round(100*v/kitchenN):0}%;background:#2A9C64;border-radius:3px;"></div></div></div>
-          <div style="min-width:40px;text-align:right;font-size:12px;font-weight:700;">${v}</div>
+      <div class="cl" style="margin-bottom:10px;">Усі причини</div>
+      ${reasonList.map(([code,v])=>`
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+          <div style="min-width:220px;font-size:12px;font-weight:600;">${reasonLabel(code)}</div>
+          <div style="flex:1;"><div style="height:7px;background:#E8E8E8;border-radius:3px;"><div style="height:100%;width:${maxN?Math.round(100*v.n/maxN):0}%;background:${barCol(v.actor)};border-radius:3px;"></div></div></div>
+          <div style="min-width:86px;text-align:right;font-size:11px;color:var(--muted);">${ACTOR_UA[v.actor]||v.actor}</div>
+          <div style="min-width:52px;text-align:right;font-size:12px;font-weight:700;">${fmt(v.n)}</div>
+          <div style="min-width:48px;text-align:right;font-size:11px;color:var(--muted);">${total?pct(100*v.n/total):''}</div>
         </div>`).join('')||'<div class="cd">Немає скасувань за період</div>'}
-    </div>`;
+    </div>
+    <div style="overflow-x:auto;margin-top:16px;"><table>
+      <thead><tr>
+        <th>Локація</th><th class="num">Вина закладу</th><th>Топ причина</th><th>Інші причини</th>
+      </tr></thead>
+      <tbody>${locRows.map(([pid,x])=>{
+        const p=DATA.providers[pid]; if(!p) return '';
+        const ranked=Object.entries(x.reasons).sort((a,b)=>b[1]-a[1]);
+        const top=ranked[0];
+        const rest=ranked.slice(1,3).map(([c,n])=>`${reasonLabel(c)} (${fmt(n)})`).join(' · ');
+        return `<tr>
+          <td>${locCell(p)}</td>
+          <td class="num" style="color:#EF4444;font-weight:700;">${fmt(x.n)}</td>
+          <td>${top? `${reasonLabel(top[0])} · ${fmt(top[1])}`:'—'}</td>
+          <td class="cd">${rest||'—'}</td>
+        </tr>`;
+      }).join('')||'<tr><td colspan="4" class="cd">Немає скасувань з вини закладу</td></tr>'}
+      </tbody>
+    </table></div>`;
 }
 
 function renderOps(s){
@@ -539,23 +625,26 @@ function renderRatings(){
     .sort((a,b)=>(b.avg||0)-(a.avg||0));
   const totN = list.reduce((s,r)=>s+r.n,0);
   const totAvg = totN? list.reduce((s,r)=>s+(r.avg||0)*r.n,0)/totN : null;
+  const lowN = list.filter(r=>r.avg!=null && r.avg<4.5).length;
   const reviews = DATA.reviews.filter(r=>set.has(r.p)).slice(0,12);
   const good = reviews.filter(r=>r.rating>=4);
   const bad = reviews.filter(r=>r.rating && r.rating<4);
   document.getElementById('ratings-body').innerHTML = `
     <div class="sec-t">Рейтинги та відгуки</div>
-    <div class="sec-s">Середнє з оцінок за місяці цього зрізу · тексти за останні 180 днів</div>
+    <div class="sec-s">Середнє з оцінок за місяці цього зрізу · тексти за останні 180 днів · червоним — нижче 4.5★</div>
     <div class="hr"></div>
     <div class="g3">
-      <div class="card"><div class="cl">Середній рейтинг</div><div class="cv">${totAvg? totAvg.toFixed(2)+' ★':'—'}</div></div>
+      <div class="card"><div class="cl">Середній рейтинг</div><div class="cv" style="color:${totAvg!=null && totAvg<4.5?'#EF4444':'#1A1A1A'}">${totAvg? totAvg.toFixed(2)+' ★':'—'}</div><div class="cd">ціль ≥4.5★</div></div>
       <div class="card"><div class="cl">Оцінок</div><div class="cv">${fmt(totN)}</div></div>
-      <div class="card"><div class="cl">Позитивних ≥4★</div><div class="cv" style="color:#16a057;">${fmt(list.reduce((s,r)=>s+r.pos,0))}</div></div>
+      <div class="card"><div class="cl">Точок нижче 4.5★</div><div class="cv" style="color:${lowN?'#EF4444':'#16a057'}">${fmt(lowN)}</div><div class="cd">з ${fmt(list.length)} у періоді</div></div>
     </div>
     <div style="overflow-x:auto;margin:16px 0;"><table>
       <thead><tr><th>Локація</th><th class="num">Рейтинг</th><th class="num">Оцінок</th><th class="num">≥4★</th><th class="num">&lt;3★</th></tr></thead>
       <tbody>${list.map(r=>{
         const p=DATA.providers[r.p]; if(!p) return '';
-        return `<tr><td>${locCell(p)}</td><td class="num">${r.avg? r.avg.toFixed(2)+' ★':'—'}</td>
+        const low = r.avg!=null && r.avg<4.5;
+        return `<tr${low?' style="background:#FEF2F2"':''}><td>${locCell(p)}</td>
+          <td class="num" style="color:${low?'#EF4444':'inherit'};font-weight:700;">${r.avg? r.avg.toFixed(2)+' ★':'—'}</td>
           <td class="num">${fmt(r.n)}</td><td class="num">${fmt(r.pos)}</td><td class="num">${fmt(r.neg)}</td></tr>`;
       }).join('')}</tbody>
     </table></div>
@@ -569,27 +658,6 @@ function renderRatings(){
         ${bad.slice(0,4).map(r=>`<div class="negbox"><div class="call-t">${r.rating}★ · ${locPlain(DATA.providers[r.p])} · ${r.dt}</div><div class="call-b">${r.text}</div></div>`).join('')||'<div class="cd">Немає текстових відгуків</div>'}
       </div>
     </div>`;
-}
-
-function renderSL(){
-  const set = new Set(pids());
-  const today = new Date().toISOString().slice(0,10);
-  const rows = DATA.sl.filter(s=>set.has(s.p));
-  const live = rows.filter(s=>s.start_d && (!s.end_d || s.end_d>=today));
-  document.getElementById('sl-body').innerHTML = `
-    <div class="sec-t" style="color:#fff;">Sponsored Listing</div>
-    <div class="sec-s" style="color:rgba(255,255,255,.5);">Рекламна видимість у стрічці Bolt Food</div>
-    <div style="height:2px;background:rgba(255,255,255,.1);margin:0 0 18px;"></div>
-    <div class="g3">
-      <div class="card"><div class="cl">Записів у історії</div><div class="cv">${fmt(rows.length)}</div></div>
-      <div class="card"><div class="cl">Зараз активні</div><div class="cv">${fmt(live.length)}</div></div>
-      <div class="card"><div class="cl">Локацій з історією SL</div><div class="cv">${fmt(new Set(rows.map(r=>r.p)).size)}</div></div>
-    </div>
-    <p style="color:rgba(255,255,255,.55);font-size:12px;margin-top:16px;line-height:1.7;">
-      Після падіння органічних показів listing — найшвидший важіль видимості. Детальний дашборд по Україні:
-      <a href="../sponsored-listings/" style="color:#8FD3AC;">Sponsored Listings</a>.
-      Рекомендація: запускати на точках з рейтингом ≥4.5★ і доступністю ≥97%.
-    </p>`;
 }
 
 function render(){
@@ -610,7 +678,6 @@ function render(){
     () => renderCancels(),
     () => renderOps(s),
     () => renderRatings(),
-    () => renderSL(),
   ].forEach(fn => { try { fn(); } catch(err){ console.error(err); } });
   document.getElementById('foot').innerHTML =
     `Bolt Food Ukraine × Royal Kebab Group · згенеровано ${DATA.generated} · конфіденційно<br>

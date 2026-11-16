@@ -227,7 +227,10 @@ def df_records(df, cols=None):
         rec = {}
         for c in use:
             if c in df.columns:
-                rec[c] = to_native(row[c], 0 if c not in ("item", "reason", "text", "b", "g", "k") else None)
+                rec[c] = to_native(
+                    row[c],
+                    0 if c not in ("item", "reason", "text", "b", "g", "k", "actor") else None,
+                )
         out.append(rec)
     return out
 
@@ -416,17 +419,37 @@ def cancels_sql(grain, ids):
       {gexpr} AS k,
       provider_id AS p,
       CASE
-        WHEN LOWER(CONCAT(COALESCE(failed_order_reason,''), ' ', COALESCE(failed_order_comment,'')))
+        WHEN LOWER(CONCAT(
+               COALESCE(failed_order_reason,''), ' ',
+               COALESCE(failed_order_parent_reason,''), ' ',
+               COALESCE(failed_order_comment,'')))
              RLIKE 'тривог|air.?alert|air raid|алерт' THEN 'air'
-        WHEN is_not_responded_by_provider = true THEN 'no_response'
-        WHEN is_rejected_by_provider = true THEN 'rejected'
-        WHEN LOWER(COALESCE(failed_order_reason,'')) RLIKE 'out of stock|немає позиц|sold out' THEN 'oos'
-        WHEN LOWER(COALESCE(failed_order_reason,'')) RLIKE 'closed|зачинен' THEN 'closed'
-        WHEN failed_order_actor_at_fault = 'provider' THEN 'provider'
+        ELSE LOWER(TRIM(COALESCE(
+          NULLIF(failed_order_parent_reason, ''),
+          NULLIF(failed_order_reason, ''),
+          CASE
+            WHEN is_not_responded_by_provider = true THEN 'did_not_respond'
+            WHEN is_rejected_by_provider = true THEN 'rejected_by_provider'
+            WHEN failed_order_actor_at_fault = 'provider' THEN 'provider'
+            WHEN failed_order_actor_at_fault = 'courier' THEN 'courier'
+            WHEN failed_order_actor_at_fault = 'eater' THEN 'customer'
+            ELSE 'other'
+          END
+        )))
+      END AS reason,
+      CASE
+        WHEN LOWER(CONCAT(
+               COALESCE(failed_order_reason,''), ' ',
+               COALESCE(failed_order_parent_reason,''), ' ',
+               COALESCE(failed_order_comment,'')))
+             RLIKE 'тривог|air.?alert|air raid|алерт' THEN 'air'
+        WHEN is_not_responded_by_provider = true
+          OR is_rejected_by_provider = true
+          OR failed_order_actor_at_fault = 'provider' THEN 'provider'
         WHEN failed_order_actor_at_fault = 'courier' THEN 'courier'
         WHEN failed_order_actor_at_fault = 'eater' THEN 'customer'
         ELSE 'other'
-      END AS reason,
+      END AS actor,
       COUNT(DISTINCT order_id) AS n
     FROM main.ng_delivery.dim_order_delivery
     WHERE provider_id IN ({ids})
@@ -436,7 +459,7 @@ def cancels_sql(grain, ids):
         order_state IN ('cancelled', 'rejected', 'failed')
         OR is_failed_order = true
       )
-    GROUP BY 1, 2, 3, 4
+    GROUP BY 1, 2, 3, 4, 5
     """
 
 
@@ -620,7 +643,9 @@ def main():
             rec["g"] = grain
             rec["k"] = str(rec.get("k") or "")
             rec["p"] = int(rec.get("p") or 0)
-            rec["reason"] = rec.get("reason") or "other"
+            rec["reason"] = str(rec.get("reason") or "other")[:80]
+            rec["actor"] = str(rec.get("actor") or "other")
+            rec["n"] = int(rec.get("n") or 0)
             cancels.append(rec)
 
     created = []
@@ -652,10 +677,6 @@ def main():
             reviews.append(rec)
 
     sl = []
-    df = qtry(conn, "sponsored", sl_sql(ids))
-    for rec in df_records(df, ["p", "start_d", "end_d"]):
-        rec["p"] = int(rec.get("p") or 0)
-        sl.append(rec)
 
     try:
         conn.close()
