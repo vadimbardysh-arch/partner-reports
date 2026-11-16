@@ -1041,6 +1041,9 @@ def main():
         print("\n--- Сімейна Піца ---")
         from generate_simeyna_pizza import main as generate_simeyna_pizza_report
         generate_simeyna_pizza_report()
+        print("\n--- Royal Kebab Group ---")
+        from generate_royal_kebab import main as generate_royal_kebab_report
+        generate_royal_kebab_report()
     except Exception as e:
         print(f"WARN: Legacy reports skipped: {e}")
 
@@ -1086,6 +1089,16 @@ def update_index():
             <h3>Сімейна Піца</h3>
             <p>Львів / Рівне / Ковель / Дрогобич</p>
             <span class="badge">Тижневий звіт</span>
+        </a>
+        <a class="report-card" href="royal-kebab/" style="border-color:#34d399;">
+            <h3>Royal Kebab Group</h3>
+            <p>Львів / Дрогобич / Івано-Франківськ · 5 брендів</p>
+            <span class="badge">Тиждень / місяць / квартал / рік</span>
+        </a>
+        <a class="report-card" href="sponsored-listings/" style="border-color:#fbbf24;">
+            <h3>Sponsored Listings</h3>
+            <p>Україна — всі провайдери</p>
+            <span class="badge" style="background:#78350f;color:#fbbf24;">Дашборд</span>
         </a>"""
 
     html = f"""<!DOCTYPE html>
