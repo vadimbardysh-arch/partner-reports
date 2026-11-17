@@ -26,6 +26,7 @@ _UC_SCHEMA_MAP = {
 
 _OAUTH_CACHE = Path.home() / ".databricks" / "partner-reports-oauth.json"
 _CURSOR_OAUTH_CACHE = Path.home() / ".databricks" / "cursor-sql-oauth.json"
+_OAUTH_CLIENT_ID = "databricks-sql-python"
 
 
 def resolve_sql(query):
@@ -107,18 +108,57 @@ def _seed_oauth_cache(refresh_token=None):
     )
 
 
+def _refresh_access_token(refresh_token):
+    """Exchange a doau… refresh token for a 1-hour JWT. No browser.
+
+    The SQL connector's auth_type=databricks-oauth opens localhost:8020
+    when persistence is missing — that hangs forever on GitHub Actions.
+    """
+    import urllib.parse
+    import urllib.request
+
+    host = _oauth_hostname().rstrip("/")
+    well_known = f"{host}/oidc/.well-known/oauth-authorization-server"
+    with urllib.request.urlopen(well_known, timeout=30) as resp:
+        token_url = json.loads(resp.read().decode())["token_endpoint"]
+    body = urllib.parse.urlencode(
+        {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token.strip(),
+            "client_id": _OAUTH_CLIENT_ID,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        token_url,
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read().decode())
+    access = data.get("access_token")
+    if not access:
+        raise RuntimeError("OAuth refresh returned no access_token")
+    return access
+
+
 def _oauth_connect(refresh_token=None):
     from databricks import sql
-    from databricks.sql.experimental.oauth_persistence import DevOnlyFilePersistence
 
-    cache = _seed_oauth_cache(refresh_token)
+    token = refresh_token
+    if not token:
+        cache = _seed_oauth_cache()
+        data = json.loads(Path(cache).read_text())
+        token = data.get("refresh_token")
+    if not token:
+        raise RuntimeError("No OAuth refresh token available")
+
+    access = _refresh_access_token(token)
     kwargs = {"catalog": CATALOG} if CATALOG else {}
-    print(f"  Databricks auth: OAuth ({SERVER_HOSTNAME})")
+    print(f"  Databricks auth: OAuth refresh ({SERVER_HOSTNAME})")
     return sql.connect(
         server_hostname=SERVER_HOSTNAME,
         http_path=HTTP_PATH,
-        auth_type="databricks-oauth",
-        experimental_oauth_persistence=DevOnlyFilePersistence(str(cache)),
+        access_token=access,
         **kwargs,
     )
 
