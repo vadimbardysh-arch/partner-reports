@@ -1,6 +1,8 @@
 """Provider configuration for report generation."""
 
+import json
 import os
+from pathlib import Path
 
 SERVER_HOSTNAME = os.environ.get(
     "DATABRICKS_SERVER_HOSTNAME", "bolt-incentives.cloud.databricks.com"
@@ -22,6 +24,9 @@ _UC_SCHEMA_MAP = {
     "core_models_spark": "core_models",
 }
 
+_OAUTH_CACHE = Path.home() / ".databricks" / "partner-reports-oauth.json"
+_CURSOR_OAUTH_CACHE = Path.home() / ".databricks" / "cursor-sql-oauth.json"
+
 
 def resolve_sql(query):
     """Translate legacy schema names when running against a Unity Catalog catalog."""
@@ -32,20 +37,138 @@ def resolve_sql(query):
     return query
 
 
-def db_connect(token=None):
-    """Connect to the live warehouse with Unity Catalog."""
-    from databricks import sql
+def _oauth_hostname():
+    host = SERVER_HOSTNAME.strip()
+    if host.startswith("https://"):
+        host = host[len("https://") :]
+    elif host.startswith("http://"):
+        host = host[len("http://") :]
+    return f"https://{host.rstrip('/')}/"
 
-    token = token or os.environ.get("DATABRICKS_TOKEN")
-    if not token:
-        raise RuntimeError("DATABRICKS_TOKEN env var is required")
+
+def _is_oauth_refresh(token):
+    t = (token or "").strip().lower()
+    return t.startswith("doau") or t.startswith("dau")
+
+
+def _is_pat(token):
+    t = (token or "").strip().lower()
+    return t.startswith("dapi")
+
+
+def _write_oauth_cache(payload):
+    _OAUTH_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    _OAUTH_CACHE.write_text(json.dumps(payload))
+    _OAUTH_CACHE.chmod(0o600)
+    return _OAUTH_CACHE
+
+
+def _seed_oauth_cache(refresh_token=None):
+    """Write an OAuth persistence file for the incentives warehouse."""
+    host = _oauth_hostname()
+    existing = {}
+    if _OAUTH_CACHE.exists():
+        try:
+            existing = json.loads(_OAUTH_CACHE.read_text())
+        except Exception:
+            existing = {}
+
+    if refresh_token:
+        payload = {"refresh_token": refresh_token.strip(), "hostname": host}
+        if (
+            existing.get("refresh_token") == payload["refresh_token"]
+            and existing.get("access_token")
+        ):
+            payload["access_token"] = existing["access_token"]
+        return _write_oauth_cache(payload)
+
+    if existing.get("refresh_token") and existing.get("hostname", "").rstrip("/") + "/" == host:
+        return _OAUTH_CACHE
+
+    if _CURSOR_OAUTH_CACHE.exists():
+        try:
+            data = json.loads(_CURSOR_OAUTH_CACHE.read_text())
+        except Exception:
+            data = {}
+        cached_host = (data.get("hostname") or "").rstrip("/") + "/"
+        if cached_host == host and data.get("refresh_token"):
+            payload = {
+                "refresh_token": data["refresh_token"],
+                "hostname": host,
+            }
+            if data.get("access_token"):
+                payload["access_token"] = data["access_token"]
+            return _write_oauth_cache(payload)
+
+    raise RuntimeError(
+        "Databricks PAT expired and no OAuth refresh is available. "
+        "Put a doau… refresh token in DATABRICKS_TOKEN (GitHub secret) "
+        "or sign in locally with dbx.py against bolt-incentives."
+    )
+
+
+def _oauth_connect(refresh_token=None):
+    from databricks import sql
+    from databricks.sql.experimental.oauth_persistence import DevOnlyFilePersistence
+
+    cache = _seed_oauth_cache(refresh_token)
     kwargs = {"catalog": CATALOG} if CATALOG else {}
+    print(f"  Databricks auth: OAuth ({SERVER_HOSTNAME})")
     return sql.connect(
         server_hostname=SERVER_HOSTNAME,
         http_path=HTTP_PATH,
-        access_token=token,
+        auth_type="databricks-oauth",
+        experimental_oauth_persistence=DevOnlyFilePersistence(str(cache)),
         **kwargs,
     )
+
+
+def db_connect(token=None):
+    """Connect to the live warehouse with Unity Catalog.
+
+    Auth order:
+    1. OAuth refresh token (doau… in DATABRICKS_TOKEN) — used by GitHub Actions
+    2. Databricks PAT (dapi…) — falls back to OAuth if the PAT is dead
+    3. Local OAuth cache from dbx.py (same incentives hostname)
+    """
+    from databricks import sql
+
+    token = (token or os.environ.get("DATABRICKS_TOKEN") or "").strip()
+    if _is_oauth_refresh(token):
+        return _oauth_connect(token)
+
+    if _is_pat(token):
+        kwargs = {"catalog": CATALOG} if CATALOG else {}
+        try:
+            conn = sql.connect(
+                server_hostname=SERVER_HOSTNAME,
+                http_path=HTTP_PATH,
+                access_token=token,
+                **kwargs,
+            )
+            print(f"  Databricks auth: PAT ({SERVER_HOSTNAME})")
+            return conn
+        except Exception as e:
+            msg = str(e).lower()
+            if "invalid access token" in msg or "invalid access to org" in msg:
+                print(f"  WARN: DATABRICKS_TOKEN PAT rejected; falling back to OAuth")
+                return _oauth_connect()
+            raise
+
+    if token:
+        # JWT access token from OAuth also works as a SQL access_token.
+        kwargs = {"catalog": CATALOG} if CATALOG else {}
+        try:
+            return sql.connect(
+                server_hostname=SERVER_HOSTNAME,
+                http_path=HTTP_PATH,
+                access_token=token,
+                **kwargs,
+            )
+        except Exception:
+            return _oauth_connect()
+
+    return _oauth_connect()
 
 
 def db_query(conn, q):

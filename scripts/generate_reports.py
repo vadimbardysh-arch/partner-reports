@@ -986,8 +986,11 @@ def main():
     print(f"Starting report generation at {generated_at}")
 
     print("\n--- ULOV SUSHI & MAESTRO PIZZA multi-store report ---")
-    from generate_ulov_maestro import main as generate_ulov_maestro_report
-    generate_ulov_maestro_report()
+    try:
+        from generate_ulov_maestro import main as generate_ulov_maestro_report
+        generate_ulov_maestro_report()
+    except Exception as e:
+        print(f"WARN: ULOV report skipped: {e}")
     update_index()
 
     try:

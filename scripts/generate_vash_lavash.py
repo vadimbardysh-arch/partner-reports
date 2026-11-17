@@ -82,18 +82,7 @@ ORDER_STATE_UA = {"delivered": "Доставлено", "cancelled": "Скасо�
 
 
 def connect():
-    token = os.environ.get("DATABRICKS_TOKEN")
-    if not token:
-        raise RuntimeError("DATABRICKS_TOKEN env var is required")
-    kwargs = {}
-    if CATALOG:
-        kwargs["catalog"] = CATALOG
-    return sql.connect(
-        server_hostname=SERVER_HOSTNAME,
-        http_path=HTTP_PATH,
-        access_token=token,
-        **kwargs,
-    )
+    return db_connect()
 
 
 def query(conn, q):

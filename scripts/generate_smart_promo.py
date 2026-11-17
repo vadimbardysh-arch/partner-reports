@@ -299,8 +299,10 @@ def main():
     try:
         conn = connect()
     except Exception as e:
-        print(f"WARN: Smart Promo skipped (Databricks unavailable): {e}")
-        return
+        # Do not swallow auth failures — weekday jobs used to look green
+        # while DATABRICKS_TOKEN was dead and no data was written.
+        print(f"ERROR: Smart Promo Databricks connect failed: {e}")
+        raise
 
     try:
         traits_df = fetch_traits(conn)

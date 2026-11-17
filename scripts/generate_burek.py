@@ -60,35 +60,8 @@ _REWRITE_TO_UC = bool(CATALOG)
 
 def connect():
     global _REWRITE_TO_UC
-    token = os.environ.get("DATABRICKS_TOKEN")
-    if not token:
-        raise RuntimeError("DATABRICKS_TOKEN env var is required")
-    last_err = None
-    attempts = [
-        (HTTP_PATH, CATALOG),
-        (HTTP_PATH_FALLBACK, CATALOG or "main"),
-    ]
-    seen = set()
-    for path, catalog in attempts:
-        key = (path, catalog)
-        if key in seen:
-            continue
-        seen.add(key)
-        kwargs = {"catalog": catalog} if catalog else {}
-        try:
-            conn = sql.connect(
-                server_hostname=SERVER_HOSTNAME,
-                http_path=path,
-                access_token=token,
-                **kwargs,
-            )
-            _REWRITE_TO_UC = bool(catalog)
-            print(f"  Connected via {path}" + (f" catalog={catalog}" if catalog else ""))
-            return conn
-        except Exception as e:
-            last_err = e
-            print(f"  Connect failed on {path}: {e}")
-    raise last_err
+    _REWRITE_TO_UC = bool(CATALOG)
+    return db_connect()
 
 
 def query(conn, q):
