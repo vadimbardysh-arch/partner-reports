@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from pathlib import Path
 
 SERVER_HOSTNAME = os.environ.get(
@@ -29,12 +30,43 @@ _CURSOR_OAUTH_CACHE = Path.home() / ".databricks" / "cursor-sql-oauth.json"
 _OAUTH_CLIENT_ID = "databricks-sql-python"
 
 
+# Vadym's DAP can SELECT dim_order_delivery but not fact_order_delivery.
+# Expose the columns the generators expect via a subquery.
+_FACT_ORDER_SUBQUERY = """(
+    SELECT
+      src.*,
+      src.order_gmv_local AS order_gmv,
+      src.provider_price_before_discount_local AS provider_price_before_discount,
+      src.provider_price_after_discount_local AS provider_price_after_discount,
+      src.total_order_item_discount_local AS total_order_item_discount,
+      src.order_provider_commission_local AS commission_local,
+      src.country_code AS city_country_code,
+      CONCAT(
+        DATE_FORMAT(src.order_created_date, 'yyyy'),
+        '-W',
+        LPAD(CAST(WEEKOFYEAR(src.order_created_date) AS STRING), 2, '0')
+      ) AS order_week,
+      (src.provider_preparation_actual_duration_seconds / 60.0) AS order_actual_cooking_time_minutes
+    FROM main.ng_delivery.dim_order_delivery src
+)"""
+
+
 def resolve_sql(query):
-    """Translate legacy schema names when running against a Unity Catalog catalog."""
-    if not CATALOG:
-        return query
-    for legacy, unity in _UC_SCHEMA_MAP.items():
-        query = query.replace(legacy + ".", unity + ".")
+    """Translate legacy schema names and map unreadable fact_order_delivery."""
+    if CATALOG:
+        for legacy, unity in _UC_SCHEMA_MAP.items():
+            query = query.replace(legacy + ".", unity + ".")
+    # Longer name first so *_experimentation is not rewritten.
+    query = re.sub(
+        r"\bmain\.ng_delivery\.fact_order_delivery\b(?!_)",
+        _FACT_ORDER_SUBQUERY,
+        query,
+    )
+    query = re.sub(
+        r"(?<!main\.)\bng_delivery\.fact_order_delivery\b(?!_)",
+        _FACT_ORDER_SUBQUERY,
+        query,
+    )
     return query
 
 
