@@ -13,7 +13,7 @@ from decimal import Decimal
 from databricks import sql
 import pandas as pd
 
-from config import SERVER_HOSTNAME, HTTP_PATH, PROVIDERS, WEEKS_BACK, CATALOG, resolve_sql, db_connect
+from config import SERVER_HOSTNAME, HTTP_PATH, PROVIDERS, WEEKS_BACK, CATALOG, resolve_sql, db_connect, db_query
 
 HTTP_PATH_FALLBACK = "sql/protocolv1/o/2472566184436351/0505-112942-d3yviznw"
 
@@ -25,11 +25,7 @@ def connect():
 
 
 def query(conn, q):
-    sql_text = resolve_sql(q)
-    with conn.cursor() as cur:
-        cur.execute(sql_text)
-        cols = [d[0] for d in cur.description]
-        return pd.DataFrame(cur.fetchall(), columns=cols)
+    return db_query(conn, q)
 
 
 def to_native(val, default=0):
@@ -993,62 +989,68 @@ def main():
         print(f"WARN: ULOV report skipped: {e}")
     update_index()
 
+    conn = None
     try:
         conn = connect()
         for pid, info in PROVIDERS.items():
             print(f"\n--- {info['name']} (ID: {pid}) ---")
-            folder = REPO_ROOT / info["slug"]
-            folder.mkdir(parents=True, exist_ok=True)
+            try:
+                folder = REPO_ROOT / info["slug"]
+                folder.mkdir(parents=True, exist_ok=True)
 
-            has_bp = fetch_has_bolt_plus_campaign(conn, pid)
-            print(f"  Bolt Plus campaign: {'Yes' if has_bp else 'No'}")
+                has_bp = fetch_has_bolt_plus_campaign(conn, pid)
+                print(f"  Bolt Plus campaign: {'Yes' if has_bp else 'No'}")
 
-            sp_ids = fetch_smart_promo_order_ids(conn, pid)
-            print(f"  Smart Promo orders: {len(sp_ids)}")
+                sp_ids = fetch_smart_promo_order_ids(conn, pid)
+                print(f"  Smart Promo orders: {len(sp_ids)}")
 
-            weekly = fetch_weekly_summary(conn, pid)
-            print(f"  Weekly summary: {len(weekly)} weeks")
+                weekly = fetch_weekly_summary(conn, pid)
+                print(f"  Weekly summary: {len(weekly)} weeks")
 
-            rev_weekly = fetch_revenue_weekly(conn, pid)
-            print(f"  Revenue weekly: {len(rev_weekly)} weeks")
+                rev_weekly = fetch_revenue_weekly(conn, pid)
+                print(f"  Revenue weekly: {len(rev_weekly)} weeks")
 
-            orders_detail = fetch_orders_detail(conn, pid)
-            print(f"  Orders detail: {len(orders_detail)} orders")
+                orders_detail = fetch_orders_detail(conn, pid)
+                print(f"  Orders detail: {len(orders_detail)} orders")
 
-            cancelled = fetch_cancelled(conn, pid)
-            print(f"  Cancelled: {len(cancelled)}")
+                cancelled = fetch_cancelled(conn, pid)
+                print(f"  Cancelled: {len(cancelled)}")
 
-            complaints = fetch_complaints(conn, pid)
-            print(f"  Complaints: {len(complaints)}")
+                complaints = fetch_complaints(conn, pid)
+                print(f"  Complaints: {len(complaints)}")
 
-            html = generate_html(pid, info, weekly, rev_weekly, orders_detail,
-                                 cancelled, complaints, generated_at,
-                                 has_bp_campaign=has_bp, sp_order_ids=sp_ids)
-            out_path = folder / "index.html"
-            out_path.write_text(html, encoding="utf-8")
-            print(f"  Saved: {out_path}")
-        conn.close()
-
-        print("\n--- Мʼясоруб multi-store report ---")
-        from generate_miasorub import main as generate_miasorub_report
-        generate_miasorub_report()
-        print("\n--- FROG & DOG multi-store report ---")
-        from generate_frog_dog import main as generate_frog_dog_report
-        generate_frog_dog_report()
-        print("\n--- Сімейна Пекарня ---")
-        from generate_simeyna_pekarna import main as generate_simeyna_pekarna_report
-        generate_simeyna_pekarna_report()
-        print("\n--- Сімейна Пекарня Пасічна ---")
-        from generate_simeyna_pekarna_pasichna import main as generate_simeyna_pekarna_pasichna_report
-        generate_simeyna_pekarna_pasichna_report()
-        print("\n--- Сімейна Піца ---")
-        from generate_simeyna_pizza import main as generate_simeyna_pizza_report
-        generate_simeyna_pizza_report()
-        print("\n--- Royal Kebab Group ---")
-        from generate_royal_kebab import main as generate_royal_kebab_report
-        generate_royal_kebab_report()
+                html = generate_html(pid, info, weekly, rev_weekly, orders_detail,
+                                     cancelled, complaints, generated_at,
+                                     has_bp_campaign=has_bp, sp_order_ids=sp_ids)
+                out_path = folder / "index.html"
+                out_path.write_text(html, encoding="utf-8")
+                print(f"  Saved: {out_path}")
+            except Exception as e:
+                print(f"WARN: {info['name']} skipped: {e}")
     except Exception as e:
-        print(f"WARN: Legacy reports skipped: {e}")
+        print(f"WARN: provider reports connect failed: {e}")
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    extra = [
+        ("Мʼясоруб", "generate_miasorub"),
+        ("FROG & DOG", "generate_frog_dog"),
+        ("Сімейна Пекарня", "generate_simeyna_pekarna"),
+        ("Сімейна Пекарня Пасічна", "generate_simeyna_pekarna_pasichna"),
+        ("Сімейна Піца", "generate_simeyna_pizza"),
+        ("Royal Kebab Group", "generate_royal_kebab"),
+    ]
+    for label, modname in extra:
+        print(f"\n--- {label} ---")
+        try:
+            mod = __import__(modname)
+            mod.main()
+        except Exception as e:
+            print(f"WARN: {label} skipped: {e}")
 
     print("\nDone!")
 

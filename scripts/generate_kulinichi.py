@@ -17,7 +17,7 @@ sys.stdout.reconfigure(line_buffering=True)
 from databricks import sql
 import pandas as pd
 
-from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql, db_connect
+from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql, db_connect, optional_fetch
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEEKS_BACK = 52
@@ -2666,28 +2666,22 @@ def main():
         print(f"  → {len(revenue_df)} rows")
 
         print("  Fetching daily availability…")
-        daily_avail_df = fetch_daily_availability(conn)
-        print(f"  → {len(daily_avail_df)} rows")
+        daily_avail_df = optional_fetch("daily availability", fetch_daily_availability, conn)
 
         print("  Fetching availability log…")
-        avail_log_df = fetch_availability_log(conn)
-        print(f"  → {len(avail_log_df)} rows")
+        avail_log_df = optional_fetch("availability log", fetch_availability_log, conn)
 
         print("  Fetching promo data…")
-        promo_df = fetch_promo_data(conn)
-        print(f"  → {len(promo_df)} rows")
+        promo_df = optional_fetch("promo data", fetch_promo_data, conn)
 
         print("  Fetching promo unique orders…")
-        promo_unique_df = fetch_promo_unique_orders(conn)
-        print(f"  → {len(promo_unique_df)} rows")
+        promo_unique_df = optional_fetch("promo unique orders", fetch_promo_unique_orders, conn)
 
         print("  Fetching campaigns…")
-        campaigns_df = fetch_campaigns(conn)
-        print(f"  → {len(campaigns_df)} rows")
+        campaigns_df = optional_fetch("campaigns", fetch_campaigns, conn)
 
         print("  Fetching user metrics…")
-        user_metrics_df = fetch_user_metrics(conn)
-        print(f"  → {len(user_metrics_df)} rows")
+        user_metrics_df = optional_fetch("user metrics", fetch_user_metrics, conn)
     finally:
         conn.close()
 

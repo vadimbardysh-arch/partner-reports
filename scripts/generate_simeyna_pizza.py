@@ -16,7 +16,7 @@ sys.stdout.reconfigure(line_buffering=True)
 from databricks import sql
 import pandas as pd
 
-from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql, db_connect
+from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql, db_connect, optional_fetch
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEEKS_BACK = 52
@@ -2002,8 +2002,7 @@ def main():
         print(f"  → {len(smart_promo_df)} rows")
 
         print("  Fetching Sponsored Listings…")
-        listings_df = fetch_sponsored_listings(conn)
-        print(f"  → {len(listings_df)} rows")
+        listings_df = optional_fetch("sponsored listings", fetch_sponsored_listings, conn)
 
         print("  Fetching Smart Promo order ids…")
         smart_promo_orders_df = fetch_smart_promo_orders(conn)

@@ -41,6 +41,7 @@ _FACT_ORDER_SUBQUERY = """(
       src.total_order_item_discount_local AS total_order_item_discount,
       src.order_provider_commission_local AS commission_local,
       src.country_code AS city_country_code,
+      src.is_cs_ticket_order AS has_ticket,
       CONCAT(
         DATE_FORMAT(src.order_created_date, 'yyyy'),
         '-W',
@@ -243,15 +244,47 @@ def db_connect(token=None):
     return _oauth_connect()
 
 
-def db_query(conn, q):
+def db_query(conn, q, retries=3):
     """Run SQL, rewriting legacy `_spark` schema names when CATALOG is set."""
+    import time
     import pandas as pd
 
     sql_text = resolve_sql(q)
-    with conn.cursor() as cur:
-        cur.execute(sql_text)
-        cols = [d[0] for d in cur.description]
-        return pd.DataFrame(cur.fetchall(), columns=cols)
+    last = None
+    for attempt in range(retries):
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql_text)
+                cols = [d[0] for d in cur.description]
+                return pd.DataFrame(cur.fetchall(), columns=cols)
+        except Exception as e:
+            last = e
+            msg = str(e).lower()
+            transient = (
+                "error during request" in msg
+                or "timeout" in msg
+                or "temporarily_unavailable" in msg
+            )
+            if attempt + 1 < retries and transient:
+                wait = 3 * (attempt + 1)
+                print(f"  WARN: query retry {attempt + 1}/{retries - 1} in {wait}s: {e}")
+                time.sleep(wait)
+                continue
+            raise
+    raise last
+
+
+def optional_fetch(label, fn, *args):
+    """Run a fetch; on permission/network errors return an empty DataFrame."""
+    import pandas as pd
+
+    try:
+        df = fn(*args)
+        print(f"  → {len(df)} rows")
+        return df
+    except Exception as e:
+        print(f"  WARN: {label} skipped: {e}")
+        return pd.DataFrame()
 
 PROVIDERS = {
     31504: {"name": "Epic Cheeseburger", "slug": "epic-cheeseburger", "city": "Львів"},

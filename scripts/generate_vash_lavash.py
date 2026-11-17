@@ -16,7 +16,7 @@ sys.stdout.reconfigure(line_buffering=True)
 from databricks import sql
 import pandas as pd
 
-from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql, db_connect
+from config import SERVER_HOSTNAME, HTTP_PATH, CATALOG, resolve_sql, db_connect, optional_fetch, db_query
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEEKS_BACK = 52
@@ -86,10 +86,7 @@ def connect():
 
 
 def query(conn, q):
-    with conn.cursor() as cur:
-        cur.execute(resolve_sql(q))
-        cols = [d[0] for d in cur.description]
-        return pd.DataFrame(cur.fetchall(), columns=cols)
+    return db_query(conn, q)
 
 
 def to_native(val, default=0):
@@ -2089,8 +2086,7 @@ def main():
         print(f"  → {len(smart_promo_df)} rows")
 
         print("  Fetching Sponsored Listings…")
-        sponsored_df = fetch_sponsored_listings(conn)
-        print(f"  → {len(sponsored_df)} rows")
+        sponsored_df = optional_fetch("sponsored listings", fetch_sponsored_listings, conn)
     finally:
         conn.close()
 
