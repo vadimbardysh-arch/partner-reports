@@ -354,11 +354,14 @@ def main():
     print(f"  DD Orders: {len(data['dd_orders'])}")
     print("Done.")
 
-    # Calendar cuts for Royal Kebab: 1st of month / quarter / year
+    # Calendar cuts: 1st of month / quarter / year
     if datetime.utcnow().day == 1:
         print("\n--- Royal Kebab Group (1st of month) ---")
         from generate_royal_kebab import main as generate_royal_kebab_report
         generate_royal_kebab_report()
+        print("\n--- Галицька перепічка (1st of month) ---")
+        from generate_halytska import main as generate_halytska_report
+        generate_halytska_report()
 
 
 if __name__ == "__main__":

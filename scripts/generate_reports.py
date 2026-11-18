@@ -1043,6 +1043,7 @@ def main():
         ("Сімейна Пекарня Пасічна", "generate_simeyna_pekarna_pasichna"),
         ("Сімейна Піца", "generate_simeyna_pizza"),
         ("Royal Kebab Group", "generate_royal_kebab"),
+        ("Галицька перепічка", "generate_halytska"),
     ]
     for label, modname in extra:
         print(f"\n--- {label} ---")
@@ -1098,6 +1099,11 @@ def update_index():
         <a class="report-card" href="royal-kebab/" style="border-color:#34d399;">
             <h3>Royal Kebab Group</h3>
             <p>Львів / Дрогобич / Івано-Франківськ · 5 брендів</p>
+            <span class="badge">Тиждень / місяць / квартал / рік</span>
+        </a>
+        <a class="report-card" href="halytska/" style="border-color:#34d399;">
+            <h3>Галицька перепічка</h3>
+            <p>Львів / Рівне · Перепічка, Кулиничі, ВЖАР</p>
             <span class="badge">Тиждень / місяць / квартал / рік</span>
         </a>
         <a class="report-card" href="sponsored-listings/" style="border-color:#fbbf24;">
