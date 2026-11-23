@@ -87,7 +87,7 @@ tr.hidden { display:none; }
 <div class="header">
   <h1>Epic Cheeseburger</h1>
   <div class="sub">Львів — Останні 8 тижнів</div>
-  <div class="updated">Оновлено: 2026-11-23 15:31 UTC</div>
+  <div class="updated">Оновлено: 2026-11-23 19:03 UTC</div>
 </div>
 
 <div class="week-filter" id="weekFilter">
@@ -832,12 +832,12 @@ tr.hidden { display:none; }
 </div>
 
 <script>
-const W = {"2026-W40": {"delivered": 52.0, "avg_check": 1149.0, "cooking": 19.4, "bad": 5.0, "food_rev": 50051.0, "fees": 19701.0, "net_income": 32709.0, "refund": 959.0, "complaints": 5}, "2026-W41": {"delivered": 60.0, "avg_check": 1256.0, "cooking": 18.4, "bad": 9.0, "food_rev": 61756.0, "fees": 24056.0, "net_income": 43169.0, "refund": 896.0, "complaints": 9}, "2026-W42": {"delivered": 93.0, "avg_check": 1200.0, "cooking": 22.3, "bad": 14.0, "food_rev": 96800.0, "fees": 35556.0, "net_income": 61142.0, "refund": 3976.0, "cancelled": 1, "complaints": 14}, "2026-W43": {"delivered": 73.0, "avg_check": 1199.0, "cooking": 20.9, "bad": 9.0, "food_rev": 71747.0, "fees": 27547.0, "net_income": 48248.0, "refund": 2304.0, "complaints": 9}, "2026-W44": {"delivered": 80.0, "avg_check": 1468.0, "cooking": 20.0, "bad": 9.0, "food_rev": 98760.0, "fees": 37381.0, "net_income": 69692.0, "refund": 115.0, "complaints": 9}, "2026-W45": {"delivered": 82.0, "avg_check": 1282.0, "cooking": 19.5, "bad": 7.0, "food_rev": 89375.0, "fees": 33797.0, "net_income": 60838.0, "refund": 156.0, "complaints": 7}, "2026-W46": {"delivered": 58.0, "avg_check": 1196.0, "cooking": 18.0, "bad": 6.0, "food_rev": 60619.0, "fees": 22083.0, "net_income": 40177.0, "refund": 129.0, "complaints": 6}, "2026-W47": {"delivered": 83.0, "avg_check": 1362.0, "cooking": 18.5, "bad": 5.0, "food_rev": 88654.0, "fees": 36252.0, "net_income": 66286.0, "refund": 0.0, "complaints": 5}, "2026-W48": {"delivered": 1.0, "avg_check": 0, "cooking": 20.6, "bad": 0.0, "food_rev": 0, "fees": 0, "net_income": 0, "refund": 0.0}};
+const W = {"2026-W40": {"delivered": 52.0, "avg_check": 1149.0, "cooking": 19.4, "bad": 5.0, "food_rev": 50051.0, "fees": 19701.0, "net_income": 32709.0, "refund": 959.0, "complaints": 5}, "2026-W41": {"delivered": 60.0, "avg_check": 1256.0, "cooking": 18.4, "bad": 9.0, "food_rev": 61756.0, "fees": 24056.0, "net_income": 43169.0, "refund": 896.0, "complaints": 9}, "2026-W42": {"delivered": 93.0, "avg_check": 1200.0, "cooking": 22.3, "bad": 14.0, "food_rev": 96800.0, "fees": 35556.0, "net_income": 61142.0, "refund": 3976.0, "cancelled": 1, "complaints": 14}, "2026-W43": {"delivered": 73.0, "avg_check": 1199.0, "cooking": 20.9, "bad": 9.0, "food_rev": 71747.0, "fees": 27547.0, "net_income": 48248.0, "refund": 2304.0, "complaints": 9}, "2026-W44": {"delivered": 80.0, "avg_check": 1468.0, "cooking": 20.0, "bad": 9.0, "food_rev": 98760.0, "fees": 37381.0, "net_income": 69692.0, "refund": 115.0, "complaints": 9}, "2026-W45": {"delivered": 82.0, "avg_check": 1282.0, "cooking": 19.5, "bad": 7.0, "food_rev": 89375.0, "fees": 33797.0, "net_income": 60838.0, "refund": 156.0, "complaints": 7}, "2026-W46": {"delivered": 58.0, "avg_check": 1196.0, "cooking": 18.0, "bad": 6.0, "food_rev": 60619.0, "fees": 22083.0, "net_income": 40177.0, "refund": 129.0, "complaints": 6}, "2026-W47": {"delivered": 83.0, "avg_check": 1362.0, "cooking": 18.5, "bad": 5.0, "food_rev": 88654.0, "fees": 36252.0, "net_income": 66286.0, "refund": 0.0, "complaints": 5}, "2026-W48": {"delivered": 4.0, "avg_check": 0, "cooking": 18.0, "bad": 0.0, "food_rev": 0, "fees": 0, "net_income": 0, "refund": 0.0}};
 const allWeeks = ["2026-W40", "2026-W41", "2026-W42", "2026-W43", "2026-W44", "2026-W45", "2026-W46", "2026-W47", "2026-W48"];
 const weeks = ["2026-W40", "2026-W41", "2026-W42", "2026-W43", "2026-W44", "2026-W45", "2026-W46", "2026-W47", "2026-W48"];
-const delivered = [52.0, 60.0, 93.0, 73.0, 80.0, 82.0, 58.0, 83.0, 1.0];
+const delivered = [52.0, 60.0, 93.0, 73.0, 80.0, 82.0, 58.0, 83.0, 4.0];
 const avgCheck = [1149.0, 1256.0, 1200.0, 1199.0, 1468.0, 1282.0, 1196.0, 1362.0, 0];
-const cookingTime = [19.4, 18.4, 22.3, 20.9, 20.0, 19.5, 18.0, 18.5, 20.6];
+const cookingTime = [19.4, 18.4, 22.3, 20.9, 20.0, 19.5, 18.0, 18.5, 18.0];
 const revWeeks = ["2026-W40", "2026-W41", "2026-W42", "2026-W43", "2026-W44", "2026-W45", "2026-W46", "2026-W47", "2026-W48"];
 const netIncome = [32709.0, 43169.0, 61142.0, 48248.0, 69692.0, 60838.0, 40177.0, 66286.0, 0];
 const foodRev = [50051.0, 61756.0, 96800.0, 71747.0, 98760.0, 89375.0, 60619.0, 88654.0, 0];
